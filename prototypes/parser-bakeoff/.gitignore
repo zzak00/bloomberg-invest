@@ -1,0 +1,4 @@
+# Source PDFs are not redistributed (AMMC terms) and parser outputs are regenerated.
+data/
+.venv/
+__pycache__/
