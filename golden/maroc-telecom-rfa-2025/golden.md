@@ -266,7 +266,7 @@ The auditors' special report on regulated agreements (conventions réglementées
 | receivables | 12 554 / 12 698 (p. 23); trade 9 393 / 8 981 (p. 51) | trade 6 927 368 / 6 543 082 (p. 79) |
 | shares outstanding | 879 095 340 / 879 095 340 (pp. 24, 27, 64) | capital 5 274 572 (thousands MAD); par value derivable 6 MAD (5 274 572 040 / 879 095 340), not stated |
 | treasury shares | **NOT FOUND** as a count; only equity movement "Opérations sur actions propres" 30 / -35 MAD m (p. 26, image, UNCERTAIN); looked at pp. 23, 24, 26, 27, 35, 52, 64 | **NOT FOUND** |
-| dividend per share | 4,00 MAD (FY2025, proposed, p. 10) / 1,43 MAD (FY2024, p. 16) | same company |
+| dividend per share | n/a: declared by the parent company | 4,00 MAD (FY2025, proposed, p. 10) / 1,43 MAD (FY2024, p. 16) |
 | operating cash flow | 18 499 / 11 598 (p. 25); CFFO 8 022 / 9 101 (p. 9) | **NOT FOUND** (tableau de financement not reproduced) |
 | capex | accrual 10 894 / 11 164 (p. 9); cash -9 404 / -11 663 (p. 25) | "Investissements" 5 307 / 3 130 MAD m (p. 82) |
 | dividends paid | -1 257 / -3 691 to shareholders; -746 / -831 to minorities (p. 25) | "1,3 milliards" (p. 84 text, UNCERTAIN) |
