@@ -30,12 +30,28 @@ def fetch() -> None:
     print(f"ok: {PDF}")
 
 
-def parse(parser: str) -> None:
-    if parser == "docling":
+def golden_pages() -> list[int]:
+    return sorted({figure.page for figure in load_golden(GOLDEN)})
+
+
+def parse(parser: str, pages_per_request: int | None, pages: str | None) -> None:
+    raw_out = DATA / "raw" / f"{parser}.json"
+    if parser == "paddle":
+        from bakeoff.parse_paddle import parse as run
+
+        if pages == "golden":
+            selected = golden_pages()
+        else:
+            selected = [int(n) for n in pages.split(",")] if pages else None
+        result = run(PDF, raw_out, selected)
+    elif parser.startswith("docling"):
         from bakeoff.parse_docling import parse as run
+
+        result = run(PDF, raw_out, parser)
     else:
         from bakeoff.parse_azure import parse as run
-    result = run(PDF, DATA / "raw" / f"{parser}.json")
+
+        result = run(PDF, raw_out, pages_per_request)
     result.save(DATA / "parsed" / f"{parser}.json")
     print(
         f"{parser}: {len(result.tables)} tables, {result.page_count} pages, {result.seconds} s"
@@ -51,6 +67,27 @@ def score() -> None:
     print(text)
 
 
+def extract(parser: str, deployments: str | None) -> None:
+    import os
+
+    from bakeoff.extract import extract as run
+
+    result = ParseResult.load(DATA / "parsed" / f"{parser}.json")
+    names = (deployments or os.environ.get("AZURE_OPENAI_DEPLOYMENTS", "")).split(",")
+    for deployment in filter(None, (name.strip() for name in names)):
+        figures = run(result, golden_pages(), deployment, DATA / "extracted" / f"{deployment.replace('/', '_')}.json")
+        rejected = sum(not f.verified for f in figures)
+        print(f"{deployment}: {len(figures)} figures, {rejected} rejected by the check")
+
+
+def score_extract() -> None:
+    from bakeoff.extract_score import score as run
+
+    text = run(DATA / "extracted", GOLDEN)
+    (DATA / "extract-report.md").write_text(text)
+    print(text)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="bakeoff")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -58,14 +95,39 @@ def main() -> None:
     parse_command = commands.add_parser(
         "parse", help="run one parser on the golden PDF"
     )
-    parse_command.add_argument("parser", choices=["docling", "azure"])
+    parse_command.add_argument(
+        "parser", choices=["docling", "docling-nomatch", "docling-v2", "docling-v2-nomatch", "azure", "paddle"]
+    )
+    parse_command.add_argument(
+        "--pages-per-request",
+        type=int,
+        help="azure only: send the PDF in slices of this many pages (2 on the free F0 tier)",
+    )
+    parse_command.add_argument(
+        "--pages",
+        help="paddle only: comma-separated page numbers, or 'golden' for the pages the golden set cites",
+    )
     commands.add_parser(
         "score", help="score every parsed output against the golden figures"
+    )
+    extract_command = commands.add_parser(
+        "extract", help="extract figures from a parsed document with Azure OpenAI, on the golden pages"
+    )
+    extract_command.add_argument("--parser", default="docling")
+    extract_command.add_argument(
+        "--deployments", help="comma-separated; defaults to AZURE_OPENAI_DEPLOYMENTS"
+    )
+    commands.add_parser(
+        "score-extract", help="score every extraction against the golden figures"
     )
     args = parser.parse_args()
     if args.command == "fetch":
         fetch()
     elif args.command == "parse":
-        parse(args.parser)
+        parse(args.parser, args.pages_per_request, args.pages)
+    elif args.command == "extract":
+        extract(args.parser, args.deployments)
+    elif args.command == "score-extract":
+        score_extract()
     else:
         score()

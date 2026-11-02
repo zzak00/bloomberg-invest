@@ -11,6 +11,7 @@ class Cell:
     col: int
     text: str
     kind: str  # "column_header", "row_header" or "content"
+    col_span: int = 1
 
 
 @dataclass

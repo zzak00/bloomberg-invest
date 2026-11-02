@@ -6,10 +6,18 @@ requires-python = ">=3.12"
 dependencies = [
     "azure-ai-documentintelligence>=1.0",
     "docling>=2.0",
+    "openai>=3.42.1",
+    "pypdfium2>=5.14.0",
 ]
 
 [project.scripts]
 bakeoff = "bakeoff.cli:main"
+
+[project.optional-dependencies]
+paddle = [
+    "paddleocr[doc-parser]>=3.7.0",
+    "paddlepaddle>=3.3.1",
+]
 
 [build-system]
 requires = ["hatchling"]

@@ -6,8 +6,12 @@ Throwaway prototype: run Docling and Azure Document Intelligence (prebuilt-layou
 uv sync
 uv run bakeoff fetch                    # download the PDF into data/ and check its SHA256
 uv run bakeoff parse docling            # local, no credentials
+uv run bakeoff parse docling-v2         # TableFormerV2 (preview); also docling-v2-nomatch
+uv run --extra paddle bakeoff parse paddle --pages golden   # PP-StructureV3, ~1 min/page on CPU
 uv run --env-file ~/.config/bloomberg-invest/bakeoff.env bakeoff parse azure
 uv run bakeoff score                    # writes data/report.md
+uv run --env-file ~/.config/bloomberg-invest/bakeoff.env bakeoff extract   # LLM figures from docling, golden pages
+uv run bakeoff score-extract            # writes data/extract-report.md
 ```
 
 The Azure step reads `AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT` and `AZURE_DOCUMENT_INTELLIGENCE_KEY` from an env file kept outside the repository. The free F0 tier analyses only the first 2 pages of a document, so the full report needs the S0 tier.

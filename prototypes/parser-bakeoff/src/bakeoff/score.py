@@ -106,19 +106,23 @@ def row_matches(table: Table, cell: Cell, wanted: str) -> bool:
 
 
 def column_matches(table: Table, cell: Cell, wanted: str) -> bool:
+    """Every part of the wanted column label ("2025 > Filiales") is in a header above the cell.
+
+    A header covers every column it spans, and a header split over several rows ("TOTAUX DE" /
+    "L'EXERCICE") is also matched as one text.
+    """
     parts = [part for part in wanted.split(">") if part.strip()]
     headers = [
         other.text
-        for other in table.cells
-        if other.col == cell.col
-        and other.row < cell.row
-        and other.kind != "content"
-        or other.col == cell.col
-        and other.row < cell.row
-        and not is_number(other.text)
+        for other in sorted(table.cells, key=lambda other: other.row)
+        if other.row < cell.row
+        and other.col <= cell.col < other.col + other.col_span
+        and (other.kind != "content" or not is_number(other.text))
     ]
+    stacked = label(" ".join(headers))
     return bool(parts) and all(
-        any(similar(part, header) for header in headers) for part in parts
+        any(similar(part, header) for header in headers) or label(part) in stacked
+        for part in parts
     )
 
 
