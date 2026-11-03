@@ -1,0 +1,13 @@
+.env
+.DS_Store
+__pycache__/
+.venv/
+.ruff_cache/
+.pytest_cache/
+node_modules/
+frontend/dist/
+*.tsbuildinfo
+# Filings, stored PDFs, parse outputs and rendered pages: AMMC documents are not redistributed.
+data/
+# Screenshots and logs from verify-bloomberg-invest runs.
+verify-evidence/

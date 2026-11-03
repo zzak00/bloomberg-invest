@@ -1,0 +1,39 @@
+/* Design tokens from the Claude Design token sheet v0.5 (#12). */
+:root {
+  --bg: #080808;
+  --surface: #0e0e0d;
+  --surface-raised: #151514;
+  --hover: #1a1a19;
+  --row-hover: #121211;
+  --rule: #1f1f1e;
+  --rule-strong: #343434;
+  --border-control: #6a6a67;
+  --text-primary: #f1f1ed;
+  --text-secondary: #949494;
+  --text-tertiary: #82827f;
+  --text-disabled: #5c5c5a;
+
+  --signal: #ffb224;
+  --signal-ink: #1a1100;
+
+  --paper: #f4f1ea;
+  --paper-ink: #1a1a17;
+  --paper-secondary: #5e5b53;
+  --paper-rule: #cfc8b8;
+  --paper-control: #8c877b;
+
+  --font-sans: "Hanken Grotesk", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+
+  --radius-sm: 2px;
+  --header-height: 56px;
+}
