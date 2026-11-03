@@ -1,0 +1,66 @@
+[project]
+name = "bloomberg-invest"
+version = "0.1.0"
+description = "Knowledge-graph analyst tool for companies listed on the Casablanca Stock Exchange."
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.160",
+    "neo4j>=6.3",
+    "pillow>=11",
+    "pydantic>=2.13",
+    "pypdfium2>=5.14",
+    "uvicorn>=0.54",
+]
+
+[project.optional-dependencies]
+# Docling pulls in torch: only the ingest image and the ingest tests install it.
+# torch and torchvision are listed only so the CPU-only source below applies to them.
+ingest = ["docling==2.145.0", "torch", "torchvision"]
+
+[project.scripts]
+bloomberg = "bloomberg_invest.ingest.cli:main"
+
+[dependency-groups]
+dev = [
+    "httpx2>=2.16",
+    "jsonschema>=4.25",
+    "pytest>=9.1",
+    "ruff==0.17.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# Containers run Docling on CPU: take torch's CPU-only wheels on Linux instead of the CUDA ones,
+# which make the ingest image several times larger.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+torchvision = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/bloomberg_invest"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "ingest: needs the ingest extra (Docling)",
+    "golden: needs the golden AMMC PDF on disk; skipped otherwise",
+]
+# Raised inside Docling 2.145 and the torch model it runs; nothing in our code triggers these.
+filterwarnings = [
+    "ignore:`force_full_page_ocr` is deprecated:DeprecationWarning",
+    "ignore:This field is deprecated. Use `generate_page_images=True`:DeprecationWarning",
+    "ignore:deprecated:DeprecationWarning:docling.models.stages.ocr.rapid_ocr_model",
+    "ignore:Using padding='same' with even kernel lengths:UserWarning",
+    # rapidocr's source, compiled on first import after a fresh install (our code: ruff W605).
+    "ignore:invalid escape sequence:SyntaxWarning",
+]
+
+[tool.ruff]
+line-length = 100

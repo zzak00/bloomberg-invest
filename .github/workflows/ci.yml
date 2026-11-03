@@ -1,15 +1,15 @@
-name: Python quality
+name: CI
 
 on:
   pull_request:
   push:
-    branches: ["main"]
 
 permissions:
   contents: read
 
 jobs:
   verify:
+    name: Python quality
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,3 +19,64 @@ jobs:
           args: "check ."
       - name: Check Python formatting
         run: ruff format --check .
+
+  backend:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    services:
+      neo4j:
+        image: neo4j:2026.10.0-community
+        env:
+          NEO4J_AUTH: neo4j/test-password
+        ports:
+          - 7688:7687
+        options: >-
+          --health-cmd "cypher-shell -u neo4j -p test-password 'RETURN 1'"
+          --health-interval 5s --health-timeout 10s --health-retries 30
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+      # The API image has no Docling: run the API and store tests in the same lean environment,
+      # so a dependency that only the ingest extra brings in fails here.
+      - name: API, store and outline tests (no ingest extra)
+        run: |
+          uv sync --locked
+          uv run pytest -m "not ingest"
+      - name: Cache Docling models
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: docling-models-${{ hashFiles('backend/uv.lock') }}
+      - name: Docling parser and ingest tests
+        run: |
+          uv sync --locked --extra ingest
+          uv run pytest -m ingest
+
+  frontend:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: astral-sh/setup-uv@v10
+      - run: npm ci
+      - name: The API client matches the API
+        run: |
+          (cd ../backend && uv run --locked python -m bloomberg_invest.api.openapi) > src/api/openapi.json
+          npm run gen:api
+          git diff --exit-code -- src/api
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run build

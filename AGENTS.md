@@ -2,13 +2,16 @@
 
 Knowledge-graph analyst tool for companies listed on the Casablanca Stock Exchange. It ingests AMMC filings, extracts facts with their sources, computes KPIs and Sharia screenings in Python, and answers questions with citations.
 
-Product decisions live in the map issue (#1) and its closed tickets; one-way decisions are ADRs in `docs/adr/`.
+Product decisions live in the map issue (#1) and its closed tickets; one-way decisions are ADRs in `docs/adr/`. The Neo4j graph shape is in `docs/graph-schema.md`.
 
 The golden set in `golden/<document>/` is the ground truth for parser, extractor and answer tests: `golden.md` holds entities, facts and test questions, `figures.csv` the expected figures. The source PDFs are not committed; each `golden.md` gives the AMMC link and SHA256.
+
+Run, test and develop: see `README.md`. To prove a change in the running app, follow `.claude/skills/verify-bloomberg-invest/SKILL.md`.
 
 ## Domain terms
 
 - **Organisation**: any company, holding, state body, pension fund, insurer, bank, audit firm or aggregate; its `kind` says which, and one Organisation can play several roles. Avoid: institution, entity, company (unless it is one).
+- **Issuer**: the role of the Organisation that files a Document (`ISSUED_BY`). Not a separate entity.
 - **Aggregate**: an Organisation standing for a group of holders, such as "Free float" or "Treasury shares", one per company. Avoid: holder (for these).
 - **Listing**: an Organisation's listing on an exchange, with ticker, ISIN, sector and compartment. A listed company is an Organisation with a Listing. Avoid: stock, security.
 - **Fact**: one statement from one Passage, of one of nine kinds (shareholding, board seat, audit mandate, listing, financial figure, consolidation, dividend, auditor opinion, related-party agreement). Avoid: edge, relationship, claim.
