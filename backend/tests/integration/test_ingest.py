@@ -11,13 +11,13 @@ from conftest import FIXTURES
 pytestmark = pytest.mark.ingest
 pytest.importorskip("docling", reason="needs the ingest extra")
 
-from bloomberg_invest.files import DocumentFiles
-from bloomberg_invest.ingest.cli import ingest
-from bloomberg_invest.parsing.docling_parser import DoclingParser
+from bloomberg_invest.adapters.files import DocumentFiles
+from bloomberg_invest.adapters.parsing.docling_parser import DoclingParser
+from bloomberg_invest.service_layer.ingest import ingest
 
 GOLDEN_PDF = Path(
     os.environ.get(
-        "GOLDEN_PDF", Path(__file__).parents[2] / "data" / "inbox" / "Maroc_Telecom_RFA_2025.pdf"
+        "GOLDEN_PDF", Path(__file__).parents[3] / "data" / "inbox" / "Maroc_Telecom_RFA_2025.pdf"
     )
 )
 GOLDEN_SHA = "90e8b73c7f11bfde45d0c7ddb3ce506d162bac2030244d48d9ca2f641ddd4214"

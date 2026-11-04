@@ -10,18 +10,16 @@ from typing import Any
 
 from neo4j import Driver, ManagedTransaction
 
-from bloomberg_invest.domain import (
-    DocumentDetail,
+from bloomberg_invest.adapters.store import GraphStore
+from bloomberg_invest.domain.model import (
     DocumentMeta,
-    DocumentSummary,
     PageInfo,
     ParsedDocument,
-    Run,
     RunInfo,
-    Section,
     SectionNode,
     section_not_on_parsed_page,
 )
+from bloomberg_invest.views import DocumentDetail, DocumentSummary, Run, Section
 
 CONSTRAINTS = [
     ("Document", "id"),
@@ -40,7 +38,7 @@ WITH d, o, collect(r)[0] AS run
 """
 
 
-class Neo4jStore:
+class Neo4jStore(GraphStore):
     def __init__(self, driver: Driver) -> None:
         self._driver = driver
 

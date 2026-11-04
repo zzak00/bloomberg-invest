@@ -1,6 +1,6 @@
 """The section tree is inferred from heading numbering: Docling reports every heading at level 1."""
 
-from bloomberg_invest.parsing.outline import Heading, build_outline
+from bloomberg_invest.adapters.parsing.outline import Heading, build_outline
 
 
 def h(title: str, page: int = 1) -> Heading:

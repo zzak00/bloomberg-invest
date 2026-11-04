@@ -18,7 +18,7 @@ dependencies = [
 ingest = ["docling==2.145.0", "torch", "torchvision"]
 
 [project.scripts]
-bloomberg = "bloomberg_invest.ingest.cli:main"
+bloomberg = "bloomberg_invest.entrypoints.cli:main"
 
 [dependency-groups]
 dev = [
@@ -48,6 +48,8 @@ packages = ["src/bloomberg_invest"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Lets tests in unit/, integration/ and e2e/ import helpers from tests/conftest.py.
+pythonpath = ["tests"]
 markers = [
     "ingest: needs the ingest extra (Docling)",
     "golden: needs the golden AMMC PDF on disk; skipped otherwise",

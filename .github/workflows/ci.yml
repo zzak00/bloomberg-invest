@@ -74,7 +74,7 @@ jobs:
       - run: npm ci
       - name: The API client matches the API
         run: |
-          (cd ../backend && uv run --locked python -m bloomberg_invest.api.openapi) > src/api/openapi.json
+          (cd ../backend && uv run --locked python -m bloomberg_invest.entrypoints.api.openapi) > src/api/openapi.json
           npm run gen:api
           git diff --exit-code -- src/api
       - run: npm run typecheck

@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Protocol
 
-from bloomberg_invest.domain import ParsedDocument
+from bloomberg_invest.domain.model import ParsedDocument
 
 
 class Parser(Protocol):

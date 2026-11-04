@@ -42,7 +42,7 @@ uv run ruff check . && uv run ruff format --check .
 
 cd ../frontend
 npm ci
-npm run gen:api       # after an API change: (cd ../backend && uv run python -m bloomberg_invest.api.openapi) > src/api/openapi.json first
+npm run gen:api       # after an API change: (cd ../backend && uv run python -m bloomberg_invest.entrypoints.api.openapi) > src/api/openapi.json first
 npm run typecheck && npm run lint && npm run build
 ```
 

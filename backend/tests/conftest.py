@@ -6,7 +6,9 @@ from pathlib import Path
 import pytest
 from neo4j import Driver, GraphDatabase
 
-from bloomberg_invest.domain import (
+from bloomberg_invest.adapters.store import GraphStore
+from bloomberg_invest.adapters.store.neo4j_store import Neo4jStore
+from bloomberg_invest.domain.model import (
     DocType,
     DocumentMeta,
     Organisation,
@@ -15,7 +17,6 @@ from bloomberg_invest.domain import (
     RunInfo,
     SectionNode,
 )
-from bloomberg_invest.store.neo4j_store import Neo4jStore
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -31,10 +32,11 @@ def driver() -> Iterator[Driver]:
         yield driver
 
 
-@pytest.fixture
-def store(driver: Driver) -> Neo4jStore:
+# The GraphStore contract: every store test runs on each implementation listed here.
+@pytest.fixture(params=[Neo4jStore], ids=["neo4j"])
+def store(request, driver: Driver) -> GraphStore:
     driver.execute_query("MATCH (n) DETACH DELETE n")
-    store = Neo4jStore(driver)
+    store = request.param(driver)
     store.ensure_schema()
     return store
 

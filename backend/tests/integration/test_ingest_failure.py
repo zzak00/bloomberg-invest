@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 from conftest import FIXTURES
 
-from bloomberg_invest.files import DocumentFiles
-from bloomberg_invest.ingest.cli import IngestFailed, ingest
+from bloomberg_invest.adapters.files import DocumentFiles
+from bloomberg_invest.service_layer.ingest import IngestFailed, ingest
 
 
 class BrokenParser:

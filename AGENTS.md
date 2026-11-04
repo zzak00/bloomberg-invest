@@ -8,6 +8,19 @@ The golden set in `golden/<document>/` is the ground truth for parser, extractor
 
 Run, test and develop: see `README.md`. To prove a change in the running app, follow `.claude/skills/verify-bloomberg-invest/SKILL.md`.
 
+## Backend layout
+
+`backend/src/bloomberg_invest/` follows Architecture Patterns with Python (cosmicpython.com). Dependencies point inward: `entrypoints` -> `service_layer` -> `domain`.
+
+- `domain/`: write models and their rules; imports no other layer.
+- `service_layer/`: one module per use case (`ingest.py`); receives its adapters as arguments.
+- `adapters/`: each port is a `typing.Protocol` (`Parser`, `GraphStore`) that real adapters inherit.
+- `entrypoints/`: the CLI and the FastAPI app; they translate input and call a service.
+- `views.py`: the read models the store returns and the API serves.
+- `bootstrap.py`: the only place that names concrete adapters; picks the parser from `PARSER`.
+
+Tests: `tests/unit/` (no Docker), `tests/integration/` (real Neo4j or Docling; one contract test per port, run on every implementation), `tests/e2e/` (through the API).
+
 ## Domain terms
 
 - **Organisation**: any company, holding, state body, pension fund, insurer, bank, audit firm or aggregate; its `kind` says which, and one Organisation can play several roles. Avoid: institution, entity, company (unless it is one).

@@ -2,13 +2,8 @@
 
 from typing import Protocol
 
-from bloomberg_invest.domain import (
-    DocumentDetail,
-    DocumentMeta,
-    DocumentSummary,
-    ParsedDocument,
-    RunInfo,
-)
+from bloomberg_invest.domain.model import DocumentMeta, ParsedDocument, RunInfo
+from bloomberg_invest.views import DocumentDetail, DocumentSummary
 
 
 class GraphStore(Protocol):

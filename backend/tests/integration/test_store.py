@@ -3,7 +3,7 @@
 import pytest
 from conftest import make_run
 
-from bloomberg_invest.domain import ParsedDocument, RunStatus
+from bloomberg_invest.domain.model import ParsedDocument, RunStatus
 
 SHA = "90e8b73c7f11bfde45d0c7ddb3ce506d162bac2030244d48d9ca2f641ddd4214"
 

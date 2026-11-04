@@ -1,11 +1,11 @@
 """Print the API's OpenAPI document; the frontend generates its client from it.
 
-uv run python -m bloomberg_invest.api.openapi > ../frontend/src/api/openapi.json
+uv run python -m bloomberg_invest.entrypoints.api.openapi > ../frontend/src/api/openapi.json
 """
 
 import json
 
-from bloomberg_invest.api.app import create_app
+from bloomberg_invest.entrypoints.api.app import create_app
 
 
 def main() -> None:

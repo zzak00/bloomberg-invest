@@ -15,7 +15,7 @@ Docling reports every heading at level 1, so depth comes from the heading's own 
 import re
 from dataclasses import dataclass, field
 
-from bloomberg_invest.domain import Bbox, SectionNode
+from bloomberg_invest.domain.model import Bbox, SectionNode
 
 # "1.1 Titre", "2.2.1. Titre" or "4. TITRE"; a bare number without its dot ("2025 Rapport") is text.
 NUMBERED = re.compile(r"^(\d+(?:\.\d+)+\.?|\d+\.)\s+\S")
