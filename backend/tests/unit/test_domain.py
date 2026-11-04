@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from bloomberg_invest.domain import PageInfo, ParsedDocument, SectionNode
+from bloomberg_invest.domain.model import PageInfo, ParsedDocument, SectionNode
 
 
 def test_a_section_must_sit_on_a_parsed_page():

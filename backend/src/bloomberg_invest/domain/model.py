@@ -1,4 +1,4 @@
-"""Domain models shared by the parser, the store, the CLI and the API.
+"""Write models and the rules they enforce: what a parse produces and what ingest records.
 
 Terms follow AGENTS.md. Boxes are in PDF points with a top-left origin: (left, top, right, bottom).
 """
@@ -90,34 +90,3 @@ class RunInfo(BaseModel):
     error: str | None = None
     # The tool's own full output, relative to the data directory, for later steps to reuse.
     output: str | None = None
-
-
-class Section(BaseModel):
-    id: str
-    title: str
-    level: int
-    page: int
-    bbox: Bbox | None
-    children: list["Section"] = []
-
-
-class Run(RunInfo):
-    id: str
-
-
-class DocumentSummary(BaseModel):
-    id: str
-    issuer: Organisation
-    doc_type: DocType
-    fiscal_year: int
-    regulator: str
-    source_url: str | None
-    page_count: int
-    ingested_at: datetime
-
-
-class DocumentDetail(DocumentSummary):
-    sha256: str
-    pages: list[PageInfo]
-    sections: list[Section]
-    run: Run

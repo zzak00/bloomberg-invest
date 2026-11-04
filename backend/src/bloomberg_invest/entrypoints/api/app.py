@@ -1,4 +1,4 @@
-"""The HTTP API. Run with `uvicorn bloomberg_invest.api.app:app`."""
+"""The HTTP API. Run with `uvicorn bloomberg_invest.entrypoints.api.app:app`."""
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -8,11 +8,11 @@ from fastapi import FastAPI, HTTPException, Path
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from bloomberg_invest.domain import DocumentDetail, DocumentSummary
-from bloomberg_invest.files import DocumentFiles
+from bloomberg_invest import bootstrap
+from bloomberg_invest.adapters.files import DocumentFiles
+from bloomberg_invest.adapters.store import GraphStore
 from bloomberg_invest.settings import Settings
-from bloomberg_invest.store import GraphStore
-from bloomberg_invest.store.neo4j_store import Neo4jStore
+from bloomberg_invest.views import DocumentDetail, DocumentSummary
 
 
 class NotFound(BaseModel):
@@ -33,11 +33,8 @@ def create_app(store: GraphStore | None = None, files: DocumentFiles | None = No
         if injected:
             yield
             return
-        settings = Settings.from_env()
-        with settings.driver() as driver:
-            app.state.store = Neo4jStore(driver)
-            app.state.store.ensure_schema()
-            app.state.files = DocumentFiles(settings.data_dir)
+        with bootstrap.connect(Settings.from_env()) as deps:
+            app.state.store, app.state.files = deps.store, deps.files
             yield
 
     app = FastAPI(

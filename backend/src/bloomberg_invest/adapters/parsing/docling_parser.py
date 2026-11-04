@@ -15,13 +15,14 @@ from docling.datamodel.pipeline_options import (
 from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling_core.types.doc import DocItemLabel
 
-from bloomberg_invest.domain import PageInfo, ParsedDocument
-from bloomberg_invest.parsing.outline import Heading, build_outline
+from bloomberg_invest.adapters.parsing import Parser
+from bloomberg_invest.adapters.parsing.outline import Heading, build_outline
+from bloomberg_invest.domain.model import PageInfo, ParsedDocument
 
 HEADINGS = {DocItemLabel.TITLE, DocItemLabel.SECTION_HEADER}
 
 
-class DoclingParser:
+class DoclingParser(Parser):
     tool = "docling"
 
     def __init__(self) -> None:

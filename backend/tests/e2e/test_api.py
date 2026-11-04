@@ -9,8 +9,8 @@ from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator
 from starlette.routing import Match
 
-from bloomberg_invest.api.app import create_app
-from bloomberg_invest.files import DocumentFiles
+from bloomberg_invest.adapters.files import DocumentFiles
+from bloomberg_invest.entrypoints.api.app import create_app
 
 PDF = FIXTURES / "filing.pdf"
 SHA = hashlib.sha256(PDF.read_bytes()).hexdigest()
