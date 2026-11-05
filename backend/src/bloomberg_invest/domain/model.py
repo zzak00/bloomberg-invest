@@ -72,6 +72,13 @@ def section_not_on_parsed_page(title: str, page: int) -> str:
     return f"section {title!r} is on page {page}, not parsed"
 
 
+class RunStep(StrEnum):
+    """The processing steps a Run records (AGENTS.md); later steps add theirs."""
+
+    parse = "parse"
+    chunk = "chunk"
+
+
 class RunStatus(StrEnum):
     succeeded = "succeeded"
     failed = "failed"
@@ -80,7 +87,7 @@ class RunStatus(StrEnum):
 class RunInfo(BaseModel):
     """One execution of a processing step (ADR 0002)."""
 
-    step: str
+    step: RunStep
     tool: str
     tool_version: str
     config: dict[str, str]
