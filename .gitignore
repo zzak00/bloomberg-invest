@@ -7,7 +7,8 @@ __pycache__/
 node_modules/
 frontend/dist/
 *.tsbuildinfo
+.ipynb_checkpoints/
 # Filings, stored PDFs, parse outputs and rendered pages: AMMC documents are not redistributed.
-data/
+/data
 # Screenshots and logs from verify-bloomberg-invest runs.
 verify-evidence/

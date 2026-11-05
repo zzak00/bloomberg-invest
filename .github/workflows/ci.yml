@@ -19,6 +19,15 @@ jobs:
           args: "check ."
       - name: Check Python formatting
         run: ruff format --check .
+      - name: Notebooks carry no outputs (AMMC content is not redistributed)
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, sys
+          dirty = [str(p) for p in pathlib.Path(".").rglob("*.ipynb")
+                   if any(c.get("outputs") or c.get("execution_count")
+                          for c in json.loads(p.read_text())["cells"])]
+          sys.exit(f"strip outputs from: {dirty}" if dirty else 0)
+          PY
 
   backend:
     name: Backend tests

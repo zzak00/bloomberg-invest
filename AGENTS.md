@@ -6,7 +6,7 @@ Product decisions live in the map issue (#1) and its closed tickets; one-way dec
 
 The golden set in `golden/<document>/` is the ground truth for parser, extractor and answer tests: `golden.md` holds entities, facts and test questions, `figures.csv` the expected figures. The source PDFs are not committed; each `golden.md` gives the AMMC link and SHA256.
 
-Run, test and develop: see `README.md`. To prove a change in the running app, follow `.claude/skills/verify-bloomberg-invest/SKILL.md`.
+Run, test and develop: see `README.md`. To prove a change in the running app, follow `.claude/skills/verify-bloomberg-invest/SKILL.md`. Prototype a new pipeline step in `backend/notebooks/pipeline.ipynb` first, then move it into `bloomberg_invest`; commit notebooks without outputs.
 
 ## Backend layout
 

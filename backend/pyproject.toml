@@ -21,6 +21,17 @@ ingest = ["docling==2.145.0", "tiktoken>=0.12", "torch", "torchvision"]
 bloomberg = "bloomberg_invest.entrypoints.cli:main"
 
 [dependency-groups]
+# Only for notebooks/: `uv run --extra ingest --group notebook jupyter lab`.
+notebook = [
+    "ipykernel>=6.29",
+    "jupyterlab>=4.4",
+    "matplotlib>=3.10",
+    "nbconvert>=7.16",
+    "nbstripout>=0.8",
+    "pandas>=2.3",
+    "sentence-transformers>=5.1",
+    "transformers>=4.51",
+]
 dev = [
     "httpx2>=2.16",
     "jsonschema>=4.25",
