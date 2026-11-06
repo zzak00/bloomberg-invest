@@ -3,6 +3,7 @@
 Needs the `ingest` extra. Only the ingest CLI imports this module.
 """
 
+import re
 from importlib.metadata import version
 from pathlib import Path
 
@@ -13,13 +14,23 @@ from docling.datamodel.pipeline_options import (
     TableStructureOptions,
 )
 from docling.document_converter import DocumentConverter, PdfFormatOption
-from docling_core.types.doc import DocItemLabel
+from docling_core.types.doc import DocItemLabel, DoclingDocument, TableItem
 
 from bloomberg_invest.adapters.parsing import Parser
 from bloomberg_invest.adapters.parsing.outline import Heading, build_outline
+from bloomberg_invest.domain.chunking import Block
 from bloomberg_invest.domain.model import PageInfo, ParsedDocument
 
 HEADINGS = {DocItemLabel.TITLE, DocItemLabel.SECTION_HEADER}
+TEXTS = {
+    DocItemLabel.TEXT,
+    DocItemLabel.PARAGRAPH,
+    DocItemLabel.LIST_ITEM,
+    DocItemLabel.CAPTION,
+    DocItemLabel.FOOTNOTE,
+}
+# "1)", "a.", "(ii)", "-" or "•" opening a paragraph: a numbered point the chunker may split at.
+NUMBERED_POINT = re.compile(r"^(\(?(\d+|[a-z]|[ivx]+)[.)]|[-•–])\s", re.IGNORECASE)
 
 
 class DoclingParser(Parser):
@@ -66,3 +77,42 @@ class DoclingParser(Parser):
         return ParsedDocument(
             pages=[pages[n] for n in sorted(pages)], sections=build_outline(headings)
         )
+
+    def read_blocks(self, output: Path) -> list[Block]:
+        document = DoclingDocument.load_from_json(output)
+        heights = {number: page.size.height for number, page in document.pages.items()}
+        blocks = []
+        for item, _ in document.iterate_items():
+            provs = getattr(item, "prov", None)
+            if not provs:
+                continue
+            boxes = tuple(
+                (p.page_no, *_ltrb(p.bbox.to_top_left_origin(page_height=heights[p.page_no])))
+                for p in provs
+            )
+            where = {"page": provs[0].page_no, "boxes": boxes, "last_page": boxes[-1][0]}
+            if isinstance(item, TableItem):
+                lines = item.export_to_markdown(doc=document).splitlines()
+                if len(lines) >= 2:
+                    blocks.append(
+                        Block(
+                            kind="table",
+                            text="",
+                            header=lines[0],
+                            rows=tuple(lines[2:]),
+                            columns=item.data.num_cols,
+                            **where,
+                        )
+                    )
+            elif item.label in HEADINGS and item.text.strip():
+                blocks.append(Block(kind="heading", text=item.text, **where))
+            elif item.label in TEXTS and item.text.strip():
+                numbered = item.label == DocItemLabel.LIST_ITEM or bool(
+                    NUMBERED_POINT.match(item.text)
+                )
+                blocks.append(Block(kind="text", text=item.text, numbered=numbered, **where))
+        return blocks
+
+
+def _ltrb(box) -> tuple[float, float, float, float]:
+    return (box.l, box.t, box.r, box.b)

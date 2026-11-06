@@ -13,6 +13,8 @@ class Settings:
     data_dir: Path
     # Which parser implementation ingests filings; see `bootstrap.PARSERS`.
     parser: str = "docling"
+    # The token cap for a section's text Chunk (#19 R2); tables are never split.
+    chunk_cap: int = 2000
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -22,4 +24,5 @@ class Settings:
             neo4j_password=os.environ["NEO4J_PASSWORD"],
             data_dir=Path(os.environ.get("DATA_DIR", "data")),
             parser=os.environ.get("PARSER", "docling"),
+            chunk_cap=int(os.environ.get("CHUNK_CAP", "2000")),
         )
