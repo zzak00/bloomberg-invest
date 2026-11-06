@@ -109,6 +109,7 @@
   .page.on-gold { color: var(--hit); }
   .snippet { color: var(--text-secondary); font-size: 13px; overflow-wrap: anywhere; }
   .snippet .section { display: block; color: var(--text-tertiary); font: 11px var(--font-mono); margin-bottom: 2px; }
+  .snippet.pre { white-space: pre-wrap; font: 12px/1.5 var(--font-mono); }
   .snippet mark { background: color-mix(in srgb, var(--gold) 30%, transparent); color: var(--text-primary); border-radius: 2px; }
   .note { color: var(--text-tertiary); font-size: 12px; margin: 16px 0 0; }
 
@@ -184,14 +185,13 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({"&": "&amp;", "<": "&lt
 const state = {tab: "questions", question: DATA.questions[0].id, method: DATA.methods.at(-1), hit: 0,
                figure: 0, filter: "missed", page: null};
 
-// Digits with French thousands separators, read as one number: "36 681" -> "36681".
-const digits = (s) => s.replace(/(\d)[\s  .](?=\d{3}\b)/g, "$1");
+// A number as written, with or without thousands separators (\s covers the no-break spaces);
+// the notebook matches numbers the same way.
+const numberPattern = (n, flags = "") => new RegExp(
+  `(?<![\\d,])(${(n.match(/\d+(?:,\d+)?%?/g) || []).join("[\\s.]?")})(?!\\d|,\\d)`, flags);
 function highlight(text, numbers) {
   let out = esc(text);
-  for (const n of numbers) {
-    const pattern = n.split("").map((ch) => ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[\\s\\u00a0\\u202f.]?");
-    out = out.replace(new RegExp(`(?<![\\d,])(${pattern})(?![\\d])`, "g"), "<mark>$1</mark>");
-  }
+  for (const n of numbers) out = out.replace(numberPattern(n, "g"), "<mark>$1</mark>");
   return out;
 }
 
@@ -251,6 +251,7 @@ function renderQuestions() {
 function renderFigures() {
   const shown = DATA.figures.map((f, i) => [f, i]).filter(([f]) =>
     state.filter === "all" || (state.filter === "missed" ? !f.on_page : f.on_page));
+  if (shown.length && !shown.some(([, i]) => i === state.figure)) { state.figure = shown[0][1]; state.hit = 0; }
   const missed = DATA.figures.filter((f) => !f.on_page).length;
   $("#list").innerHTML = `<div class="list-head">
       ${DATA.figures.length} golden figures · ${DATA.figures.length - missed} found on their page, ${missed} not
@@ -287,17 +288,16 @@ function renderFigures() {
     <ol class="hits">${f.matches.map((h, i) => { const p = DATA.paragraphs[h];
       return `<li><button class="hitrow" data-i="${i}" aria-current="${i === state.hit}">
         <span class="rank">#${i + 1}</span><span class="page on-gold">p. ${p.page}</span>
-        <span class="snippet"><span class="section">${esc(p.section)} · chunk ${p.chunk}</span>${highlight(excerpt(p.text, f.value), [f.value])}</span>
+        <span class="snippet pre"><span class="section">${esc(p.section)} · chunk ${p.chunk}</span>${highlight(excerpt(p.text, f.value), [f.value])}</span>
       </button></li>`; }).join("")}</ol>`;
   $("#detail").querySelectorAll(".hitrow").forEach((b) => b.onclick = () => { state.hit = +b.dataset.i; render(); });
 }
 function excerpt(text, value) {
-  const at = digits(text).indexOf(digits(value));
-  if (at < 0 || text.length < 500) return text.slice(0, 500);
-  // Show the table's header and the line holding the value.
+  if (text.length < 500) return text;
+  // A long table: its header row and the rows holding the value.
   const lines = text.split("\n");
-  const line = lines.find((l) => digits(l).includes(digits(value))) || "";
-  return [lines[0], "…", line].join("\n");
+  const rows = lines.filter((l) => numberPattern(value).test(l)).slice(0, 3);
+  return rows.length ? [lines[0], "…", ...rows].join("\n") : text.slice(0, 500) + "…";
 }
 
 /* Viewer */
