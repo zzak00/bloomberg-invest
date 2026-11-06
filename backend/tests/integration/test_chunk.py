@@ -47,7 +47,11 @@ def chunks(driver, document_id):
         MATCH (k)-[:IN_SECTION]->(s:Section)
         OPTIONAL MATCH (k)-[:REFERS_TO]->(note:Section)
         CALL (k) { MATCH (k)-[:ON_PAGE]->(p:Page) RETURN collect(p.number) AS pages }
-        CALL (k) { MATCH (p:Paragraph)-[:PART_OF]->(k) RETURN count(p) AS paragraphs }
+        CALL (k) {
+            MATCH (p:Paragraph)-[:PART_OF]->(k)
+            WITH p ORDER BY p.index
+            RETURN collect(p.text) AS paragraphs
+        }
         MATCH (k)-[:PRODUCED_BY]->(r:Run)
         RETURN k.index AS index, k.kind AS kind, s.title AS section, k.token_count AS tokens,
                k.text AS text,
@@ -59,7 +63,7 @@ def chunks(driver, document_id):
     return [r.data() for r in records]
 
 
-def test_ingest_chunks_the_filing_by_its_structure(ingested, driver):
+def test_ingest_chunks_the_filing_by_its_structure(ingested, driver, counter):
     result, _ = ingested
     found = chunks(driver, result.document_id)
 
@@ -70,7 +74,9 @@ def test_ingest_chunks_the_filing_by_its_structure(ingested, driver):
     ], "the table running onto page 2 is one Chunk"
     overview = [c for c in found if c["section"] == "2. VUE D'ENSEMBLE"]
     assert len(overview) > 1, "the long section splits"
-    assert all(c["tokens"] <= CAP for c in overview)
+    # A paragraph is never split, so only a lone paragraph may exceed the cap.
+    sizes = [[counter(p) for p in c["paragraphs"]] for c in overview]
+    assert all(c["tokens"] <= CAP or len(c["paragraphs"]) == 1 for c in overview), sizes
     # Docling cuts paragraphs differently per machine (#21), so check the text, not the count.
     text = " ".join(c["text"] for c in overview)
     assert all(text.count(p) == 2 for p in OVERVIEW), "no paragraph is lost"
