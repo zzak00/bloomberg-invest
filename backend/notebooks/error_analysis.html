@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pipeline error analysis</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<!--
+  The pipeline notebook's error analysis view. The notebook fills DATA and writes this page,
+  with the rendered pages, to data/notebook/error-analysis/ (gitignored: it shows the report).
+-->
+<style>
+  :root {
+    --bg: #080808;
+    --surface: #0e0e0d;
+    --surface-raised: #151514;
+    --hover: #1a1a19;
+    --rule: #1f1f1e;
+    --rule-strong: #343434;
+    --text-primary: #f1f1ed;
+    --text-secondary: #949494;
+    --text-tertiary: #82827f;
+    --signal: #ffb224;
+    --signal-ink: #1a1100;
+    --hit: #4cc38a;
+    --miss: #e5484d;
+    --gold: #ffb224;
+    --font-sans: "Hanken Grotesk", system-ui, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--text-primary);
+    font: 14px/1.45 var(--font-sans);
+    display: grid; grid-template-rows: auto 1fr; overflow: hidden;
+  }
+  header {
+    display: flex; align-items: center; gap: 24px; padding: 0 20px; height: 52px;
+    border-bottom: 1px solid var(--rule);
+  }
+  header h1 { font-size: 14px; font-weight: 600; margin: 0; letter-spacing: .02em; }
+  header .meta { color: var(--text-tertiary); font: 12px var(--font-mono); }
+  nav.tabs { display: flex; gap: 4px; margin-left: auto; }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  .tab {
+    padding: 6px 12px; border-radius: 2px; color: var(--text-secondary);
+    font: 500 12px var(--font-mono); letter-spacing: .06em; text-transform: uppercase;
+  }
+  .tab[aria-selected="true"] { color: var(--signal-ink); background: var(--signal); }
+  main { display: grid; grid-template-columns: 300px minmax(380px, 1fr) minmax(420px, 46%); min-height: 0; }
+  main > section { min-height: 0; overflow: auto; border-right: 1px solid var(--rule); }
+  main > section:last-child { border-right: 0; }
+
+  /* List */
+  .list-head {
+    position: sticky; top: 0; z-index: 1; background: var(--bg);
+    padding: 12px 16px; border-bottom: 1px solid var(--rule);
+    color: var(--text-tertiary); font: 12px var(--font-mono);
+  }
+  .list-head input, .list-head select {
+    width: 100%; margin-top: 8px; padding: 6px 8px; border-radius: 2px;
+    background: var(--surface); color: var(--text-primary);
+    border: 1px solid var(--rule-strong); font: 12px var(--font-mono);
+  }
+  .item {
+    display: block; width: 100%; text-align: left; padding: 10px 16px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .item:hover { background: var(--hover); }
+  .item[aria-current="true"] { background: var(--surface-raised); box-shadow: inset 2px 0 var(--signal); }
+  .item .id { font: 500 12px var(--font-mono); color: var(--text-secondary); }
+  .item .text { display: block; margin: 2px 0 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dots { display: flex; gap: 4px; }
+  .dot {
+    font: 10px var(--font-mono); padding: 1px 5px; border-radius: 2px;
+    background: var(--surface-raised); color: var(--text-tertiary);
+  }
+  .dot.hit { background: color-mix(in srgb, var(--hit) 22%, transparent); color: var(--hit); }
+  .dot.miss { background: color-mix(in srgb, var(--miss) 18%, transparent); color: var(--miss); }
+
+  /* Detail */
+  .detail { padding: 20px 24px 40px; }
+  .eyebrow { font: 12px var(--font-mono); color: var(--text-tertiary); text-transform: uppercase; letter-spacing: .06em; }
+  .detail h2 { font-size: 18px; font-weight: 600; line-height: 1.35; margin: 6px 0 16px; }
+  dl { display: grid; grid-template-columns: 96px 1fr; gap: 8px 16px; margin: 0 0 24px; }
+  dt { color: var(--text-tertiary); font: 12px var(--font-mono); padding-top: 2px; }
+  dd { margin: 0; }
+  .num { font-family: var(--font-mono); color: var(--gold); }
+  .methods { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 12px; }
+  .method {
+    padding: 4px 8px; border: 1px solid var(--rule-strong); border-radius: 2px;
+    font: 12px var(--font-mono); color: var(--text-secondary);
+  }
+  .method[aria-pressed="true"] { border-color: var(--signal); color: var(--text-primary); }
+  .method .verdict { margin-left: 6px; }
+  .verdict.hit { color: var(--hit); }
+  .verdict.miss { color: var(--miss); }
+  ol.hits { list-style: none; padding: 0; margin: 0; }
+  .hitrow {
+    display: grid; grid-template-columns: 28px 52px 1fr; gap: 8px; width: 100%; text-align: left;
+    padding: 10px 8px; border-top: 1px solid var(--rule);
+  }
+  .hitrow:hover { background: var(--hover); }
+  .hitrow[aria-current="true"] { background: var(--surface-raised); }
+  .rank { font: 500 12px var(--font-mono); color: var(--text-tertiary); }
+  .page { font: 12px var(--font-mono); }
+  .page.on-gold { color: var(--hit); }
+  .snippet { color: var(--text-secondary); font-size: 13px; overflow-wrap: anywhere; }
+  .snippet .section { display: block; color: var(--text-tertiary); font: 11px var(--font-mono); margin-bottom: 2px; }
+  .snippet mark { background: color-mix(in srgb, var(--gold) 30%, transparent); color: var(--text-primary); border-radius: 2px; }
+  .note { color: var(--text-tertiary); font-size: 12px; margin: 16px 0 0; }
+
+  /* Figures table */
+  table.figures { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.figures th {
+    text-align: left; font: 500 11px var(--font-mono); color: var(--text-tertiary); text-transform: uppercase;
+    letter-spacing: .06em; padding: 8px; border-bottom: 1px solid var(--rule-strong);
+    position: sticky; top: 0; background: var(--bg);
+  }
+  table.figures td { padding: 6px 8px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  table.figures tr { cursor: pointer; }
+  table.figures tr:hover td { background: var(--hover); }
+  table.figures tr[aria-current="true"] td { background: var(--surface-raised); }
+  td.mono { font-family: var(--font-mono); white-space: nowrap; }
+
+  /* Page viewer */
+  .viewer { display: flex; flex-direction: column; min-height: 0; overflow: hidden !important; }
+  .viewer-bar {
+    display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--rule);
+    font: 12px var(--font-mono); color: var(--text-secondary);
+  }
+  .viewer-bar .pages { display: flex; flex-wrap: wrap; gap: 4px; }
+  .viewer-bar button {
+    padding: 3px 7px; border: 1px solid var(--rule-strong); border-radius: 2px; font: 12px var(--font-mono);
+  }
+  .viewer-bar button.gold { border-color: var(--gold); color: var(--gold); }
+  .viewer-bar button[aria-pressed="true"] { background: var(--signal); color: var(--signal-ink); border-color: var(--signal); }
+  .legend { margin-left: auto; display: flex; gap: 12px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; margin-right: 4px; vertical-align: -1px; border: 2px solid; }
+  .canvas { flex: 1; overflow: auto; padding: 16px; }
+  .sheet { position: relative; margin: 0 auto; max-width: 820px; box-shadow: 0 0 0 1px var(--rule-strong); }
+  .sheet img { display: block; width: 100%; height: auto; }
+  .box { position: absolute; border: 2px solid var(--signal); border-radius: 1px; pointer-events: none; }
+  .box.gold { border-color: var(--hit); border-style: dashed; }
+  .box.current { background: color-mix(in srgb, var(--signal) 14%, transparent); }
+  .box .tag {
+    position: absolute; left: 100%; top: -2px; margin-left: 4px; padding: 0 4px; border-radius: 2px;
+    background: var(--signal); color: var(--signal-ink); font: 500 10px/16px var(--font-mono); white-space: nowrap;
+  }
+  .empty { color: var(--text-tertiary); padding: 40px 24px; }
+
+  @media (max-width: 1100px) {
+    body { overflow: auto; }
+    main { grid-template-columns: 1fr; }
+    main > section { border-right: 0; border-bottom: 1px solid var(--rule); max-height: none; overflow: visible; }
+    .viewer { overflow: visible !important; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Pipeline error analysis</h1>
+  <span class="meta" id="meta"></span>
+  <nav class="tabs" role="tablist">
+    <button class="tab" role="tab" data-tab="questions" aria-selected="true">Questions</button>
+    <button class="tab" role="tab" data-tab="figures" aria-selected="false">Figures</button>
+  </nav>
+</header>
+<main>
+  <section id="list"></section>
+  <section id="detail" class="detail"></section>
+  <section class="viewer">
+    <div class="viewer-bar" id="viewer-bar"></div>
+    <div class="canvas"><div class="sheet" id="sheet"></div></div>
+  </section>
+</main>
+<script>
+const DATA = /*DATA*/null;
+
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"})[c]);
+const state = {tab: "questions", question: DATA.questions[0].id, method: DATA.methods.at(-1), hit: 0,
+               figure: 0, filter: "missed", page: null};
+
+// Digits with French thousands separators, read as one number: "36 681" -> "36681".
+const digits = (s) => s.replace(/(\d)[\s  .](?=\d{3}\b)/g, "$1");
+function highlight(text, numbers) {
+  let out = esc(text);
+  for (const n of numbers) {
+    const pattern = n.split("").map((ch) => ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[\\s\\u00a0\\u202f.]?");
+    out = out.replace(new RegExp(`(?<![\\d,])(${pattern})(?![\\d])`, "g"), "<mark>$1</mark>");
+  }
+  return out;
+}
+
+function render() {
+  document.querySelectorAll(".tab").forEach((t) => t.setAttribute("aria-selected", t.dataset.tab === state.tab));
+  state.tab === "questions" ? renderQuestions() : renderFigures();
+  renderViewer();
+}
+
+/* Questions */
+function verdict(q, m) {
+  if (!q.pages.length) return {cls: "", label: "n/a"};
+  return q.results[m].hit ? {cls: "hit", label: "hit"} : {cls: "miss", label: "miss"};
+}
+function renderQuestions() {
+  $("#list").innerHTML = `<div class="list-head">${DATA.questions.length} questions · hit = a top-5 Paragraph on a cited page</div>` +
+    DATA.questions.map((q) => `
+      <button class="item" data-q="${q.id}" aria-current="${q.id === state.question}">
+        <span class="id">${q.id} · ${esc(q.type)}</span>
+        <span class="text">${esc(q.question)}</span>
+        <span class="dots">${DATA.methods.map((m) => { const v = verdict(q, m);
+          return `<span class="dot ${v.cls}" title="${esc(m)}: ${v.label}">${esc(DATA.short[m])}</span>`; }).join("")}</span>
+      </button>`).join("");
+  $("#list").querySelectorAll(".item").forEach((b) => b.onclick = () => {
+    state.question = b.dataset.q; state.hit = 0; state.page = null; render(); });
+
+  const q = DATA.questions.find((x) => x.id === state.question);
+  const r = q.results[state.method];
+  $("#detail").innerHTML = `
+    <div class="eyebrow">${q.id} · ${esc(q.type)}</div>
+    <h2>${esc(q.question)}</h2>
+    <dl>
+      <dt>Expected</dt><dd>${highlight(q.expected, q.numbers)}</dd>
+      <dt>Citation</dt><dd>${esc(q.citation)}</dd>
+      <dt>Numbers</dt><dd>${q.numbers.length ? q.numbers.map((n) => `<span class="num">${esc(n)}</span>`).join(", ") : "—"}</dd>
+      <dt>Answer text</dt><dd>${q.numbers.length ? (r.numbers_found.length
+        ? `top 5 contain ${r.numbers_found.map((n) => `<span class="num">${esc(n)}</span>`).join(", ")}`
+        : "no expected number in the top 5") : "—"}</dd>
+    </dl>
+    <div class="methods">${DATA.methods.map((m) => { const v = verdict(q, m);
+      return `<button class="method" data-m="${esc(m)}" aria-pressed="${m === state.method}">${esc(m)}<span class="verdict ${v.cls}">${v.label}</span></button>`; }).join("")}</div>
+    <ol class="hits">${r.top.map((h, i) => {
+      const p = DATA.paragraphs[h];
+      return `<li><button class="hitrow" data-i="${i}" aria-current="${i === state.hit}">
+        <span class="rank">#${i + 1}</span>
+        <span class="page ${q.pages.includes(p.page) ? "on-gold" : ""}">p. ${p.page}</span>
+        <span class="snippet"><span class="section">${esc(p.section)} · chunk ${p.chunk}</span>${highlight(p.text.slice(0, 420), q.numbers)}${p.text.length > 420 ? "…" : ""}</span>
+      </button></li>`; }).join("")}</ol>
+    ${!q.pages.length ? `<p class="note">Not answerable from this document: these are what search returns anyway.</p>` : ""}`;
+  $("#detail").querySelectorAll(".method").forEach((b) => b.onclick = () => {
+    state.method = b.dataset.m; state.hit = 0; state.page = null; render(); });
+  $("#detail").querySelectorAll(".hitrow").forEach((b) => b.onclick = () => {
+    state.hit = +b.dataset.i; state.page = null; render(); });
+}
+
+/* Figures */
+function renderFigures() {
+  const shown = DATA.figures.map((f, i) => [f, i]).filter(([f]) =>
+    state.filter === "all" || (state.filter === "missed" ? !f.on_page : f.on_page));
+  const missed = DATA.figures.filter((f) => !f.on_page).length;
+  $("#list").innerHTML = `<div class="list-head">
+      ${DATA.figures.length} golden figures · ${DATA.figures.length - missed} found on their page, ${missed} not
+      <select id="filter">
+        <option value="missed" ${state.filter === "missed" ? "selected" : ""}>Not found on their page (${missed})</option>
+        <option value="found" ${state.filter === "found" ? "selected" : ""}>Found (${DATA.figures.length - missed})</option>
+        <option value="all" ${state.filter === "all" ? "selected" : ""}>All (${DATA.figures.length})</option>
+      </select></div>` +
+    shown.map(([f, i]) => `
+      <button class="item" data-f="${i}" aria-current="${i === state.figure}">
+        <span class="id">p. ${f.page} · ${esc(f.period)} · ${esc(f.scope)}</span>
+        <span class="text">${esc(f.label)}</span>
+        <span class="dots"><span class="dot ${f.on_page ? "hit" : "miss"}">${f.on_page ? "on page" : "not on page"}</span>
+          <span class="num">${esc(f.value)}</span></span>
+      </button>`).join("");
+  $("#filter").onchange = (e) => { state.filter = e.target.value; render(); };
+  $("#list").querySelectorAll(".item").forEach((b) => b.onclick = () => {
+    state.figure = +b.dataset.f; state.page = null; render(); });
+
+  const f = DATA.figures[state.figure];
+  $("#detail").innerHTML = `
+    <div class="eyebrow">figure · ${esc(f.scope)} · ${esc(f.standard)}</div>
+    <h2>${esc(f.label)} <span class="num">${esc(f.value)}</span></h2>
+    <dl>
+      <dt>Line item</dt><dd>${esc(f.line_item)}</dd>
+      <dt>Period</dt><dd>${esc(f.period)}</dd>
+      <dt>Unit</dt><dd>${esc(f.unit)}</dd>
+      <dt>Where</dt><dd>p. ${f.page} · ${esc(f.table)}<br>row ${esc(f.row)} · column ${esc(f.column)}</dd>
+      <dt>Parsed</dt><dd>${f.on_page ? `in ${f.matches.length} Paragraph${f.matches.length > 1 ? "s" : ""} on p. ${f.page}`
+        : f.elsewhere.length ? `not on p. ${f.page}; the number appears on p. ${[...new Set(f.elsewhere.map((i) => DATA.paragraphs[i].page))].join(", ")}`
+        : "nowhere in the parsed text"}</dd>
+      ${f.notes ? `<dt>Notes</dt><dd>${esc(f.notes)}</dd>` : ""}
+    </dl>
+    <ol class="hits">${f.matches.map((h, i) => { const p = DATA.paragraphs[h];
+      return `<li><button class="hitrow" data-i="${i}" aria-current="${i === state.hit}">
+        <span class="rank">#${i + 1}</span><span class="page on-gold">p. ${p.page}</span>
+        <span class="snippet"><span class="section">${esc(p.section)} · chunk ${p.chunk}</span>${highlight(excerpt(p.text, f.value), [f.value])}</span>
+      </button></li>`; }).join("")}</ol>`;
+  $("#detail").querySelectorAll(".hitrow").forEach((b) => b.onclick = () => { state.hit = +b.dataset.i; render(); });
+}
+function excerpt(text, value) {
+  const at = digits(text).indexOf(digits(value));
+  if (at < 0 || text.length < 500) return text.slice(0, 500);
+  // Show the table's header and the line holding the value.
+  const lines = text.split("\n");
+  const line = lines.find((l) => digits(l).includes(digits(value))) || "";
+  return [lines[0], "…", line].join("\n");
+}
+
+/* Viewer */
+function current() {
+  if (state.tab === "questions") {
+    const q = DATA.questions.find((x) => x.id === state.question);
+    const top = q.results[state.method].top;
+    return {gold: q.pages, boxes: top.map((h, i) => ({p: DATA.paragraphs[h], tag: `#${i + 1}`, current: i === state.hit})),
+            focus: DATA.paragraphs[top[state.hit]]?.page ?? q.pages[0]};
+  }
+  const f = DATA.figures[state.figure];
+  return {gold: [f.page], boxes: f.matches.map((h, i) => ({p: DATA.paragraphs[h], tag: `#${i + 1}`, current: i === state.hit})),
+          focus: f.page};
+}
+function renderViewer() {
+  const c = current();
+  const page = state.page ?? c.focus;
+  const pages = [...new Set([...c.gold, ...c.boxes.map((b) => b.p.page)])].sort((a, b) => a - b);
+  $("#viewer-bar").innerHTML = `<span>Page</span><span class="pages">${pages.map((n) =>
+      `<button class="${c.gold.includes(n) ? "gold" : ""}" data-p="${n}" aria-pressed="${n === page}">${n}</button>`).join("")}</span>
+    <span class="legend"><span><i style="border-color:var(--hit);border-style:dashed"></i>cited page</span>
+    <span><i style="border-color:var(--signal)"></i>result</span></span>`;
+  $("#viewer-bar").querySelectorAll("button").forEach((b) => b.onclick = () => { state.page = +b.dataset.p; renderViewer(); });
+
+  const size = DATA.pages[page];
+  if (!size) { $("#sheet").innerHTML = `<div class="empty">No page.</div>`; return; }
+  const pct = (v, total) => `${(100 * v / total).toFixed(3)}%`;
+  const boxes = c.boxes.flatMap((b) => b.p.boxes.filter((x) => x[0] === page).map((x, k) =>
+    `<div class="box ${b.current ? "current" : ""}" style="left:${pct(x[1], size[0])};top:${pct(x[2], size[1])};width:${pct(x[3] - x[1], size[0])};height:${pct(x[4] - x[2], size[1])}">${k === 0 ? `<span class="tag">${b.tag}</span>` : ""}</div>`));
+  const goldFrame = c.gold.includes(page) ? `<div class="box gold" style="inset:0"></div>` : "";
+  $("#sheet").innerHTML = `<img alt="Page ${page}" src="pages/${page}.jpg">${goldFrame}${boxes.join("")}`;
+  const target = $("#sheet .box.current");
+  if (target) target.scrollIntoView({block: "center"});
+}
+
+document.querySelectorAll(".tab").forEach((t) => t.onclick = () => {
+  state.tab = t.dataset.tab; state.hit = 0; state.page = null; render(); });
+$("#meta").textContent = DATA.meta;
+render();
+</script>
+</body>
+</html>
