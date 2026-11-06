@@ -37,7 +37,7 @@ Tests: `tests/unit/` (no Docker), `tests/integration/` (real Neo4j or Docling; o
 - **Screening**: a company's Sharia compliance status for one period, computed from KPI values under a standard and rule version. Avoid: rating.
 - **Price**: a daily close for one security from the market data source, with date, currency, source and fetch time. A market data record, not a Fact; market cap is computed from it. Avoid: quote.
 - **Chunk**: a retrieval unit inside one section; paragraphs are never split and a table is always one whole Chunk. Avoid: fragment, page.
-- **Paragraph**: the search unit inside a Chunk: one text paragraph, or one whole table as Markdown. Avoid: passage (a Passage is what a Fact cites).
+- **Paragraph**: the search unit inside a Chunk: one heading, one text paragraph, or one whole table as Markdown. Avoid: passage (a Passage is what a Fact cites).
 - **Passage**: the exact span a Fact cites: a table cell, a text range or an image region. Avoid: chunk, source.
 - **Run**: one execution of a processing step (parse, chunk, embed, extract, link, compute, answer), with its tool, model and configuration versions. Avoid: job, task.
 - **Review**: a person's check of a Fact or figure: accepted or corrected. Avoid: validation, approval.

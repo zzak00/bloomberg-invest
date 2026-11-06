@@ -5,9 +5,12 @@
 - A section's paragraphs form one Chunk while they fit the token cap.
 - A longer section splits at its numbered points first, otherwise evenly between paragraphs.
 - A paragraph is never split, even when it alone is over the cap.
+- A heading starts the Chunk of the content after it, so no text is lost when Docling takes a
+  sentence for a heading; a heading with no content of its own joins the next Chunk.
 
 Sections come from the parse; a heading that matches no Section (a chapter heading repeated on
-its divider page) keeps the current one, and text before the first heading joins the first.
+its divider page) keeps the current one, and text before the first heading joins the first. A
+heading that only repeats the current Section's title, as after a page break, is dropped.
 """
 
 import math
@@ -28,7 +31,8 @@ NOTE_TITLE = re.compile(r"^NOTE\s+(\d+)\b", re.IGNORECASE)
 
 @dataclass(frozen=True)
 class Block:
-    """One item of the document in reading order: a heading, a text paragraph or a table."""
+    """One item of the document in reading order: a heading, a text paragraph or a table. Inside
+    a Chunk, each is one Paragraph."""
 
     kind: Literal["heading", "text", "table"]
     text: str
@@ -70,19 +74,31 @@ def chunk(
     """The document's Chunks in reading order."""
     groups: list[tuple[int, Literal["text", "table"], str | None, list[Block]]] = []
     for section_id, items in _by_section(_join_tables(blocks), sections):
-        paragraphs = [(at, b) for at, b in items if b.kind == "text"]
-        for part in _split([b for _, b in paragraphs], cap, count):
-            first = next(at for at, b in paragraphs if b is part[0])
-            groups.append((first, "text", section_id, part))
+        texts: list[tuple[int, Block]] = []
+        tables: list[list[tuple[int, Block]]] = []
+        headings: list[tuple[int, Block]] = []
         for at, b in items:
-            if b.kind == "table":
-                groups.append((at, "table", section_id, [replace(b, text=_markdown(b))]))
+            if b.kind == "heading":
+                headings.append((at, b))
+            elif b.kind == "text":
+                texts += [*headings, (at, b)]
+                headings = []
+            else:
+                tables.append([*headings, (at, replace(b, text=_markdown(b)))])
+                headings = []
+        texts += headings  # the document's last headings, with nothing after them
+        for part in _split([b for _, b in texts], cap, count):
+            first = next(at for at, b in texts if b is part[0])
+            groups.append((first, "text", section_id, part))
+        for table in tables:
+            groups.append((table[0][0], "table", section_id, [b for _, b in table]))
 
     notes = _note_sections(sections)
     chunks = []
     for index, (_, kind, section_id, part) in enumerate(sorted(groups, key=lambda g: g[0])):
         text = "\n\n".join(b.text for b in part)
-        cited = (notes.get(int(n)) for n in NOTE_REFERENCE.findall(text))
+        body = "\n\n".join(b.text for b in part if b.kind != "heading")
+        cited = (notes.get(int(n)) for n in NOTE_REFERENCE.findall(body))
         refers_to = tuple(dict.fromkeys(s for s in cited if s and s != section_id))
         chunks.append(
             ChunkDraft(
@@ -126,21 +142,30 @@ def _join_tables(blocks: Sequence[Block]) -> list[Block]:
 def _by_section(
     blocks: Sequence[Block], sections: Sequence[SectionRef]
 ) -> list[tuple[str | None, list[tuple[int, Block]]]]:
-    """Content blocks grouped under their Section, each with its position in reading order."""
+    """Blocks grouped under their Section, each with its position in reading order. Headings go
+    with the content after them, in that content's Section."""
     unmatched: dict[tuple[str, int], deque[str]] = defaultdict(deque)
     for s in sections:
         unmatched[(_normal(s.title), s.page)].append(s.id)
+    titles = {s.id: _normal(s.title) for s in sections}
     first = sections[0].id if sections else None
 
     grouped: dict[str | None, list[tuple[int, Block]]] = {}
     current = first
+    headings: list[tuple[int, Block]] = []
     for at, block in enumerate(blocks):
         if block.kind == "heading":
             ids = unmatched.get((_normal(block.text), block.page))
             if ids:
                 current = ids.popleft()
+            elif _normal(block.text) == titles.get(current):
+                continue
+            headings.append((at, block))
             continue
-        grouped.setdefault(current, []).append((at, block))
+        grouped.setdefault(current, []).extend([*headings, (at, block)])
+        headings = []
+    if headings:
+        grouped.setdefault(current, []).extend(headings)
     return list(grouped.items())
 
 
@@ -149,7 +174,7 @@ def _split(paragraphs: list[Block], cap: int, count: TokenCount) -> list[list[Bl
         return []
     if _size(paragraphs, count) <= cap:
         return [paragraphs]
-    starts = [i for i, p in enumerate(paragraphs) if p.numbered and i > 0]
+    starts = [i for i, p in enumerate(paragraphs) if (p.numbered or p.kind == "heading") and i > 0]
     if not starts:
         return _even(paragraphs, cap, count)
     segments = [paragraphs[a:b] for a, b in zip([0, *starts], [*starts, len(paragraphs)])]
