@@ -50,12 +50,12 @@ npm run typecheck && npm run lint && npm run build
 
 ### The pipeline notebook
 
-`backend/notebooks/pipeline.ipynb` runs each pipeline step on the golden filing with the app's own functions and shows the results: the outline on the page, blocks, chunks, embeddings and search against the golden questions. New steps are tried there before they move into `bloomberg_invest`.
+`backend/notebooks/pipeline.ipynb` runs each pipeline step on the golden filing with the app's own functions and shows the results. It starts from the app's own parse, so start the stack and ingest the golden PDF first. It shows the outline on the page, blocks, chunks, embeddings and search against the golden questions. New steps are tried there before they move into `bloomberg_invest`.
 
 ```bash
 cd backend
 uv run --group notebook nbstripout --install --attributes ../.gitattributes   # once per clone
-uv run --extra ingest --group notebook jupyter lab notebooks/pipeline.ipynb
+uv run --env-file ../.env --extra ingest --group notebook jupyter lab notebooks/pipeline.ipynb
 ```
 
 Outputs are stripped on commit, and CI rejects a notebook with outputs: they show pages of the AMMC report.
