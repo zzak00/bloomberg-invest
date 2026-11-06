@@ -28,6 +28,8 @@ TEXTS = {
     DocItemLabel.LIST_ITEM,
     DocItemLabel.CAPTION,
     DocItemLabel.FOOTNOTE,
+    # Docling can take a page of prose for code (golden p. 16); its text still belongs in Chunks.
+    DocItemLabel.CODE,
 }
 # "1)", "a.", "(ii)", "-" or "•" opening a paragraph: a numbered point the chunker may split at.
 NUMBERED_POINT = re.compile(r"^(\(?(\d+|[a-z]|[ivx]+)[.)]|[-•–])\s", re.IGNORECASE)
