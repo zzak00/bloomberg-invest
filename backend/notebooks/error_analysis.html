@@ -67,7 +67,7 @@
   .brand h1 { font-size: 15px; font-weight: 600; white-space: nowrap; }
   .brand p { font-size: 13px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .tabs { display: flex; gap: 4px; margin-left: auto; }
-  .tab { height: 32px; padding: 0 12px; border-radius: 8px; color: var(--ink-2); font-weight: 500; display: inline-flex; align-items: center; gap: 8px; }
+  .tab { white-space: nowrap; height: 32px; padding: 0 12px; border-radius: 8px; color: var(--ink-2); font-weight: 500; display: inline-flex; align-items: center; gap: 8px; }
   .tab:hover { color: var(--ink); background: var(--raised); }
   .tab[aria-selected="true"] { color: var(--ink); background: var(--raised); }
   .tab .mono { color: var(--ink-3); }
@@ -98,6 +98,10 @@
   .row { display: block; width: 100%; padding: 12px 16px; border-bottom: 1px solid var(--line); }
   .row:hover { background: var(--bg); }
   .row[aria-current="true"] { background: var(--raised); box-shadow: inset 2px 0 var(--ink); }
+  .group-label { padding: 16px 16px 8px; font-size: 12px; color: var(--ink-3); border-bottom: 1px solid var(--line); }
+  .row .title.wrap { white-space: normal; }
+  .head-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 24px 0 12px; }
+  .head-row .section-title { margin: 0; }
   .row .title { display: block; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .row .sub { display: flex; align-items: baseline; gap: 4px 12px; margin-top: 4px; flex-wrap: wrap; font-size: 13px; color: var(--ink-2); }
   .row .notes { display: grid; gap: 4px; margin-top: 8px; font-size: 13px; color: var(--ink-2); }
@@ -130,14 +134,24 @@
   .dot.good { background: var(--green); }
   .dot.bad { background: var(--red); }
 
-  .result { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 12px; width: 100%; padding: 16px; margin-bottom: 8px; }
+  .result { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 12px; width: 100%; padding: 16px; margin-bottom: 8px; cursor: pointer; transition: border-color 150ms var(--ease); }
   .result:hover { border-color: var(--line-strong); }
   .result[aria-current="true"] { border-color: var(--ink); }
   .rank { font-family: var(--mono); font-size: 13px; color: var(--ink-3); }
   .result[aria-current="true"] .rank { color: var(--ink); }
   .result .where { display: flex; gap: 4px 12px; align-items: baseline; flex-wrap: wrap; margin-bottom: 4px; font-size: 12px; color: var(--ink-3); }
-  .result .text { display: block; color: var(--ink-2); font-size: 13px; overflow-wrap: anywhere; }
-  .text.table { white-space: pre-wrap; font: 12px/18px var(--mono); }
+  .result .text { color: var(--ink-2); font-size: 13px; overflow-wrap: anywhere; }
+  .text { display: grid; gap: 8px; }
+  .text p { white-space: pre-wrap; }
+  /* Markdown tables from the parse, drawn as tables. */
+  .table-wrap { max-width: 100%; max-height: 320px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+  .md { border-collapse: collapse; font-size: 12px; line-height: 16px; color: var(--ink-2); overflow-wrap: normal; }
+  .md th, .md td { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; min-width: 72px; max-width: 320px; }
+  .md td:first-child, .md th:first-child { min-width: 160px; }
+  .md th { position: sticky; top: 0; background: var(--raised); color: var(--ink); font-weight: 500; }
+  .md .num { text-align: right; white-space: nowrap; }
+  .md tr:last-child td { border-bottom: 0; }
+  .md tr.gap td { color: var(--ink-3); text-align: center; padding: 0 8px; }
 
   /* Page viewer */
   .page-bar { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 8px 16px; background: var(--surface); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
@@ -216,7 +230,6 @@
   .item.flagged.warn { background: var(--amber-tint); box-shadow: inset 2px 0 var(--amber); }
   .item.flagged.lost { background: var(--red-tint); box-shadow: inset 2px 0 var(--red); }
   .item .text { font-size: 13px; color: var(--ink-2); overflow-wrap: anywhere; }
-  .item .text.table { max-height: 144px; overflow: hidden; }
   .item.unused .text { color: var(--ink-3); }
   .empty { padding: 40px 24px; text-align: center; color: var(--ink-3); }
 
@@ -234,7 +247,7 @@
   @media (max-width: 640px) {
     .top { height: auto; padding: 12px 16px; flex-wrap: wrap; gap: 8px; }
     .brand p { display: none; }
-    .tabs { margin-left: -12px; }
+    .tabs { margin: 0 -16px 0 -12px; width: calc(100% + 28px); overflow-x: auto; scrollbar-width: none; }
     .overview, .pane.detail { padding: 24px 16px 48px; }
     .contact { padding: 16px 16px 16px 24px; gap: 12px 16px; grid-template-columns: repeat(auto-fill, minmax(48px, 1fr)); }
     .doc-head h2 { font-size: 22px; line-height: 28px; }
@@ -289,7 +302,48 @@ function highlight(text, numbers) {
   for (const n of numbers) out = out.replace(numberPattern(n, "g"), "<mark>$1</mark>");
   return out;
 }
-const isTable = (text) => text.trimStart().startsWith("|");
+const isTable = (text) => text.split("\n").some(isRow);
+const isRow = (line) => line.trim().startsWith("|");
+const cellsOf = (line) => line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
+const isRule = (cells) => cells.every((c) => /^:?-{3,}:?$/.test(c));
+const NUMERIC = /^[-+(]?[\d\s.,%()-]*\d[\d\s.,%()-]*$/;
+
+// A Paragraph's text with its Markdown tables drawn as tables; golden numbers highlighted.
+function renderText(text, numbers = []) {
+  const lines = text.split("\n"), out = [];
+  const inTable = (i) => isRow(lines[i]) || (lines[i].trim() === "…" && i + 1 < lines.length && isRow(lines[i + 1]));
+  for (let i = 0; i < lines.length;) {
+    const start = i;
+    if (!inTable(i)) {
+      while (i < lines.length && !inTable(i)) i++;
+      const para = lines.slice(start, i).join("\n").trim();
+      if (para) out.push(`<p>${highlight(para, numbers)}</p>`);
+      continue;
+    }
+    while (i < lines.length && inTable(i)) i++;
+    out.push(table(lines.slice(start, i), numbers));
+  }
+  return out.join("");
+}
+function table(lines, numbers) {
+  const rows = lines.map((l) => l.trim() === "…" ? null : cellsOf(l));
+  const header = rows.length > 1 && rows[1] && isRule(rows[1]);
+  const body = rows.filter((r) => !r || !isRule(r));
+  const width = Math.max(...body.filter(Boolean).map((r) => r.length));
+  // Docling often adds columns that are empty in every row.
+  const keep = [...Array(width).keys()].filter((c) => body.some((r) => r && (r[c] || "").length));
+  const cell = (tag, c) => {
+    const value = c.replace(/\.{4,}/g, " … ");
+    return `<${tag} class="${NUMERIC.test(value) ? "num" : ""}">${highlight(value, numbers)}</${tag}>`;
+  };
+  const html = body.map((r, i) => !r ? `<tr class="gap"><td colspan="${keep.length}">…</td></tr>`
+    : `<tr>${keep.map((c) => cell(header && i === 0 ? "th" : "td", r[c] || "")).join("")}</tr>`);
+  return `<div class="table-wrap"><table class="md">${header ? `<thead>${html[0]}</thead><tbody>${html.slice(1).join("")}</tbody>` : `<tbody>${html.join("")}</tbody>`}</table></div>`;
+}
+const keyClick = (root, selector, handler) => root.querySelectorAll(selector).forEach((el) => {
+  el.onclick = () => handler(el);
+  el.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handler(el); } };
+});
 
 const state = {
   tab: "overview",
@@ -448,7 +502,7 @@ function parsing(main) {
         <div class="item ${it.used ? "" : "unused"} ${it.check ? "flagged " + it.check.level : ""}" data-i="${it.i}">
           <span class="labels"><span class="kind mono"><i class="swatch" style="background:${it.kind[1]}"></i>${esc(it.label.replace("_", " "))}</span>
             ${it.check ? `<span class="mono ${it.check.level}-text">${levelWord(it.check.level)}</span>` : ""}</span>
-          <span class="text ${isTable(it.text) ? "table" : ""}">${esc(it.text) || `<span class="muted">No text</span>`}</span>
+          <div class="text">${it.text ? renderText(it.text) : `<span class="muted">No text</span>`}</div>
         </div>`).join("") || `<div class="empty">Docling found nothing on this page</div>`}</div>
     </section>
     <section class="pane page" id="viewer"></section>
@@ -508,19 +562,19 @@ function search(main) {
       <h3 class="section-title">Results by method</h3>
       <div class="methods">${DATA.methods.map((m) => `<button class="seg" data-m="${esc(m)}" aria-pressed="${m === state.method}">
         <span class="dot ${verdict(q, m)}"></span>${esc(m)}</button>`).join("")}</div>
-      ${top.map((p, i) => `<button class="card result" data-i="${i}" aria-current="${i === state.hit}">
+      ${top.map((p, i) => `<div class="card result" role="button" tabindex="0" data-i="${i}" aria-current="${i === state.hit}">
         <span class="rank">${i + 1}</span>
-        <span><span class="where"><span class="mono ${q.pages.includes(p.page) ? "good-text" : "muted"}">p. ${p.page}</span>
-          <span>${esc(clip(p.section, 70))} · chunk ${p.chunk}</span></span>
-          <span class="text ${isTable(p.text) ? "table" : ""}">${highlight(clip(p.text, 600), q.numbers)}</span></span>
-      </button>`).join("")}
+        <div><div class="where"><span class="mono ${q.pages.includes(p.page) ? "good-text" : "muted"}">p. ${p.page}</span>
+          <span>${esc(clip(p.section, 70))} · chunk ${p.chunk}</span></div>
+          <div class="text">${renderText(isTable(p.text) ? p.text : clip(p.text, 600), q.numbers)}</div></div>
+      </div>`).join("")}
       ${!q.pages.length ? `<p class="hint">This question has no answer in the document: these are what search returns anyway.</p>` : ""}
     </section>
     <section class="pane page" id="viewer"></section>
   </div>`;
   main.querySelectorAll(".row[data-q]").forEach((b) => b.onclick = () => { state.question = b.dataset.q; state.hit = 0; state.view = null; render(); });
   main.querySelectorAll(".seg").forEach((b) => b.onclick = () => { state.method = b.dataset.m; state.hit = 0; state.view = null; render(); });
-  main.querySelectorAll(".result").forEach((b) => b.onclick = () => { state.hit = +b.dataset.i; state.view = null; render(); });
+  keyClick(main, ".result", (b) => { state.hit = +b.dataset.i; state.view = null; render(); });
   renderPageViewer($("#viewer"), {
     pages: [...new Set([...q.pages, ...top.map((p) => p.page)])].sort((a, b) => a - b),
     cited: q.pages, focus: top[state.hit]?.page ?? q.pages[0],
@@ -539,11 +593,13 @@ function figures(main) {
   const f = DATA.figures[state.figure];
   const matches = f.matches.map((i) => DATA.paragraphs[i]);
   const elsewhere = [...new Set(f.elsewhere.map((i) => DATA.paragraphs[i].page))];
+  // A long table keeps its header and the rows holding the number.
   const excerpt = (text) => {
     if (text.length < 600) return text;
-    const lines = text.split("\n");
-    const rows = lines.slice(1).filter((l) => numberPattern(f.value).test(l)).slice(0, 3);
-    return rows.length ? [lines[0], "…", ...rows].join("\n") : clip(text, 600);
+    const lines = text.split("\n"), head = lines.findIndex(isRow);
+    if (head < 0) return clip(text, 600);
+    const top = head + 2, rows = lines.slice(top).filter((l) => numberPattern(f.value).test(l)).slice(0, 3);
+    return rows.length ? [...lines.slice(0, top), "…", ...rows, "…"].join("\n") : text;
   };
   main.innerHTML = `<div class="view panes">
     <aside class="pane list">
@@ -569,10 +625,10 @@ function figures(main) {
         ${f.notes ? `<dt>Notes</dt><dd class="block muted">${esc(f.notes)}</dd>` : ""}
       </dl>
       ${matches.length ? `<h3 class="section-title">Where the parse has it</h3>` : ""}
-      ${matches.map((p, i) => `<button class="card result" data-i="${i}" aria-current="${i === state.hit}">
+      ${matches.map((p, i) => `<div class="card result" role="button" tabindex="0" data-i="${i}" aria-current="${i === state.hit}">
         <span class="rank">${i + 1}</span>
-        <span><span class="where"><span>${esc(clip(p.section, 70))} · chunk ${p.chunk}</span></span>
-          <span class="text ${isTable(p.text) ? "table" : ""}">${highlight(excerpt(p.text), [f.value])}</span></span></button>`).join("")}
+        <div><div class="where"><span>${esc(clip(p.section, 70))} · chunk ${p.chunk}</span></div>
+          <div class="text">${renderText(excerpt(p.text), [f.value])}</div></div></div>`).join("")}
     </section>
     <section class="pane page" id="viewer"></section>
   </div>`;
@@ -583,7 +639,7 @@ function figures(main) {
     const again = $(".search"); again.focus(); again.setSelectionRange(again.value.length, again.value.length);
   };
   main.querySelectorAll(".row[data-i]").forEach((b) => b.onclick = () => { state.figure = +b.dataset.i; state.hit = 0; state.view = null; render(); });
-  main.querySelectorAll(".result").forEach((b) => b.onclick = () => { state.hit = +b.dataset.i; render(); });
+  keyClick(main, ".result", (b) => { state.hit = +b.dataset.i; render(); });
   renderPageViewer($("#viewer"), {
     pages: [f.page], cited: [f.page], focus: f.page,
     boxes: [
@@ -595,9 +651,60 @@ function figures(main) {
   });
 }
 
+/* Golden set: each question with its answer, citation and cited pages */
+function golden(main) {
+  const q = DATA.questions.find((x) => x.id === state.question);
+  // Parsed Paragraphs on the cited pages that hold a number from the answer.
+  const evidence = DATA.paragraphs.filter((p) => q.pages.includes(p.page) && q.numbers.some((n) => numberPattern(n).test(p.text)));
+  const groups = [...new Set(DATA.questions.map((x) => x.type.split(" (")[0]))];
+  const label = {text: "Text", figure: "Figures", graph: "Graph", "not answerable": "Not answerable"};
+  main.innerHTML = `<div class="view panes">
+    <aside class="pane list">
+      <div class="list-head"><h2>Golden questions</h2><p>Each question with its answer and citation</p></div>
+      ${groups.map((g) => `<div class="group-label">${esc(label[g] || g)}</div>
+        ${DATA.questions.filter((x) => x.type.split(" (")[0] === g).map((x) => `<button class="row" data-q="${x.id}" aria-current="${x.id === state.question}">
+          <span class="title wrap"><span class="mono muted">${x.id}</span> ${esc(x.question)}</span>
+          <span class="sub">${x.pages.length ? `<span class="mono muted">${x.pages.map((n) => `p. ${n}`).join(", ")}</span>` : `<span class="muted">No citation</span>`}</span></button>`).join("")}`).join("")}
+    </aside>
+    <section class="pane detail">
+      <p class="meta">${q.id} · ${esc(q.type)}</p>
+      <h2>${esc(q.question)}</h2>
+      <dl class="card facts">
+        <dt>Answer</dt><dd class="block">${highlight(q.expected, q.numbers)}</dd>
+        <dt>Citation</dt><dd class="block">${esc(q.citation)}</dd>
+        <dt>Cited pages</dt><dd>${q.pages.length ? q.pages.map((n) => `<button class="pg" data-view="${n}">p. ${n}</button>`).join("")
+          : `<span class="muted">None: the answer is not in this document</span>`}</dd>
+        ${q.numbers.length ? `<dt>Numbers</dt><dd>${q.numbers.map((n) => `<span class="mono">${esc(n)}</span>`).join("")}</dd>` : ""}
+      </dl>
+      ${q.pages.length ? `<div class="head-row"><h3 class="section-title">Where the parse has the answer</h3>
+        <button class="open" data-search>Search results${icon("arrow")}</button></div>
+      ${evidence.map((p, i) => `<div class="card result" role="button" tabindex="0" data-i="${i}" aria-current="${i === state.hit}">
+        <span class="rank">${i + 1}</span>
+        <div><div class="where"><span class="mono good-text">p. ${p.page}</span><span>${esc(clip(p.section, 70))} · chunk ${p.chunk}</span></div>
+          <div class="text">${renderText(isTable(p.text) ? p.text : clip(p.text, 600), q.numbers)}</div></div></div>`).join("")
+        || `<p class="hint">${q.numbers.length ? "No parsed Paragraph on the cited pages holds a number from the answer." : "The answer has no numbers to find: read the cited page."}</p>`}` : ""}
+    </section>
+    <section class="pane page" id="viewer"></section>
+  </div>`;
+  main.querySelectorAll(".row[data-q]").forEach((b) => b.onclick = () => { state.question = b.dataset.q; state.hit = 0; state.view = null; render(); });
+  main.querySelectorAll("[data-view]").forEach((b) => b.onclick = () => { state.view = +b.dataset.view; render(); });
+  main.querySelectorAll("[data-search]").forEach((b) => b.onclick = () => go("search", {question: q.id}));
+  keyClick(main, ".result", (b) => { state.hit = +b.dataset.i; state.view = null; render(); });
+  if (!q.pages.length) {
+    $("#viewer").innerHTML = `<div class="empty">No cited page: the golden set says the answer is not in this document</div>`;
+    return;
+  }
+  renderPageViewer($("#viewer"), {
+    pages: q.pages, cited: q.pages, focus: evidence[state.hit]?.page ?? q.pages[0],
+    boxes: evidence.flatMap((p, i) => p.boxes.map(([pg, l, t, r, b]) => ({page: pg, box: [l, t, r, b], color: BLUE, label: `${i + 1}`, focus: i === state.hit}))),
+    legend: `<span><i class="swatch" style="background:${BLUE}"></i>Parsed text holding an answer number</span>`,
+  });
+}
+
 /* Shell */
 const TABS = [
   ["overview", "Overview", overview, 0],
+  ["golden", "Golden set", golden, 0],
   ["parsing", "Parsing", parsing, flagged.length],
   ["search", "Search", search, 0],
   ["figures", "Figures", figures, missedFigures],
@@ -608,6 +715,14 @@ function render() {
     `<button class="tab" role="tab" data-t="${id}" aria-selected="${id === state.tab}">${name}${count ? `<span class="mono">${count}</span>` : ""}</button>`).join("");
   $("#tabs").querySelectorAll(".tab").forEach((b) => b.onclick = () => go(b.dataset.t));
   TABS.find(([id]) => id === state.tab)[2]($("#main"));
+  // Wide tables open scrolled to the first highlighted number.
+  document.querySelectorAll(".table-wrap").forEach((wrap) => {
+    const hit = $("mark", wrap);
+    if (!hit) return;
+    const box = wrap.getBoundingClientRect(), at = hit.getBoundingClientRect();
+    wrap.scrollLeft += at.left - box.left - box.width / 2;
+    wrap.scrollTop += at.top - box.top - box.height / 3;
+  });
 }
 $("#doc-title").textContent = DATA.document.title;
 render();
