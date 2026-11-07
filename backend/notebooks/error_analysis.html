@@ -3,202 +3,220 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Pipeline Inspector</title>
+<title>Error Analysis</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
 <!--
-  A small, standalone tool for error analysis on the ingest pipeline (parse, chunk, embed,
-  search). Not part of the app. The pipeline notebook fills DATA and writes this page, with the
-  rendered pages, to data/notebook/error-analysis/ (gitignored: it shows the report).
+  Error Analysis: a small, standalone tool to find where the ingest pipeline (parse, chunk,
+  embed, search) loses something on one filing, checked against its golden answers. Not part of
+  the app. The pipeline notebook fills DATA and writes this page, with the rendered pages, to
+  data/notebook/error-analysis/ (gitignored: it shows the report).
 -->
 <style>
   :root {
-    --bg: #f6f7f9;
-    --card: #ffffff;
-    --line: #e6e8ec;
-    --line-soft: #eff1f4;
-    --ink: #1d2433;
-    --ink-2: #5b6474;
-    --ink-3: #8c94a3;
-    --accent: #4f6bed;
-    --accent-soft: #eef1fe;
-    --good: #1f9d63;
-    --good-soft: #e6f6ee;
-    --bad: #d6455d;
-    --bad-soft: #fdecef;
-    --warn: #c47a12;
-    --warn-soft: #fdf3e2;
-    --num: #8a5cf6;
-    --num-soft: #f1ebfe;
-    --radius: 12px;
-    --shadow: 0 1px 2px rgba(29, 36, 51, .05), 0 1px 1px rgba(29, 36, 51, .03);
+    --bg: #fafafa;
+    --surface: #ffffff;
+    --raised: #f4f4f5;
+    --desk: #ededee;
+    --line: rgba(23, 23, 23, .08);
+    --line-strong: rgba(23, 23, 23, .16);
+    --ink: #171717;
+    --ink-2: #525252;
+    --ink-3: #737373;
+    /* The proofreader's pen: the one accent, for anything lost or wrong. */
+    --red: #c8372d;
+    --red-tint: rgba(200, 55, 45, .06);
+    --amber: #b45309;
+    --amber-tint: rgba(180, 83, 9, .06);
+    --green: #15803d;
+    --blue: #2563eb;
+    --highlight: #fbeaa0;
+    --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    --ease: cubic-bezier(.22, 1, .36, 1);
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; }
   body {
     background: var(--bg); color: var(--ink);
-    font: 14px/1.5 Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font: 14px/20px Geist, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-variant-numeric: tabular-nums;
     display: flex; flex-direction: column; overflow: hidden;
   }
-  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0; }
-  h1, h2, h3, p { margin: 0; }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0; text-align: left; }
+  button, .row, .item, .thumb { transition: color 150ms var(--ease), background-color 150ms var(--ease), border-color 150ms var(--ease); }
+  :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: 4px; }
+  h1, h2, h3, p, dl, dd { margin: 0; }
+  .mono { font-family: var(--mono); font-size: 12px; line-height: 16px; }
+  .muted { color: var(--ink-3); }
+  .icon { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* The signature: a proofreader's mark in the margin of anything flagged. */
+  .mark { border-left: 2px solid var(--line-strong); padding-left: 8px; }
+  .mark.lost { border-color: var(--red); }
+  .mark.warn { border-color: var(--amber); }
+  .lost-text { color: var(--red); }
+  .warn-text { color: var(--amber); }
+  .good-text { color: var(--green); }
 
   /* Top bar */
   .top {
-    display: flex; align-items: center; gap: 20px; padding: 12px 24px;
-    background: var(--card); border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 24px; height: 56px; padding: 0 24px; flex: none;
+    background: var(--surface); border-bottom: 1px solid var(--line);
   }
-  .brand { display: flex; align-items: center; gap: 10px; }
-  .logo {
-    width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center;
-    background: var(--accent); color: #fff; font-weight: 700; font-size: 14px;
-  }
-  .brand h1 { font-size: 15px; font-weight: 600; }
-  .brand p { font-size: 12px; color: var(--ink-3); }
-  .tabs { display: flex; gap: 4px; margin-left: auto; padding: 4px; background: var(--bg); border-radius: 10px; }
-  .tab { padding: 6px 14px; border-radius: 7px; font-weight: 500; color: var(--ink-2); }
-  .tab:hover { color: var(--ink); }
-  .tab[aria-selected="true"] { background: var(--card); color: var(--ink); box-shadow: var(--shadow); }
-  .tab .count { margin-left: 6px; padding: 0 6px; border-radius: 99px; font-size: 11px; background: var(--bad-soft); color: var(--bad); }
+  .brand { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+  .brand h1 { font-size: 15px; font-weight: 600; white-space: nowrap; }
+  .brand p { font-size: 13px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tabs { display: flex; gap: 4px; margin-left: auto; }
+  .tab { height: 32px; padding: 0 12px; border-radius: 8px; color: var(--ink-2); font-weight: 500; display: inline-flex; align-items: center; gap: 8px; }
+  .tab:hover { color: var(--ink); background: var(--raised); }
+  .tab[aria-selected="true"] { color: var(--ink); background: var(--raised); }
+  .tab .mono { color: var(--ink-3); }
 
   main { flex: 1; min-height: 0; }
   .view { height: 100%; }
 
-  /* Shared pieces */
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
-  .muted { color: var(--ink-2); }
-  .faint { color: var(--ink-3); font-size: 12px; }
-  .pill {
-    display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 99px;
-    font-size: 12px; font-weight: 500; white-space: nowrap;
-  }
-  .pill.good { background: var(--good-soft); color: var(--good); }
-  .pill.bad { background: var(--bad-soft); color: var(--bad); }
-  .pill.warn { background: var(--warn-soft); color: var(--warn); }
-  .pill.plain { background: var(--line-soft); color: var(--ink-2); }
-  .num { background: var(--num-soft); color: var(--num); border-radius: 4px; padding: 0 3px; font-weight: 500; }
-  mark { background: var(--num-soft); color: var(--num); border-radius: 3px; padding: 0 2px; font-weight: 600; }
-  .label-dot { display: inline-block; width: 8px; height: 8px; border-radius: 2px; }
-
   /* Three panes: list, detail, page */
   .panes { display: grid; grid-template-columns: 320px minmax(360px, 1fr) minmax(420px, 44%); height: 100%; }
   .pane { min-height: 0; overflow: auto; }
-  .pane.list { background: var(--card); border-right: 1px solid var(--line); }
-  .pane.detail { padding: 24px; }
-  .pane.page { border-left: 1px solid var(--line); background: #eceef2; display: flex; flex-direction: column; overflow: hidden; }
+  .pane.list { background: var(--surface); border-right: 1px solid var(--line); }
+  .pane.detail { padding: 24px 32px 48px; }
+  .pane.page { border-left: 1px solid var(--line); background: var(--desk); display: flex; flex-direction: column; overflow: hidden; }
 
-  .list-head { position: sticky; top: 0; z-index: 2; background: var(--card); padding: 16px; border-bottom: 1px solid var(--line); }
-  .list-head h2 { font-size: 13px; font-weight: 600; }
-  .list-head .faint { margin-top: 2px; }
-  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
-  .chip { padding: 4px 10px; border-radius: 99px; border: 1px solid var(--line); font-size: 12px; color: var(--ink-2); background: var(--card); }
-  .chip[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+  .list-head { position: sticky; top: 0; z-index: 2; background: var(--surface); padding: 16px; border-bottom: 1px solid var(--line); }
+  .list-head h2 { font-size: 14px; font-weight: 500; }
+  .list-head p { margin-top: 4px; font-size: 13px; color: var(--ink-3); }
+  .filters { display: inline-flex; gap: 2px; margin-top: 12px; padding: 2px; border-radius: 8px; background: var(--raised); }
+  .filter { height: 28px; padding: 0 10px; border-radius: 6px; font-size: 13px; color: var(--ink-2); display: inline-flex; align-items: center; gap: 6px; }
+  .filter:hover { color: var(--ink); }
+  .filter[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0, 0, 0, .06); }
+  .filter .mono { color: var(--ink-3); }
   .search {
-    width: 100%; margin-top: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px;
-    font: inherit; background: var(--bg);
+    display: block; width: 100%; height: 36px; margin-top: 12px; padding: 0 12px;
+    border: 1px solid var(--line-strong); border-radius: 8px; font: inherit; background: var(--surface); color: var(--ink);
   }
-  .search:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
-  .row { display: block; width: 100%; text-align: left; padding: 12px 16px; border-bottom: 1px solid var(--line-soft); }
-  .row:hover { background: #fafbfc; }
-  .row[aria-current="true"] { background: var(--accent-soft); box-shadow: inset 3px 0 var(--accent); }
+  .search:focus { outline: none; border-color: var(--ink); }
+  .row { display: block; width: 100%; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  .row:hover { background: var(--bg); }
+  .row[aria-current="true"] { background: var(--raised); box-shadow: inset 2px 0 var(--ink); }
   .row .title { display: block; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .row .sub { display: flex; align-items: center; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+  .row .sub { display: flex; align-items: baseline; gap: 4px 12px; margin-top: 4px; flex-wrap: wrap; font-size: 13px; color: var(--ink-2); }
+  .row .notes { display: grid; gap: 4px; margin-top: 8px; font-size: 13px; color: var(--ink-2); }
 
-  .detail h2 { font-size: 20px; font-weight: 600; line-height: 1.35; margin: 4px 0 16px; }
-  .eyebrow { font-size: 12px; font-weight: 500; color: var(--ink-3); text-transform: uppercase; letter-spacing: .04em; }
-  .facts { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 10px 16px; padding: 16px; margin: 0 0 20px; }
+  .meta { font-size: 13px; color: var(--ink-3); margin-bottom: 8px; }
+  .detail h2 { font-size: 20px; font-weight: 500; line-height: 28px; margin-bottom: 16px; }
+  .detail h2 .value { font-family: var(--mono); font-size: 18px; font-weight: 400; color: var(--ink-2); margin-left: 8px; }
+  .flag { display: flex; gap: 12px; align-items: baseline; padding: 8px 12px; margin-bottom: 8px; border-radius: 0 8px 8px 0; }
+  .flag.lost { background: var(--red-tint); }
+  .flag.warn { background: var(--amber-tint); }
+  .hint { margin: 16px 0 12px; font-size: 13px; color: var(--ink-3); }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+  .facts { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 8px 16px; padding: 16px 20px; }
   .facts dt { color: var(--ink-3); font-size: 13px; }
-  .facts dd { margin: 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+  .facts dd { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: baseline; }
   .facts dd.block { display: block; }
-  .facts .pill { white-space: normal; }
-  .section-title { font-size: 13px; font-weight: 600; margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
+  .check { display: inline-flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: 13px; }
+  .check.status { font-family: inherit; font-size: 14px; gap: 6px; }
+  .check .icon { width: 14px; height: 14px; }
+  .check.good .icon { color: var(--green); }
+  .check.bad .icon { color: var(--red); }
+  .section-title { font-size: 14px; font-weight: 500; margin: 24px 0 12px; }
+  mark { background: var(--highlight); color: var(--ink); border-radius: 2px; padding: 0 2px; }
 
-  .segmented { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
-  .seg { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); font-size: 13px; }
-  .seg[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-  .seg .mark { width: 8px; height: 8px; border-radius: 50%; }
-  .seg .mark.good { background: var(--good); }
-  .seg .mark.bad { background: var(--bad); }
-  .seg .mark.plain { background: var(--ink-3); }
+  .methods { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 2px; margin-bottom: 12px; border-radius: 10px; background: var(--raised); }
+  .seg { height: 32px; padding: 0 12px; border-radius: 8px; font-size: 13px; color: var(--ink-2); display: inline-flex; align-items: center; gap: 8px; }
+  .seg:hover { color: var(--ink); }
+  .seg[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0, 0, 0, .06); }
+  .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--ink-3); }
+  .dot.good { background: var(--green); }
+  .dot.bad { background: var(--red); }
 
-  .result { display: grid; grid-template-columns: 30px 1fr; gap: 10px; width: 100%; text-align: left; padding: 14px; margin-bottom: 8px; }
-  .result:hover { border-color: #d5d9e0; }
-  .result[aria-current="true"] { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-  .rank {
-    width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
-    background: var(--line-soft); color: var(--ink-2); font-size: 12px; font-weight: 600;
-  }
-  .result[aria-current="true"] .rank { background: var(--accent); color: #fff; }
-  .result .where { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 4px; }
+  .result { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 12px; width: 100%; padding: 16px; margin-bottom: 8px; }
+  .result:hover { border-color: var(--line-strong); }
+  .result[aria-current="true"] { border-color: var(--ink); }
+  .rank { font-family: var(--mono); font-size: 13px; color: var(--ink-3); }
+  .result[aria-current="true"] .rank { color: var(--ink); }
+  .result .where { display: flex; gap: 4px 12px; align-items: baseline; flex-wrap: wrap; margin-bottom: 4px; font-size: 12px; color: var(--ink-3); }
   .result .text { display: block; color: var(--ink-2); font-size: 13px; overflow-wrap: anywhere; }
-  .result .text.table { white-space: pre-wrap; font: 12px/1.55 ui-monospace, "SF Mono", Menlo, monospace; }
+  .text.table { white-space: pre-wrap; font: 12px/18px var(--mono); }
 
   /* Page viewer */
-  .page-bar { display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: var(--card); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .page-bar { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 8px 16px; background: var(--surface); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
   .page-bar .pages { display: flex; gap: 4px; flex-wrap: wrap; }
-  .pg { min-width: 32px; padding: 3px 8px; border-radius: 6px; border: 1px solid var(--line); font-size: 12px; font-weight: 500; background: var(--card); }
-  .pg.cited { border-color: var(--good); color: var(--good); }
-  .pg[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
-  .legend { margin-left: auto; display: flex; gap: 12px; font-size: 12px; color: var(--ink-2); flex-wrap: wrap; }
-  .legend span { display: inline-flex; align-items: center; gap: 5px; }
-  .legend button { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--ink-2); }
+  .pg { height: 28px; padding: 0 8px; border-radius: 6px; border: 1px solid var(--line-strong); font: 12px/1 var(--mono); display: inline-flex; align-items: center; gap: 6px; }
+  .pg:hover { border-color: var(--ink-3); }
+  .pg[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: #fff; }
+  .cited-note { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); }
+  .legend { margin-left: auto; display: flex; gap: 4px 16px; font-size: 12px; color: var(--ink-2); flex-wrap: wrap; }
+  .legend span, .legend button { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-2); }
   .legend button[aria-pressed="false"] { opacity: .4; }
-  .canvas { flex: 1; overflow: auto; padding: 20px; }
-  .sheet { position: relative; margin: 0 auto; max-width: 780px; background: #fff; border-radius: 4px; box-shadow: 0 2px 12px rgba(29, 36, 51, .12); }
-  .sheet img { display: block; width: 100%; height: auto; border-radius: 4px; }
-  .sheet.cited { box-shadow: 0 0 0 3px var(--good), 0 2px 12px rgba(29, 36, 51, .12); }
-  .box { position: absolute; border: 1.5px solid var(--accent); border-radius: 3px; }
+  .swatch { display: inline-block; width: 8px; height: 8px; border-radius: 2px; flex: none; }
+  .canvas { flex: 1; overflow: auto; padding: 24px 24px 24px 48px; }
+  .sheet { position: relative; margin: 0 auto; max-width: 780px; background: #fff; border-radius: 2px; box-shadow: 0 1px 2px rgba(0, 0, 0, .06), 0 8px 24px rgba(0, 0, 0, .06); }
+  .sheet img { display: block; width: 100%; height: auto; border-radius: 2px; }
+  .box { position: absolute; border: 1.5px solid; border-radius: 2px; }
   .box.dim { opacity: .45; }
   .box .tag {
-    position: absolute; right: 100%; top: -2px; margin-right: 4px; padding: 0 6px; border-radius: 99px;
-    color: #fff; font-size: 10px; font-weight: 600; line-height: 16px; white-space: nowrap;
+    position: absolute; right: 100%; top: -1px; margin-right: 6px; padding: 0 4px; border-radius: 4px;
+    color: #fff; font: 500 11px/16px var(--mono); white-space: nowrap;
   }
-  .cited-note { font-size: 12px; color: var(--good); font-weight: 500; }
 
   /* Overview */
-  .overview { overflow: auto; padding: 28px 32px 48px; }
-  .overview .wrap { max-width: 1180px; margin: 0 auto; display: grid; gap: 20px; }
-  .doc-head h2 { font-size: 22px; font-weight: 600; }
-  .doc-head p { margin-top: 4px; }
-  .stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
-  .stat { padding: 16px; }
-  .stat .value { font-size: 26px; font-weight: 600; letter-spacing: -.01em; }
-  .stat .name { color: var(--ink-2); font-size: 13px; }
-  .stages { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; align-items: start; }
-  .stage { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
-  .stage h3 { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
-  .stage .step { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 600; }
-  .stage .open { align-self: flex-start; color: var(--accent); font-weight: 500; }
-  .health { display: grid; grid-template-columns: repeat(15, 1fr); gap: 4px; max-width: 480px; }
-  .cell { aspect-ratio: 1; border-radius: 4px; font-size: 10px; font-weight: 500; display: grid; place-items: center; background: var(--good-soft); color: var(--good); }
-  .cell.warn { background: var(--warn-soft); color: var(--warn); }
-  .cell.lost { background: var(--bad); color: #fff; }
-  .cell:hover { outline: 2px solid var(--accent); }
-  .key { display: flex; gap: 14px; font-size: 12px; color: var(--ink-2); flex-wrap: wrap; }
-  .key span { display: inline-flex; align-items: center; gap: 5px; }
-  .bar-row { display: grid; grid-template-columns: 150px 1fr 44px; gap: 10px; align-items: center; font-size: 13px; }
-  .bar { height: 8px; border-radius: 99px; background: var(--line-soft); overflow: hidden; }
-  .bar i { display: block; height: 100%; background: var(--accent); border-radius: 99px; }
-  .bar.good i { background: var(--good); }
-  .issues { display: grid; gap: 8px; }
-  .issue { display: flex; gap: 10px; align-items: flex-start; text-align: left; padding: 10px 12px; border-radius: 8px; background: var(--bg); width: 100%; font-size: 13px; }
-  .issue:hover { background: var(--accent-soft); }
-  .issue .pill { flex: none; }
+  .overview { overflow: auto; padding: 32px 32px 64px; }
+  .overview .wrap { max-width: 1440px; margin: 0 auto; }
+  .doc-head h2 { font-size: 28px; font-weight: 500; line-height: 36px; }
+  .doc-head .mono { margin-top: 8px; color: var(--ink-3); }
+  .stats { display: flex; flex-wrap: wrap; gap: 16px 48px; margin-top: 24px; padding: 16px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .stat .value { font-size: 24px; font-weight: 500; line-height: 32px; }
+  .stat .name { font-size: 13px; color: var(--ink-3); }
+  .board { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 32px; margin-top: 32px; align-items: start; }
+  .board-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+  .board-head h3 { font-size: 15px; font-weight: 500; }
+  .board-head p { font-size: 13px; color: var(--ink-2); }
+  .board-head .legend { font-size: 12px; }
+  .board-head .legend span { gap: 8px; }
+  .board-head .legend .mark { display: inline-block; height: 12px; padding: 0; }
 
-  .flag { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 8px; margin-bottom: 8px; font-size: 13px; }
-  .flag.lost { background: var(--bad-soft); color: #9d2236; }
-  .flag.warn { background: var(--warn-soft); color: #8a5208; }
-  .item { display: grid; grid-template-columns: 120px 1fr; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--line-soft); }
+  /* The contact sheet: every page of the filing, problems marked in the margin. */
+  .contact { background: var(--desk); border-radius: 16px; padding: 24px 24px 24px 32px; display: grid; grid-template-columns: repeat(auto-fill, minmax(56px, 1fr)); gap: 12px 16px; }
+  .thumb { position: relative; display: block; }
+  .thumb .paper { position: relative; display: block; background: #fff; border-radius: 2px; box-shadow: 0 1px 2px rgba(0, 0, 0, .08); outline: 1px solid transparent; }
+  .thumb img { display: block; width: 100%; height: auto; border-radius: 2px; }
+  .thumb:hover .paper { outline-color: var(--ink-3); }
+  .thumb .folio { display: block; margin-top: 4px; text-align: center; font: 11px/16px var(--mono); color: var(--ink-3); }
+  .thumb.lost .folio { color: var(--red); }
+  .thumb.warn .folio { color: var(--amber); }
+  .thumb.lost::before, .thumb.warn::before { content: ""; position: absolute; left: -8px; top: 0; height: calc(100% - 20px); width: 2px; border-radius: 1px; }
+  .thumb.lost::before { background: var(--red); }
+  .thumb.warn::before { background: var(--amber); }
+  .thumb .spot { position: absolute; border: 1px solid; border-radius: 1px; }
+
+  .findings { display: grid; gap: 24px; position: sticky; top: 0; }
+  .finding { display: grid; gap: 12px; padding-bottom: 24px; border-bottom: 1px solid var(--line); }
+  .finding:last-child { border-bottom: 0; padding-bottom: 0; }
+  .finding h3 { font-size: 15px; font-weight: 500; }
+  .finding > p { font-size: 13px; color: var(--ink-2); margin-top: -8px; }
+  .issues { display: grid; gap: 4px; }
+  .issue { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 8px; align-items: baseline; padding: 4px 0; font-size: 13px; color: var(--ink-2); }
+  .issue:hover { color: var(--ink); }
+  .issue .mono { white-space: nowrap; }
+  .bars { display: grid; gap: 8px; }
+  .bar-row { display: grid; grid-template-columns: 136px minmax(0, 1fr) 40px; gap: 12px; align-items: center; font-size: 13px; color: var(--ink-2); }
+  .bar-row .mono { text-align: right; }
+  .bar { height: 4px; border-radius: 2px; background: var(--raised); overflow: hidden; }
+  .bar i { display: block; height: 100%; background: var(--ink-3); border-radius: 2px; }
+  .bar.lead i { background: var(--ink); }
+  .open { display: inline-flex; align-items: center; gap: 6px; justify-self: start; font-size: 13px; font-weight: 500; }
+  .open:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+  .item { display: grid; grid-template-columns: 128px minmax(0, 1fr); gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
   .item:last-child { border-bottom: 0; }
-  .item:hover { background: var(--accent-soft); }
-  .item .labels { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
-  .pill.solid { color: #fff; }
-  .pill.solid.warn { background: var(--warn); }
-  .pill.solid.lost { background: var(--bad); }
-  .item.flagged { background: var(--warn-soft); }
-  .item.flagged.lost { background: var(--bad-soft); }
+  .item:hover { background: var(--bg); }
+  .item .labels { display: grid; gap: 4px; align-content: start; }
+  .item .kind { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); }
+  .item.flagged.warn { background: var(--amber-tint); box-shadow: inset 2px 0 var(--amber); }
+  .item.flagged.lost { background: var(--red-tint); box-shadow: inset 2px 0 var(--red); }
   .item .text { font-size: 13px; color: var(--ink-2); overflow-wrap: anywhere; }
-  .item .text.table { white-space: pre-wrap; font: 11px/1.5 ui-monospace, "SF Mono", Menlo, monospace; max-height: 140px; overflow: hidden; }
+  .item .text.table { max-height: 144px; overflow: hidden; }
   .item.unused .text { color: var(--ink-3); }
   .empty { padding: 40px 24px; text-align: center; color: var(--ink-3); }
 
@@ -210,17 +228,23 @@
     .pane.list { max-height: 45vh; overflow: auto; border-right: 0; border-bottom: 1px solid var(--line); }
     .pane.page { border-left: 0; overflow: visible; }
     .canvas { overflow: visible; }
-    .stages { grid-template-columns: 1fr; }
-    .top { flex-wrap: wrap; }
+    .board { grid-template-columns: 1fr; }
+    .findings { position: static; order: -1; max-width: 640px; }
+  }
+  @media (max-width: 640px) {
+    .top { height: auto; padding: 12px 16px; flex-wrap: wrap; gap: 8px; }
+    .brand p { display: none; }
+    .tabs { margin-left: -12px; }
+    .overview, .pane.detail { padding: 24px 16px 48px; }
+    .contact { padding: 16px 16px 16px 24px; gap: 12px 16px; grid-template-columns: repeat(auto-fill, minmax(48px, 1fr)); }
+    .doc-head h2 { font-size: 22px; line-height: 28px; }
+    .stats { gap: 12px 32px; }
   }
 </style>
 </head>
 <body>
 <header class="top">
-  <div class="brand">
-    <div class="logo">PI</div>
-    <div><h1>Pipeline Inspector</h1><p id="doc-title"></p></div>
-  </div>
+  <div class="brand"><h1>Error Analysis</h1><p id="doc-title"></p></div>
   <nav class="tabs" role="tablist" id="tabs"></nav>
 </header>
 <main id="main"></main>
@@ -228,21 +252,33 @@
 <script>
 const DATA = /*DATA*/null;
 
+// Each Docling label kind keeps one colour wherever a page is drawn.
 const KINDS = [
-  ["Text", "#4f6bed", ["text", "paragraph", "list_item", "caption", "footnote"]],
-  ["Heading", "#8a5cf6", ["title", "section_header"]],
-  ["Table", "#13a39a", ["table"]],
-  ["Picture", "#d6455d", ["picture", "chart"]],
-  ["Code", "#c47a12", ["code"]],
-  ["Other", "#9aa1ad", null],
+  ["Text", "#2563eb", ["text", "paragraph", "list_item", "caption", "footnote"]],
+  ["Heading", "#7c4dd6", ["title", "section_header"]],
+  ["Table", "#0f8a7e", ["table"]],
+  ["Picture", "#c8372d", ["picture", "chart"]],
+  ["Code", "#b45309", ["code"]],
+  ["Other", "#8a8a8f", null],
 ];
 const kindOf = (label) => KINDS.find(([, , labels]) => labels && labels.includes(label)) || KINDS.at(-1);
-const ACCENT = "#4f6bed";
+const BLUE = "#2563eb";
+const LEVEL = {lost: "#c8372d", warn: "#b45309"};
+
+const ICONS = {
+  arrow: '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+};
+const icon = (name) => `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name]}</svg>`;
 
 const $ = (s, root = document) => root.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"})[c]);
 const pct = (v, total) => `${(100 * v / total).toFixed(3)}%`;
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+// One number format across the page, the report's own: 1 003.
+const fmt = (n) => n.toLocaleString("fr-FR");
+const clip = (s, n) => s.length > n ? s.slice(0, n) + "…" : s;
 
 // A number as written, with or without thousands separators (\s covers the no-break spaces);
 // the notebook matches numbers the same way.
@@ -270,6 +306,9 @@ const pageLevel = (n) => {
 };
 const verdict = (q, m) => !q.pages.length ? "plain" : q.results[m].hit ? "good" : "bad";
 const missedFigures = DATA.figures.filter((f) => !f.on_page).length;
+const levelWord = (level) => level === "lost" ? "lost" : "check";
+const filters = (options, current) => `<div class="filters">${options.map(([id, name, count]) =>
+  `<button class="filter" data-f="${id}" aria-pressed="${id === current}">${name}<span class="mono">${count}</span></button>`).join("")}</div>`;
 
 /* Page viewer, shared by every view.
    view = {pages, cited, focus, legend, boxes: [{page, box, color, label, focus, dim, id}]} */
@@ -279,11 +318,11 @@ function renderPageViewer(root, view) {
   const cited = view.cited.includes(shown);
   root.innerHTML = `
     <div class="page-bar">
-      <div class="pages">${view.pages.map((n) => `<button class="pg ${view.cited.includes(n) ? "cited" : ""}" data-p="${n}" aria-pressed="${n === shown}">p. ${n}</button>`).join("")}</div>
-      ${cited ? `<span class="cited-note">✓ cited page</span>` : ""}
+      <div class="pages">${view.pages.map((n) => `<button class="pg" data-p="${n}" aria-pressed="${n === shown}">${view.cited.includes(n) && view.pages.length > 1 ? `<span class="dot good"></span>` : ""}p. ${n}</button>`).join("")}</div>
+      ${cited ? `<span class="cited-note"><span class="dot good"></span>Cited page</span>` : ""}
       <div class="legend">${view.legend || ""}</div>
     </div>
-    <div class="canvas"><div class="sheet ${cited ? "cited" : ""}">
+    <div class="canvas"><div class="sheet">
       <img alt="Page ${shown}" src="pages/${shown}.jpg">
       ${view.boxes.filter((b) => b.page === shown).map((b) => {
         const [l, t, r, bt] = b.box;
@@ -302,59 +341,78 @@ function renderPageViewer(root, view) {
 }
 
 /* Overview */
+function thumb(n) {
+  const page = DATA.pages[n], level = pageLevel(n);
+  const spots = page.items.filter((it) => it.check).map((it) => {
+    const [l, t, r, b] = it.box, c = LEVEL[it.check.level];
+    return `<i class="spot" style="left:${pct(l, page.width)};top:${pct(t, page.height)};width:${pct(r - l, page.width)};height:${pct(b - t, page.height)};border-color:${c};background:${c}${it.check.level === "lost" ? "26" : "14"}"></i>`;
+  }).join("");
+  const title = `p. ${n}${page.flags.map((f) => " · " + f.text).join("")}`;
+  return `<button class="thumb ${level}" data-page="${n}" title="${esc(title)}">
+    <span class="paper" style="aspect-ratio:${page.width}/${page.height}"><img loading="lazy" alt="" src="thumbs/${n}.jpg">${spots}</span>
+    <span class="folio">${n}</span></button>`;
+}
+
 function overview(main) {
   const d = DATA.document;
   const answerable = DATA.questions.filter((q) => q.pages.length);
   const hitRate = (m) => answerable.filter((q) => q.results[m].hit).length / answerable.length;
+  const best = Math.max(...DATA.methods.map(hitRate));
   const issues = flagged.flatMap((n) => DATA.pages[n].flags.map((f) => ({n, ...f})))
     .sort((a, b) => (a.level === "lost" ? 0 : 1) - (b.level === "lost" ? 0 : 1));
+  const lostPages = flagged.filter((n) => pageLevel(n) === "lost").length;
   const missByPage = {};
   DATA.figures.filter((f) => !f.on_page).forEach((f) => missByPage[f.page] = (missByPage[f.page] || 0) + 1);
   const allMissed = answerable.filter((q) => DATA.methods.every((m) => !q.results[m].hit));
+  const found = DATA.figures.length - missedFigures;
   main.innerHTML = `<div class="view overview"><div class="wrap">
     <div class="doc-head">
       <h2>${esc(d.title)}</h2>
-      <p class="muted">Parsed by ${esc(d.parser)} on ${esc(d.parsed_at)} · chunk cap ${d.cap.toLocaleString("en")} tokens</p>
+      <p class="mono">${esc(d.parser)} · parsed ${esc(d.parsed_at)} · chunk cap ${fmt(d.cap)} tokens</p>
     </div>
     <div class="stats">
       ${[[pages.length, "pages"], [d.sections, "sections"], [d.chunks, "chunks"], [d.tables, "table chunks"], [d.paragraphs, "paragraphs"]]
-        .map(([v, n]) => `<div class="card stat"><div class="value">${v.toLocaleString("en")}</div><div class="name">${n}</div></div>`).join("")}
+        .map(([v, n]) => `<div class="stat"><div class="value">${fmt(v)}</div><div class="name">${n}</div></div>`).join("")}
     </div>
-    <div class="stages">
-      <div class="card stage">
-        <h3><span class="step">1</span>Parsing</h3>
-        <p class="muted">${plural(flagged.length, "page")} of ${pages.length} look wrong. Click a page to inspect it.</p>
-        <div class="health">${pages.map((n) => `<button class="cell ${pageLevel(n)}" data-page="${n}" title="p. ${n}${esc(DATA.pages[n].flags.map((f) => " · " + f.text).join(""))}">${n}</button>`).join("")}</div>
-        <div class="key">
-          <span><i class="label-dot" style="background:var(--good-soft);outline:1px solid var(--good)"></i>looks fine</span>
-          <span><i class="label-dot" style="background:var(--warn-soft);outline:1px solid var(--warn)"></i>check</span>
-          <span><i class="label-dot" style="background:var(--bad)"></i>content lost</span>
+    <div class="board">
+      <section>
+        <div class="board-head">
+          <h3>Pages</h3>
+          <p>${flagged.length} of ${pages.length} flagged, ${lostPages} with content lost</p>
+          <div class="legend"><span><i class="mark lost"></i>content lost</span><span><i class="mark warn"></i>check</span></div>
         </div>
-        <div class="issues">${issues.slice(0, 4).map((i) => `<button class="issue" data-page="${i.n}">
-          <span class="pill ${i.level === "lost" ? "bad" : "warn"}">p. ${i.n}</span><span>${esc(i.text)}</span></button>`).join("")}</div>
-        <button class="open" data-go="parsing">Open parsing →</button>
-      </div>
-      <div class="card stage">
-        <h3><span class="step">2</span>Search</h3>
-        <p class="muted">Share of the ${answerable.length} answerable questions with a top-5 result on a cited page.</p>
-        <div style="display:grid;gap:10px">${DATA.methods.map((m) => { const r = hitRate(m);
-          return `<div class="bar-row"><span>${esc(m)}</span><span class="bar"><i style="width:${(r * 100).toFixed(0)}%"></i></span><span class="faint">${(r * 100).toFixed(0)}%</span></div>`; }).join("")}</div>
-        <div class="issues">${allMissed.map((q) => `<button class="issue" data-question="${q.id}">
-          <span class="pill bad">${q.id}</span><span>${esc(q.question)}</span></button>`).join("")}</div>
-        <button class="open" data-go="search">Open search →</button>
-      </div>
-      <div class="card stage">
-        <h3><span class="step">3</span>Figures</h3>
-        <p class="muted">Golden numbers found in the parsed text of their page.</p>
-        <div class="bar-row" style="grid-template-columns:1fr 70px"><span class="bar good"><i style="width:${(100 * (DATA.figures.length - missedFigures) / DATA.figures.length).toFixed(0)}%"></i></span>
-          <span class="faint">${DATA.figures.length - missedFigures} of ${DATA.figures.length}</span></div>
-        <div class="issues">${Object.entries(missByPage).sort((a, b) => b[1] - a[1]).map(([p, n]) => `<button class="issue" data-figpage="${p}">
-          <span class="pill bad">p. ${p}</span><span>${plural(n, "figure")} not found${DATA.pages[p]?.flags.length ? ": " + esc(DATA.pages[p].flags[0].text) : ""}</span></button>`).join("")}</div>
-        <button class="open" data-go="figures">Open figures →</button>
-      </div>
+        <div class="contact">${pages.map(thumb).join("")}</div>
+      </section>
+      <aside class="findings">
+        <div class="finding">
+          <h3>Parsing</h3>
+          <p>What Docling got wrong, the worst first</p>
+          <div class="issues">${issues.slice(0, 5).map((i) => `<button class="issue" data-page="${i.n}">
+            <span class="mono mark ${i.level} ${i.level}-text">p. ${i.n}</span><span>${esc(i.text)}</span></button>`).join("")}</div>
+          <button class="open" data-go="parsing">All ${flagged.length} flagged pages${icon("arrow")}</button>
+        </div>
+        <div class="finding">
+          <h3>Search</h3>
+          <p>Questions with a top-5 result on a cited page, of ${answerable.length}</p>
+          <div class="bars">${DATA.methods.map((m) => { const r = hitRate(m);
+            return `<div class="bar-row"><span>${esc(m)}</span><span class="bar ${r === best ? "lead" : ""}"><i style="width:${(r * 100).toFixed(0)}%"></i></span><span class="mono">${(r * 100).toFixed(0)}%</span></div>`; }).join("")}</div>
+          ${allMissed.length ? `<div class="issues">${allMissed.map((q) => `<button class="issue" data-question="${q.id}">
+            <span class="mono mark lost lost-text">${q.id}</span><span>${esc(q.question)}</span></button>`).join("")}</div>` : ""}
+          <button class="open" data-go="search">Every question by method${icon("arrow")}</button>
+        </div>
+        <div class="finding">
+          <h3>Figures</h3>
+          <p>Golden numbers found in the parsed text of their page</p>
+          <div class="bar-row" style="grid-template-columns:minmax(0, 1fr) auto"><span class="bar lead"><i style="width:${(100 * found / DATA.figures.length).toFixed(0)}%"></i></span>
+            <span class="mono">${found} of ${DATA.figures.length}</span></div>
+          <div class="issues">${Object.entries(missByPage).sort((a, b) => b[1] - a[1]).map(([p, n]) => `<button class="issue" data-figpage="${p}">
+            <span class="mono mark lost lost-text">p. ${p}</span><span>${plural(n, "figure")} missing${DATA.pages[p]?.flags.length ? ": " + esc(DATA.pages[p].flags[0].text) : ""}</span></button>`).join("")}</div>
+          <button class="open" data-go="figures">All ${DATA.figures.length} figures${icon("arrow")}</button>
+        </div>
+      </aside>
     </div>
   </div></div>`;
-  main.querySelectorAll("[data-page]").forEach((b) => b.onclick = () => go("parsing", {page: +b.dataset.page, pageFilter: "all"}));
+  main.querySelectorAll("[data-page]").forEach((b) => b.onclick = () => go("parsing", {page: +b.dataset.page, pageFilter: DATA.pages[b.dataset.page].flags.length ? "issues" : "all"}));
   main.querySelectorAll("[data-question]").forEach((b) => b.onclick = () => go("search", {question: b.dataset.question}));
   main.querySelectorAll("[data-go]").forEach((b) => b.onclick = () => go(b.dataset.go));
   main.querySelectorAll("[data-figpage]").forEach((b) => b.onclick = () => {
@@ -372,29 +430,26 @@ function parsing(main) {
   main.innerHTML = `<div class="view panes">
     <aside class="pane list">
       <div class="list-head">
-        <h2>Pages</h2><p class="faint">${plural(flagged.length, "page")} flagged by the parse checks</p>
-        <div class="chips">
-          <button class="chip" data-f="issues" aria-pressed="${state.pageFilter === "issues"}">Flagged (${flagged.length})</button>
-          <button class="chip" data-f="all" aria-pressed="${state.pageFilter === "all"}">All (${pages.length})</button>
-        </div>
+        <h2>Pages</h2><p>Flagged by the parse checks</p>
+        ${filters([["issues", "Flagged", flagged.length], ["all", "All", pages.length]], state.pageFilter)}
       </div>
       ${list.map((n) => { const p = DATA.pages[n];
         return `<button class="row" data-p="${n}" aria-current="${n === state.page}">
           <span class="title">Page ${n}</span>
-          <span class="sub">${p.flags.length ? p.flags.map((f) => `<span class="pill ${f.level === "lost" ? "bad" : "warn"}">${esc(f.text.split(":")[0])}</span>`).join("") : `<span class="pill good">looks fine</span>`}
-            <span class="faint">${plural(p.items.length, "item")}</span></span></button>`; }).join("") || `<div class="empty">No flagged pages.</div>`}
+          ${p.flags.length ? `<span class="notes">${p.flags.map((f) => `<span class="mark ${f.level}">${esc(f.text.split(":")[0])}</span>`).join("")}</span>` : ""}
+          <span class="sub"><span class="muted">${plural(p.items.length, "item")}</span></span></button>`; }).join("") || `<div class="empty">No flagged pages</div>`}
     </aside>
     <section class="pane detail">
-      <div class="eyebrow">Parsing</div>
-      <h2>Page ${state.page}: what Docling found</h2>
-      ${page.flags.map((f) => `<div class="flag ${f.level}"><strong>${f.level === "lost" ? "Lost" : "Check"}</strong><span>${esc(f.text)}</span></div>`).join("")}
-      <p class="faint" style="margin:8px 0 12px">${plural(items.length, "item")} in reading order. Greyed items never reach a Chunk: page headers, footers and pictures. Hover an item to find it on the page.</p>
+      <p class="meta">Parsing · page ${state.page} of ${pages.length}</p>
+      <h2>What Docling found on page ${state.page}</h2>
+      ${page.flags.map((f) => `<div class="flag mark ${f.level}"><span class="mono ${f.level}-text">${levelWord(f.level)}</span><span>${esc(f.text)}</span></div>`).join("")}
+      <p class="hint">${plural(items.length, "item")} in reading order. Greyed items never reach a Chunk: page headers, footers and pictures. Hover an item to find it on the page.</p>
       <div class="card" style="overflow:hidden">${items.map((it) => `
         <div class="item ${it.used ? "" : "unused"} ${it.check ? "flagged " + it.check.level : ""}" data-i="${it.i}">
-          <span class="labels"><span class="pill plain"><i class="label-dot" style="background:${it.kind[1]}"></i>${esc(it.label.replace("_", " "))}</span>
-            ${it.check ? `<span class="pill solid ${it.check.level}">${it.check.level === "lost" ? "lost" : "check"}</span>` : ""}</span>
-          <span class="text ${isTable(it.text) ? "table" : ""}">${esc(it.text) || "<em>no text</em>"}</span>
-        </div>`).join("") || `<div class="empty">Docling found nothing on this page.</div>`}</div>
+          <span class="labels"><span class="kind mono"><i class="swatch" style="background:${it.kind[1]}"></i>${esc(it.label.replace("_", " "))}</span>
+            ${it.check ? `<span class="mono ${it.check.level}-text">${levelWord(it.check.level)}</span>` : ""}</span>
+          <span class="text ${isTable(it.text) ? "table" : ""}">${esc(it.text) || `<span class="muted">No text</span>`}</span>
+        </div>`).join("") || `<div class="empty">Docling found nothing on this page</div>`}</div>
     </section>
     <section class="pane page" id="viewer"></section>
   </div>`;
@@ -407,7 +462,7 @@ function parsing(main) {
       boxes: items.filter((it) => !state.hidden.has(it.kind[0])).map((it) => ({
         page: state.page, box: it.box, color: it.kind[1], id: it.i, dim: !it.used,
       })),
-      legend: KINDS.map(([k, c]) => `<button data-k="${k}" aria-pressed="${!state.hidden.has(k)}"><i class="label-dot" style="background:${c}"></i>${k}</button>`).join(""),
+      legend: KINDS.map(([k, c]) => `<button data-k="${k}" aria-pressed="${!state.hidden.has(k)}"><i class="swatch" style="background:${c}"></i>${k}</button>`).join(""),
     });
     viewer.querySelectorAll("[data-k]").forEach((b) => b.onclick = () => {
       state.hidden.has(b.dataset.k) ? state.hidden.delete(b.dataset.k) : state.hidden.add(b.dataset.k); draw(); });
@@ -429,34 +484,37 @@ function search(main) {
   const q = DATA.questions.find((x) => x.id === state.question);
   const r = q.results[state.method];
   const top = r.top.map((i) => DATA.paragraphs[i]);
+  const score = (x) => {
+    if (!x.pages.length) return "";
+    const n = DATA.methods.filter((m) => x.results[m].hit).length;
+    return `<span class="${n === DATA.methods.length ? "good" : n ? "warn" : "lost"}-text">${n} of ${DATA.methods.length} methods</span>`;
+  };
   main.innerHTML = `<div class="view panes">
     <aside class="pane list">
-      <div class="list-head"><h2>Golden questions</h2><p class="faint">A hit is a top-5 Paragraph on a cited page</p></div>
+      <div class="list-head"><h2>Golden questions</h2><p>A hit is a top-5 Paragraph on a cited page</p></div>
       ${DATA.questions.map((x) => `<button class="row" data-q="${x.id}" aria-current="${x.id === state.question}">
         <span class="title">${x.id} · ${esc(x.question)}</span>
-        <span class="sub"><span class="faint">${esc(x.type)}</span>
-          ${x.pages.length ? (() => { const n = DATA.methods.filter((m) => x.results[m].hit).length;
-            return `<span class="pill ${n === DATA.methods.length ? "good" : n ? "warn" : "bad"}">${n} of ${DATA.methods.length} methods</span>`; })()
-            : `<span class="pill plain">not answerable</span>`}</span></button>`).join("")}
+        <span class="sub"><span class="muted">${esc(x.type)}</span>${score(x)}</span></button>`).join("")}
     </aside>
     <section class="pane detail">
-      <div class="eyebrow">${q.id} · ${esc(q.type)}</div>
+      <p class="meta">${q.id} · ${esc(q.type)}</p>
       <h2>${esc(q.question)}</h2>
       <dl class="card facts">
         <dt>Expected</dt><dd class="block">${highlight(q.expected, q.numbers)}</dd>
         <dt>Cited</dt><dd class="block">${esc(q.citation)}</dd>
-        ${q.numbers.length ? `<dt>In the top 5</dt><dd>${q.numbers.map((n) => `<span class="pill ${r.numbers_found.includes(n) ? "good" : "bad"}">${r.numbers_found.includes(n) ? "✓" : "✗"} ${esc(n)}</span>`).join(" ")}</dd>` : ""}
+        ${q.numbers.length ? `<dt>In the top 5</dt><dd>${q.numbers.map((n) => { const ok = r.numbers_found.includes(n);
+          return `<span class="check ${ok ? "good" : "bad"}" title="${ok ? "found" : "missing"}">${icon(ok ? "check" : "x")}${esc(n)}</span>`; }).join("")}</dd>` : ""}
       </dl>
-      <div class="section-title">Results by method</div>
-      <div class="segmented">${DATA.methods.map((m) => `<button class="seg" data-m="${esc(m)}" aria-pressed="${m === state.method}">
-        <span class="mark ${verdict(q, m)}"></span>${esc(m)}</button>`).join("")}</div>
+      <h3 class="section-title">Results by method</h3>
+      <div class="methods">${DATA.methods.map((m) => `<button class="seg" data-m="${esc(m)}" aria-pressed="${m === state.method}">
+        <span class="dot ${verdict(q, m)}"></span>${esc(m)}</button>`).join("")}</div>
       ${top.map((p, i) => `<button class="card result" data-i="${i}" aria-current="${i === state.hit}">
         <span class="rank">${i + 1}</span>
-        <span><span class="where"><span class="pill ${q.pages.includes(p.page) ? "good" : "plain"}">p. ${p.page}</span>
-          <span class="faint">${esc(p.section.length > 70 ? p.section.slice(0, 70) + "…" : p.section)} · chunk ${p.chunk}</span></span>
-          <span class="text ${isTable(p.text) ? "table" : ""}">${highlight(p.text.length > 600 ? p.text.slice(0, 600) + "…" : p.text, q.numbers)}</span></span>
+        <span><span class="where"><span class="mono ${q.pages.includes(p.page) ? "good-text" : "muted"}">p. ${p.page}</span>
+          <span>${esc(clip(p.section, 70))} · chunk ${p.chunk}</span></span>
+          <span class="text ${isTable(p.text) ? "table" : ""}">${highlight(clip(p.text, 600), q.numbers)}</span></span>
       </button>`).join("")}
-      ${!q.pages.length ? `<p class="faint">This question has no answer in the document: these are what search returns anyway.</p>` : ""}
+      ${!q.pages.length ? `<p class="hint">This question has no answer in the document: these are what search returns anyway.</p>` : ""}
     </section>
     <section class="pane page" id="viewer"></section>
   </div>`;
@@ -466,8 +524,8 @@ function search(main) {
   renderPageViewer($("#viewer"), {
     pages: [...new Set([...q.pages, ...top.map((p) => p.page)])].sort((a, b) => a - b),
     cited: q.pages, focus: top[state.hit]?.page ?? q.pages[0],
-    boxes: top.flatMap((p, i) => p.boxes.map(([pg, l, t, rr, b]) => ({page: pg, box: [l, t, rr, b], color: ACCENT, label: `${i + 1}`, focus: i === state.hit}))),
-    legend: `<span><i class="label-dot" style="background:var(--accent)"></i>result</span><span><i class="label-dot" style="background:var(--good)"></i>cited page</span>`,
+    boxes: top.flatMap((p, i) => p.boxes.map(([pg, l, t, rr, b]) => ({page: pg, box: [l, t, rr, b], color: BLUE, label: `${i + 1}`, focus: i === state.hit}))),
+    legend: `<span><i class="swatch" style="background:${BLUE}"></i>Result, by rank</span>`,
   });
 }
 
@@ -485,39 +543,35 @@ function figures(main) {
     if (text.length < 600) return text;
     const lines = text.split("\n");
     const rows = lines.slice(1).filter((l) => numberPattern(f.value).test(l)).slice(0, 3);
-    return rows.length ? [lines[0], "…", ...rows].join("\n") : text.slice(0, 600) + "…";
+    return rows.length ? [lines[0], "…", ...rows].join("\n") : clip(text, 600);
   };
   main.innerHTML = `<div class="view panes">
     <aside class="pane list">
       <div class="list-head">
-        <h2>Golden figures</h2><p class="faint">Is each number in the parsed text of its page?</p>
-        <div class="chips">
-          <button class="chip" data-f="missing" aria-pressed="${state.figureFilter === "missing"}">Not found (${missedFigures})</button>
-          <button class="chip" data-f="found" aria-pressed="${state.figureFilter === "found"}">Found (${DATA.figures.length - missedFigures})</button>
-          <button class="chip" data-f="all" aria-pressed="${state.figureFilter === "all"}">All (${DATA.figures.length})</button>
-        </div>
-        <input class="search" placeholder="Search a label, value or page" value="${esc(state.figureQuery)}">
+        <h2>Golden figures</h2><p>Is each number in the parsed text of its page?</p>
+        ${filters([["missing", "Missing", missedFigures], ["found", "Found", DATA.figures.length - missedFigures], ["all", "All", DATA.figures.length]], state.figureFilter)}
+        <input class="search" placeholder="Label, value or page" aria-label="Filter figures" value="${esc(state.figureQuery)}">
       </div>
       ${shown.map((x) => `<button class="row" data-i="${x.i}" aria-current="${x.i === state.figure}">
         <span class="title">${esc(x.label)}</span>
-        <span class="sub"><span class="pill ${x.on_page ? "good" : "bad"}">${x.on_page ? "found" : "not found"}</span>
-          <span class="num">${esc(x.value)}</span><span class="faint">p. ${x.page} · ${esc(x.period)}</span></span></button>`).join("") || `<div class="empty">No figures match.</div>`}
+        <span class="sub"><span class="mono">${esc(x.value)}</span><span class="muted">p. ${x.page} · ${esc(x.period)}</span>
+          ${x.on_page ? "" : `<span class="lost-text">missing</span>`}</span></button>`).join("") || `<div class="empty">No figures match</div>`}
     </aside>
     <section class="pane detail">
-      <div class="eyebrow">${esc(f.scope)} · ${esc(f.standard)} · ${esc(f.period)}</div>
-      <h2>${esc(f.label)} <span class="num">${esc(f.value)}</span></h2>
+      <p class="meta">${esc(f.scope.charAt(0).toUpperCase() + f.scope.slice(1))} · ${esc(f.standard)} · ${esc(f.period)}</p>
+      <h2>${esc(f.label)}<span class="value">${esc(f.value)}</span></h2>
       <dl class="card facts">
-        <dt>Status</dt><dd>${f.on_page ? `<span class="pill good">✓ in ${plural(matches.length, "Paragraph")} on p. ${f.page}</span>`
-          : `<span class="pill bad">✗ not in the text of p. ${f.page}</span> <span class="faint">${elsewhere.length ? `the number appears on p. ${elsewhere.join(", ")}` : "nowhere in the parsed text"}</span>`}</dd>
+        <dt>Status</dt><dd>${f.on_page ? `<span class="check status good">${icon("check")}In ${plural(matches.length, "Paragraph")} on p. ${f.page}</span>`
+          : `<span class="check status bad">${icon("x")}Not in the text of p. ${f.page}</span><span class="muted">${elsewhere.length ? `the number appears on p. ${elsewhere.join(", ")}` : "nowhere in the parsed text"}</span>`}</dd>
         <dt>Line item</dt><dd>${esc(f.line_item)} · ${esc(f.unit)}</dd>
         <dt>Where</dt><dd class="block">p. ${f.page} · ${esc(f.table)}<br><span class="muted">row ${esc(f.row)} · column ${esc(f.column)}</span></dd>
-        ${DATA.pages[f.page]?.flags.length ? `<dt>Page check</dt><dd>${DATA.pages[f.page].flags.map((x) => `<span class="pill ${x.level === "lost" ? "bad" : "warn"}">${esc(x.text)}</span>`).join(" ")}</dd>` : ""}
+        ${DATA.pages[f.page]?.flags.length ? `<dt>Page check</dt><dd class="block">${DATA.pages[f.page].flags.map((x) => `<div class="mark ${x.level}">${esc(x.text)}</div>`).join("")}</dd>` : ""}
         ${f.notes ? `<dt>Notes</dt><dd class="block muted">${esc(f.notes)}</dd>` : ""}
       </dl>
-      ${matches.length ? `<div class="section-title">Where the parse has it</div>` : ""}
+      ${matches.length ? `<h3 class="section-title">Where the parse has it</h3>` : ""}
       ${matches.map((p, i) => `<button class="card result" data-i="${i}" aria-current="${i === state.hit}">
         <span class="rank">${i + 1}</span>
-        <span><span class="where"><span class="faint">${esc(p.section.length > 70 ? p.section.slice(0, 70) + "…" : p.section)} · chunk ${p.chunk}</span></span>
+        <span><span class="where"><span>${esc(clip(p.section, 70))} · chunk ${p.chunk}</span></span>
           <span class="text ${isTable(p.text) ? "table" : ""}">${highlight(excerpt(p.text), [f.value])}</span></span></button>`).join("")}
     </section>
     <section class="pane page" id="viewer"></section>
@@ -534,10 +588,10 @@ function figures(main) {
     pages: [f.page], cited: [f.page], focus: f.page,
     boxes: [
       ...DATA.pages[f.page].items.filter((it) => it.check).map((it) => ({
-        page: f.page, box: it.box, color: it.check.level === "lost" ? "#d6455d" : "#c47a12", label: it.check.level === "lost" ? "lost" : "check"})),
-      ...matches.flatMap((p, i) => p.boxes.map(([pg, l, t, r, b]) => ({page: pg, box: [l, t, r, b], color: ACCENT, label: `${i + 1}`, focus: i === state.hit}))),
+        page: f.page, box: it.box, color: LEVEL[it.check.level], label: levelWord(it.check.level)})),
+      ...matches.flatMap((p, i) => p.boxes.map(([pg, l, t, r, b]) => ({page: pg, box: [l, t, r, b], color: BLUE, label: `${i + 1}`, focus: i === state.hit}))),
     ],
-    legend: `<span><i class="label-dot" style="background:var(--accent)"></i>where the number was parsed</span><span><i class="label-dot" style="background:var(--bad)"></i>flagged region</span>`,
+    legend: `<span><i class="swatch" style="background:${BLUE}"></i>Where the number was parsed</span><span><i class="swatch" style="background:${LEVEL.lost}"></i>Flagged region</span>`,
   });
 }
 
@@ -551,7 +605,7 @@ const TABS = [
 function go(tab, patch = {}) { Object.assign(state, {tab, view: null, hit: 0}, patch); render(); }
 function render() {
   $("#tabs").innerHTML = TABS.map(([id, name, , count]) =>
-    `<button class="tab" role="tab" data-t="${id}" aria-selected="${id === state.tab}">${name}${count ? `<span class="count">${count}</span>` : ""}</button>`).join("");
+    `<button class="tab" role="tab" data-t="${id}" aria-selected="${id === state.tab}">${name}${count ? `<span class="mono">${count}</span>` : ""}</button>`).join("");
   $("#tabs").querySelectorAll(".tab").forEach((b) => b.onclick = () => go(b.dataset.t));
   TABS.find(([id]) => id === state.tab)[2]($("#main"));
 }
