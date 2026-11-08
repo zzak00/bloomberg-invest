@@ -27,7 +27,8 @@ def embed_document(document_id: str, store: GraphStore, embedder: Embedder) -> E
     if store.get_document(document_id) is None:
         raise LookupError(f"no document {document_id}")
     units = store.search_units(document_id)
-    if not units:
+    chunk_run = store.current_chunk_run(document_id)
+    if not units or chunk_run is None:
         raise ValueError(f"no current chunks to embed on {document_id}; chunk it first")
 
     started_at = datetime.now(UTC)
@@ -37,7 +38,7 @@ def embed_document(document_id: str, store: GraphStore, embedder: Embedder) -> E
             step=RunStep.embed,
             tool=embedder.tool,
             tool_version=embedder.tool_version,
-            config={"model": embedder.name},
+            config={"model": embedder.name, "chunk_run": chunk_run},
             started_at=started_at,
             finished_at=datetime.now(UTC),
             status=status,

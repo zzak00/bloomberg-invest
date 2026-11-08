@@ -43,9 +43,13 @@ class GraphStore(Protocol):
     ) -> str:
         """Store an embed Run's vectors, by Chunk id, for the Document; return the Run id.
 
-        A succeeded Run replaces the vectors of earlier embed Runs and supersedes them. A failed
-        Run is recorded with no vectors. Every id must be a current search unit of the Document.
+        A succeeded Run gives a vector to every current search unit of the Document, no more and
+        no fewer, replacing earlier embed Runs' vectors and superseding those Runs. A failed Run
+        is recorded with no vectors.
         """
+
+    def current_chunk_run(self, document_id: str) -> str | None:
+        """The chunk Run that produced the Document's current Chunks, if any."""
 
     def search_vector(self, vector: list[float], limit: int) -> list[str]:
         """Current Chunk ids whose vectors are nearest the query's, best first."""

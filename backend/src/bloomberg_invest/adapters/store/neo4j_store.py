@@ -107,6 +107,18 @@ class Neo4jStore(GraphStore):
         with self._driver.session() as session:
             return session.execute_write(_record_embeddings, document_id, vectors, run)
 
+    def current_chunk_run(self, document_id: str) -> str | None:
+        records, _, _ = self._driver.execute_query(
+            f"""
+            MATCH (n:Chunk)-[:FROM_DOCUMENT]->(:Document {{id: $id}})
+            WHERE {CURRENT}
+            MATCH (n)-[:PRODUCED_BY]->(r:Run)
+            RETURN DISTINCT r.id AS id
+            """,
+            id=document_id,
+        )
+        return records[0]["id"] if records else None
+
     def search_vector(self, vector: list[float], limit: int) -> list[str]:
         records, _, _ = self._driver.execute_query(
             f"""
@@ -389,25 +401,30 @@ def _record_embeddings(
     if run.status != RunStatus.succeeded:
         return run_id
 
-    rows = [{"id": pid, "vector": v} for pid, v in vectors.items()]
-    matched = tx.run(
+    # An embed Run embeds every current Chunk of its Document, so its PROCESSED link says which
+    # Run made each vector: no link per Chunk. Raising rolls the whole transaction back.
+    current = tx.run(
         f"""
-        MATCH (r:Run {{id: $run_id}})-[:PROCESSED]->(d)
-        UNWIND $rows AS row
-        MATCH (n:Chunk {{id: row.id}})-[:FROM_DOCUMENT]->(d)
+        MATCH (n:Chunk)-[:FROM_DOCUMENT]->(:Document {{id: $document_id}})
         WHERE n.index_text IS NOT NULL AND {CURRENT}
-        OPTIONAL MATCH (n)-[old:EMBEDDED_BY]->()
-        DELETE old
-        SET n.embedding = row.vector
-        CREATE (n)-[:EMBEDDED_BY]->(r)
-        RETURN count(DISTINCT n) AS n
+        RETURN collect(n.id) AS ids
         """,
-        run_id=run_id,
-        rows=rows,
-    ).single(strict=True)["n"]
-    if matched != len(rows):
-        # Raising rolls the whole transaction back, the Run included.
-        raise ValueError(f"{len(rows) - matched} of {len(rows)} ids are not current search units")
+        document_id=document_id,
+    ).single(strict=True)["ids"]
+    if set(vectors) != set(current):
+        stray, missing = len(set(vectors) - set(current)), len(set(current) - set(vectors))
+        raise ValueError(
+            f"an embed Run covers every current search unit: {stray} ids are not current search "
+            f"units, {missing} current ones have no vector"
+        )
+    tx.run(
+        """
+        UNWIND $rows AS row
+        MATCH (n:Chunk {id: row.id})
+        SET n.embedding = row.vector
+        """,
+        rows=[{"id": pid, "vector": v} for pid, v in vectors.items()],
+    )
     tx.run(
         """
         MATCH (r:Run {id: $run_id})-[:PROCESSED]->(d)

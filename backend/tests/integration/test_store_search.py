@@ -105,18 +105,34 @@ def test_vector_search_returns_the_nearest_embedded_chunks(store, chunked):
     assert store.search_vector(axis(0), 2) == [dividend, revenue]
 
 
-def test_embeddings_are_recorded_with_their_run(store, driver, chunked):
-    document_id, units = chunked
-    run_id = embedded(store, document_id, units)
-
-    records, _, _ = driver.execute_query(
+def embed_state(driver, document_id):
+    """The Document's embed Runs, oldest first, and how many of its Chunks have a vector."""
+    runs, _, _ = driver.execute_query(
         """
-        MATCH (k:Chunk)-[:EMBEDDED_BY]->(r:Run)-[:PROCESSED]->(:Document {id: $id})
-        RETURN r.id AS run, r.step AS step, count(k) AS chunks
+        MATCH (r:Run {step: 'embed'})-[:PROCESSED]->(:Document {id: $id})
+        OPTIONAL MATCH (r)-[:SUPERSEDED_BY]->(by:Run)
+        RETURN r.id AS run, r.status AS status, by.id AS superseded_by ORDER BY r.started_at
         """,
         id=document_id,
     )
-    assert [r.data() for r in records] == [{"run": run_id, "step": "embed", "chunks": 2}]
+    [vectors], _, _ = driver.execute_query(
+        "MATCH (k:Chunk)-[:FROM_DOCUMENT]->(:Document {id: $id}) RETURN count(k.embedding) AS n",
+        id=document_id,
+    )
+    return [r.data() for r in runs], vectors["n"]
+
+
+def test_an_embed_run_on_the_document_gives_every_chunk_a_vector(store, driver, chunked):
+    document_id, units = chunked
+    run_id = embedded(store, document_id, units)
+
+    runs, vectors = embed_state(driver, document_id)
+    assert runs == [{"run": run_id, "status": "succeeded", "superseded_by": None}]
+    assert vectors == 2
+    [links], _, _ = driver.execute_query(
+        "MATCH (:Chunk)-[l]->(:Run {id: $id}) RETURN count(l) AS n", id=run_id
+    )
+    assert links["n"] == 0, "the Run links to the Document, not to each Chunk"
 
 
 def test_re_embedding_supersedes_the_previous_embed_run(store, driver, chunked):
@@ -126,16 +142,12 @@ def test_re_embedding_supersedes_the_previous_embed_run(store, driver, chunked):
         document_id, {pid: axis(7 - i) for i, pid in enumerate(units)}, embed_run(40)
     )
 
-    records, _, _ = driver.execute_query(
-        """
-        MATCH (:Chunk)-[:EMBEDDED_BY]->(r:Run) RETURN DISTINCT r.id AS run
-        UNION
-        MATCH (:Run {id: $first})-[:SUPERSEDED_BY]->(r:Run) RETURN r.id AS run
-        """,
-        first=first,
-    )
-    assert {r["run"] for r in records} == {second}
-    assert store.search_vector(axis(7), 1) == [next(iter(units))]
+    runs, _ = embed_state(driver, document_id)
+    assert runs == [
+        {"run": first, "status": "succeeded", "superseded_by": second},
+        {"run": second, "status": "succeeded", "superseded_by": None},
+    ]
+    assert store.search_vector(axis(7), 1) == [next(iter(units))], "the vectors are replaced"
 
 
 def test_a_failed_embed_run_keeps_the_last_good_vectors(store, driver, chunked):
@@ -144,14 +156,26 @@ def test_a_failed_embed_run_keeps_the_last_good_vectors(store, driver, chunked):
     store.record_embeddings(document_id, {}, embed_run(40, RunStatus.failed))
 
     assert store.search_vector(axis(1), 1) == [list(units)[1]]
-    records, _, _ = driver.execute_query("MATCH (:Chunk)-[:EMBEDDED_BY]->(r) RETURN r.id AS run")
-    assert {r["run"] for r in records} == {good}
+    runs, _ = embed_state(driver, document_id)
+    assert [(r["run"] == good, r["status"], r["superseded_by"]) for r in runs] == [
+        (True, "succeeded", None),
+        (False, "failed", None),
+    ]
 
 
 def test_embeddings_for_chunks_that_are_not_current_search_units_fail(store, chunked):
-    document_id, _ = chunked
-    with pytest.raises(ValueError, match="not current search units"):
-        store.record_embeddings(document_id, {"nope": axis(0)}, embed_run())
+    document_id, units = chunked
+    vectors = {pid: axis(i) for i, pid in enumerate(units)} | {"nope": axis(5)}
+    with pytest.raises(ValueError, match="1 ids are not current search units"):
+        store.record_embeddings(document_id, vectors, embed_run())
+
+
+def test_an_embed_run_must_cover_every_current_chunk(store, driver, chunked):
+    document_id, units = chunked
+    with pytest.raises(ValueError, match="1 current ones have no vector"):
+        store.record_embeddings(document_id, {next(iter(units)): axis(0)}, embed_run())
+
+    assert embed_state(driver, document_id) == ([], 0), "nothing is written, the Run included"
 
 
 def test_superseded_chunks_leave_the_index(store, document, chunked):

@@ -15,4 +15,5 @@ Search returns Chunks, ranked by the cosine similarity of their embedded index t
 - A search result and a highlight cover a whole Chunk (up to `CHUNK_CAP`, 2,000 tokens). Exact spans come with Passages, which Facts cite.
 - The chunk cap and the topic-shift split (R2) now decide what a result is.
 - The query must be embedded with the model the Chunks were: the API loads it at startup, and the embed Run records it. Changing the model means re-embedding every filing (`bloomberg embed`).
+- An embed Run embeds every current Chunk of its Document at once and links to the Document, not to each Chunk; its config names the chunk Run it embedded.
 - Exact-term lookups (an ISIN, a note number) are not served by search; they belong to the graph's own queries.
