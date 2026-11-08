@@ -1,7 +1,10 @@
 """Cypher fragments and row shapes shared by the store's reads and writes."""
 
 import json
+import uuid
 from typing import Any
+
+from neo4j import ManagedTransaction
 
 from bloomberg_invest.domain.model import (
     RunInfo,
@@ -45,3 +48,23 @@ def _run_properties(run: RunInfo) -> dict[str, Any]:
         "error": run.error,
         "output": run.output,
     }
+
+
+def _create_run(tx: ManagedTransaction, document_id: str, run: RunInfo) -> str:
+    """Create a Run that PROCESSED an existing Document; return its id."""
+    run_id = str(uuid.uuid4())
+    created = tx.run(
+        """
+        MATCH (d:Document {id: $document_id})
+        CREATE (r:Run {id: $run_id, step: $step, tool: $tool, tool_version: $tool_version,
+                       config: $config, started_at: $started_at, finished_at: $finished_at,
+                       status: $status, error: $error, output: $output})-[:PROCESSED]->(d)
+        RETURN r.id AS id
+        """,
+        document_id=document_id,
+        run_id=run_id,
+        **_run_properties(run),
+    ).single()
+    if created is None:
+        raise LookupError(f"no document {document_id}")
+    return run_id

@@ -5,7 +5,11 @@ from typing import Any
 
 from neo4j import ManagedTransaction
 
-from bloomberg_invest.adapters.store.neo4j_store._cypher import CURRENT, SUPERSEDE, _run_properties
+from bloomberg_invest.adapters.store.neo4j_store._cypher import (
+    CURRENT,
+    SUPERSEDE,
+    _create_run,
+)
 from bloomberg_invest.adapters.store.neo4j_store._embed import _supersede_embed_runs
 from bloomberg_invest.domain.chunking import ChunkDraft
 from bloomberg_invest.domain.indexing import index_text
@@ -19,21 +23,7 @@ from bloomberg_invest.domain.model import (
 def _record_chunks(
     tx: ManagedTransaction, document_id: str, chunks: list[ChunkDraft], run: RunInfo
 ) -> str:
-    run_id = str(uuid.uuid4())
-    created = tx.run(
-        """
-        MATCH (d:Document {id: $document_id})
-        CREATE (r:Run {id: $run_id, step: $step, tool: $tool, tool_version: $tool_version,
-                       config: $config, started_at: $started_at, finished_at: $finished_at,
-                       status: $status, error: $error, output: $output})-[:PROCESSED]->(d)
-        RETURN r.id AS id
-        """,
-        document_id=document_id,
-        run_id=run_id,
-        **_run_properties(run),
-    ).single()
-    if created is None:
-        raise LookupError(f"no document {document_id}")
+    run_id = _create_run(tx, document_id, run)
     if run.status != RunStatus.succeeded:
         return run_id
 
