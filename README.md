@@ -55,11 +55,10 @@ npm run typecheck && npm run lint && npm run build
 ```bash
 cd backend
 uv run --group notebook nbstripout --install --attributes ../.gitattributes   # once per clone
-uv run --env-file ../.env --env-file ~/.config/bloomberg-invest/bakeoff.env \
-  --extra ingest --group notebook jupyter lab notebooks/pipeline.ipynb
+uv run --extra ingest --group notebook jupyter lab notebooks/pipeline.ipynb
 ```
 
-The second env file holds the Azure OpenAI key (`AZURE_OPENAI_*`, see `prototypes/parser-bakeoff/.env.example` on `prototype/parser-bakeoff`) that translates the golden questions into French. Translations are cached in `data/notebook/translations.json`, so it's needed only for a question not seen before.
+The notebook loads the repo's `.env` itself, so it also runs in a kernel VS Code starts.
 
 Outputs are stripped on commit, and CI rejects a notebook with outputs: they show pages of the AMMC report.
 

@@ -12,6 +12,7 @@ from neo4j import Driver, ManagedTransaction
 
 from bloomberg_invest.adapters.store import GraphStore
 from bloomberg_invest.domain.chunking import ChunkDraft
+from bloomberg_invest.domain.indexing import index_text
 from bloomberg_invest.domain.model import (
     DocumentMeta,
     PageInfo,
@@ -22,7 +23,14 @@ from bloomberg_invest.domain.model import (
     SectionNode,
     section_not_on_parsed_page,
 )
-from bloomberg_invest.views import DocumentDetail, DocumentSummary, Run, Section
+from bloomberg_invest.views import (
+    DocumentDetail,
+    DocumentRef,
+    DocumentSummary,
+    Run,
+    SearchHit,
+    Section,
+)
 
 CONSTRAINTS = [
     ("Document", "id"),
@@ -31,10 +39,20 @@ CONSTRAINTS = [
     ("Organisation", "isin"),
     ("Section", "id"),
     ("Chunk", "id"),
-    ("Paragraph", "id"),
 ]
 
 CURRENT = "coalesce(n.superseded, false) = false"
+
+# Chunks are the search unit: the vector index reads the vector embedded from a Chunk's index
+# text. A superseded Chunk loses both properties, so it leaves the index.
+VECTOR_INDEX = "chunk_embedding"
+INDEXES = [
+    # Neo4j quantizes vectors to bits by default; full precision keeps the measured ranking.
+    f"""CREATE VECTOR INDEX {VECTOR_INDEX} IF NOT EXISTS FOR (n:Chunk) ON n.embedding
+    OPTIONS {{indexConfig: {{`vector.similarity_function`: 'cosine',
+                             `vector.quantization.type`: 'NONE'}}}}""",
+]
+SUPERSEDE = "SET n.superseded = true REMOVE n.index_text, n.embedding"
 
 LATEST_PARSE = """
 MATCH (r:Run {step: 'parse', status: 'succeeded'})-[:PROCESSED]->(d)
@@ -53,6 +71,9 @@ class Neo4jStore(GraphStore):
                 f"CREATE CONSTRAINT {label.lower()}_{prop} IF NOT EXISTS "
                 f"FOR (n:{label}) REQUIRE n.{prop} IS UNIQUE"
             )
+        for index in INDEXES:
+            self._driver.execute_query(index)
+        self._driver.execute_query("CALL db.awaitIndexes(60)")
 
     def record_parse(
         self, meta: DocumentMeta, parsed: ParsedDocument, run: RunInfo, sha256: str
@@ -67,6 +88,71 @@ class Neo4jStore(GraphStore):
     def record_chunks(self, document_id: str, chunks: list[ChunkDraft], run: RunInfo) -> str:
         with self._driver.session() as session:
             return session.execute_write(_record_chunks, document_id, chunks, run)
+
+    def search_units(self, document_id: str) -> list[tuple[str, str]]:
+        records, _, _ = self._driver.execute_query(
+            """
+            MATCH (n:Chunk)-[:FROM_DOCUMENT]->(:Document {id: $id})
+            WHERE n.index_text IS NOT NULL
+            RETURN n.id AS id, n.index_text AS text ORDER BY n.index
+            """,
+            id=document_id,
+        )
+        return [(r["id"], r["text"]) for r in records]
+
+    def record_embeddings(
+        self, document_id: str, vectors: dict[str, list[float]], run: RunInfo
+    ) -> str:
+        with self._driver.session() as session:
+            return session.execute_write(_record_embeddings, document_id, vectors, run)
+
+    def search_vector(self, vector: list[float], limit: int) -> list[str]:
+        records, _, _ = self._driver.execute_query(
+            f"""
+            CYPHER 25
+            MATCH (n:Chunk)
+            SEARCH n IN (VECTOR INDEX {VECTOR_INDEX} FOR $vector LIMIT $limit) SCORE AS score
+            WHERE {CURRENT}
+            RETURN n.id AS id ORDER BY score DESC
+            """,
+            vector=vector,
+            limit=limit,
+        )
+        return [r["id"] for r in records]
+
+    def hits(self, chunk_ids: list[str]) -> list[SearchHit]:
+        records, _, _ = self._driver.execute_query(
+            """
+            UNWIND range(0, size($ids) - 1) AS i
+            MATCH (n:Chunk {id: $ids[i]})-[:FROM_DOCUMENT]->(d:Document)
+            MATCH (d)-[:ISSUED_BY]->(o:Organisation)
+            OPTIONAL MATCH path = (d)-[:HAS_SECTION*]->(:Section)<-[:IN_SECTION]-(n)
+            CALL (n) {
+                MATCH (n)-[:ON_PAGE]->(p:Page)
+                WITH p ORDER BY p.number
+                RETURN collect(p.number) AS pages
+            }
+            RETURN n, d, o, pages, [s IN coalesce(nodes(path)[1..-1], []) | s.title] AS section_path
+            ORDER BY i
+            """,
+            ids=chunk_ids,
+        )
+        return [
+            SearchHit(
+                chunk_id=r["n"]["id"],
+                text=r["n"]["text"],
+                pages=r["pages"],
+                boxes=_boxes(r["n"]["boxes"]),
+                section_path=r["section_path"],
+                document=DocumentRef(
+                    id=r["d"]["id"],
+                    issuer={"isin": r["o"]["isin"], "name": r["o"]["name"]},
+                    doc_type=r["d"]["doc_type"],
+                    fiscal_year=r["d"]["fiscal_year"],
+                ),
+            )
+            for r in records
+        ]
 
     def list_documents(self) -> list[DocumentSummary]:
         records, _, _ = self._driver.execute_query(
@@ -168,7 +254,7 @@ def _record_parse(
         MATCH (r:Run {{id: $run_id}})-[:PROCESSED]->(d:Document {{id: $document_id}})
         MATCH (n)-[:PRODUCED_BY]->(earlier:Run)-[:PROCESSED]->(d)
         WHERE earlier <> r AND NOT n:Document AND NOT n:Organisation AND {CURRENT}
-        SET n.superseded = true
+        {SUPERSEDE}
         CREATE (n)-[:SUPERSEDED_BY]->(r)
         """,
         document_id=document_id,
@@ -235,7 +321,7 @@ def _record_chunks(
         MATCH (r:Run {{id: $run_id}})-[:PROCESSED]->(d)
         MATCH (n)-[:PRODUCED_BY]->(earlier:Run {{step: $step}})-[:PROCESSED]->(d)
         WHERE earlier <> r AND {CURRENT}
-        SET n.superseded = true
+        {SUPERSEDE}
         CREATE (n)-[:SUPERSEDED_BY]->(r)
         """,
         run_id=run_id,
@@ -246,7 +332,7 @@ def _record_chunks(
         MATCH (d:Document {{id: $document_id}}), (r:Run {{id: $run_id}})
         UNWIND $chunks AS c
         CREATE (k:Chunk {{id: c.id, index: c.index, kind: c.kind, text: c.text,
-                          token_count: c.token_count}})
+                          token_count: c.token_count, index_text: c.index_text, boxes: c.boxes}})
         CREATE (k)-[:FROM_DOCUMENT]->(d), (k)-[:PRODUCED_BY]->(r)
         WITH d, r, c, k
         CALL (d, c, k) {{
@@ -260,12 +346,6 @@ def _record_chunks(
         CALL (d, c, k) {{
             MATCH (d)-[:HAS_SECTION*]->(s:Section) WHERE s.id IN c.refers_to
             CREATE (k)-[:REFERS_TO]->(s)
-        }}
-        CALL (r, c, k) {{
-            UNWIND c.paragraphs AS p
-            CREATE (n:Paragraph {{id: p.id, index: p.index, text: p.text, page: p.page,
-                                  boxes: p.boxes}})
-            CREATE (n)-[:PART_OF]->(k), (n)-[:PRODUCED_BY]->(r)
         }}
         """,
         document_id=document_id,
@@ -286,6 +366,67 @@ def _record_chunks(
     return run_id
 
 
+def _record_embeddings(
+    tx: ManagedTransaction, document_id: str, vectors: dict[str, list[float]], run: RunInfo
+) -> str:
+    run_id = str(uuid.uuid4())
+    created = tx.run(
+        """
+        MATCH (d:Document {id: $document_id})
+        CREATE (r:Run {id: $run_id, step: $step, tool: $tool, tool_version: $tool_version,
+                       config: $config, started_at: $started_at, finished_at: $finished_at,
+                       status: $status, error: $error, output: $output})-[:PROCESSED]->(d)
+        RETURN r.id AS id
+        """,
+        document_id=document_id,
+        run_id=run_id,
+        **_run_properties(run),
+    ).single()
+    if created is None:
+        raise LookupError(f"no document {document_id}")
+    if run.status != RunStatus.succeeded:
+        return run_id
+
+    rows = [{"id": pid, "vector": v} for pid, v in vectors.items()]
+    matched = tx.run(
+        f"""
+        MATCH (r:Run {{id: $run_id}})-[:PROCESSED]->(d)
+        UNWIND $rows AS row
+        MATCH (n:Chunk {{id: row.id}})-[:FROM_DOCUMENT]->(d)
+        WHERE n.index_text IS NOT NULL AND {CURRENT}
+        OPTIONAL MATCH (n)-[old:EMBEDDED_BY]->()
+        DELETE old
+        SET n.embedding = row.vector
+        CREATE (n)-[:EMBEDDED_BY]->(r)
+        RETURN count(DISTINCT n) AS n
+        """,
+        run_id=run_id,
+        rows=rows,
+    ).single(strict=True)["n"]
+    if matched != len(rows):
+        # Raising rolls the whole transaction back, the Run included.
+        raise ValueError(f"{len(rows) - matched} of {len(rows)} ids are not current search units")
+    tx.run(
+        """
+        MATCH (r:Run {id: $run_id})-[:PROCESSED]->(d)
+        MATCH (earlier:Run {step: $step, status: 'succeeded'})-[:PROCESSED]->(d)
+        WHERE earlier <> r AND coalesce(earlier.superseded, false) = false
+        SET earlier.superseded = true
+        CREATE (earlier)-[:SUPERSEDED_BY]->(r)
+        """,
+        run_id=run_id,
+        step=RunStep.embed.value,
+    )
+    return run_id
+
+
+def _boxes(flat: list[float]) -> list[tuple[int, float, float, float, float]]:
+    return [
+        (int(flat[i]), flat[i + 1], flat[i + 2], flat[i + 3], flat[i + 4])
+        for i in range(0, len(flat), 5)
+    ]
+
+
 def _chunk_row(c: ChunkDraft) -> dict[str, Any]:
     return {
         "id": str(uuid.uuid4()),
@@ -296,17 +437,9 @@ def _chunk_row(c: ChunkDraft) -> dict[str, Any]:
         "section_id": c.section_id,
         "pages": list(c.pages),
         "refers_to": list(c.refers_to),
-        "paragraphs": [
-            {
-                "id": str(uuid.uuid4()),
-                "index": i,
-                "text": p.text,
-                "page": p.page,
-                # Neo4j has no nested lists: each box is five numbers, page, left, top, right, bottom.
-                "boxes": [float(v) for box in p.boxes for v in box],
-            }
-            for i, p in enumerate(c.paragraphs)
-        ],
+        "index_text": index_text(c),
+        # Neo4j has no nested lists: each box is five numbers, page, left, top, right, bottom.
+        "boxes": [float(v) for p in c.paragraphs for box in p.boxes for v in box],
     }
 
 

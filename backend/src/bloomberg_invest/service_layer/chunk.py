@@ -72,8 +72,8 @@ def chunk_document(
     return Chunked(store.record_chunks(document_id, drafts, run_info()), len(drafts))
 
 
-def _section_refs(sections: list[Section]):
+def _section_refs(sections: list[Section], parent: str | None = None):
     """Sections in document order, parents before children."""
     for s in sections:
-        yield SectionRef(id=s.id, title=s.title, page=s.page)
-        yield from _section_refs(s.children)
+        yield SectionRef(id=s.id, title=s.title, page=s.page, parent=parent)
+        yield from _section_refs(s.children, s.id)

@@ -15,7 +15,9 @@ dependencies = [
 [project.optional-dependencies]
 # Docling pulls in torch: only the ingest image and the ingest tests install it.
 # torch and torchvision are listed only so the CPU-only source below applies to them.
-ingest = ["docling==2.145.0", "tiktoken>=0.12", "torch", "torchvision"]
+ingest = ["bloomberg-invest[embed]", "docling==2.145.0", "tiktoken>=0.12", "torch", "torchvision"]
+# The embedding model, for ingest (Paragraphs) and the API (queries).
+embed = ["sentence-transformers>=5.1", "torch"]
 
 [project.scripts]
 bloomberg = "bloomberg_invest.entrypoints.cli:main"
@@ -28,9 +30,8 @@ notebook = [
     "matplotlib>=3.10",
     "nbconvert>=7.16",
     "nbstripout>=0.8",
-    "openai>=2.0",
     "pandas>=2.3",
-    "sentence-transformers>=5.1",
+    "python-dotenv>=1.1",
     "transformers>=4.51",
 ]
 dev = [
@@ -64,6 +65,7 @@ testpaths = ["tests"]
 pythonpath = ["tests"]
 markers = [
     "ingest: needs the ingest extra (Docling)",
+    "embed: needs the embed extra and downloads the embedding model",
     "golden: needs the golden AMMC PDF on disk; skipped otherwise",
 ]
 # Raised inside Docling 2.145 and the torch model it runs; nothing in our code triggers these.

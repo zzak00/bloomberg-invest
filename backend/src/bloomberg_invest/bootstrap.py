@@ -10,6 +10,7 @@ from dataclasses import dataclass
 
 from neo4j import GraphDatabase, NotificationDisabledClassification
 
+from bloomberg_invest.adapters.embedding import Embedder
 from bloomberg_invest.adapters.files import DocumentFiles
 from bloomberg_invest.adapters.parsing import Parser
 from bloomberg_invest.adapters.store import GraphStore
@@ -26,6 +27,19 @@ def _docling(settings: Settings) -> Parser:
 
 
 PARSERS: dict[str, Callable[[Settings], Parser]] = {"docling": _docling}
+
+
+def _qwen3() -> Embedder:
+    # Imported here so code that never embeds runs without torch installed.
+    from bloomberg_invest.adapters.embedding.sentence_transformer import (
+        SentenceTransformerEmbedder,
+    )
+
+    return SentenceTransformerEmbedder("Qwen/Qwen3-Embedding-0.6B", query_prompt="query")
+
+
+# The pipeline notebook compared the candidates; Qwen3 won for hybrid search (#21).
+EMBEDDERS: dict[str, Callable[[], Embedder]] = {"qwen3-0.6b": _qwen3}
 
 
 @dataclass(frozen=True)
@@ -55,6 +69,14 @@ def parser(settings: Settings) -> Parser:
         expected = ", ".join(sorted(PARSERS))
         raise ValueError(f"unknown parser {settings.parser!r}, expected {expected}")
     return PARSERS[settings.parser](settings)
+
+
+def embedder(settings: Settings) -> Embedder:
+    """The embedding model `settings.embedder` names; it loads when this is called."""
+    if settings.embedder not in EMBEDDERS:
+        expected = ", ".join(sorted(EMBEDDERS))
+        raise ValueError(f"unknown embedder {settings.embedder!r}, expected {expected}")
+    return EMBEDDERS[settings.embedder]()
 
 
 def token_counter() -> TokenCounter:

@@ -1,26 +1,26 @@
-"""What the search indexes see for a Paragraph (#21 R2). Pure: no store or model here.
+"""What the search indexes see for a Chunk (#21). Pure: no store or model here.
 
-Readers see a Paragraph's own text. The full-text and vector indexes see its section path and
-page first, so a short paragraph ("Néant.") still says what it is about, and a table as one line
-per row with each value after its column name, so a single figure can match a question.
-A heading is not searched on its own: its title already leads the Paragraphs under it.
+Readers see a Chunk's own text. The full-text and vector indexes see a header first, its
+section path and pages, so a short Chunk ("Néant.") still says what it is about. Then each
+block: a heading or paragraph as written, a table one line per row with each value after its
+column name, so a single figure can match a question.
 """
 
-from collections.abc import Sequence
-
-from bloomberg_invest.domain.chunking import Block
+from bloomberg_invest.domain.chunking import Block, ChunkDraft
 
 
-def is_search_unit(block: Block) -> bool:
-    return block.kind != "heading"
+def index_text(chunk: ChunkDraft) -> str:
+    return f"{header(chunk)}\n" + "\n\n".join(filter(None, map(block_text, chunk.paragraphs)))
 
 
-def index_text(block: Block, path: Sequence[str]) -> str:
-    """`path`: the titles of the Paragraph's Section and the Sections above it, outermost first."""
-    where = " > ".join(path)
-    head = f"{where} · p. {block.page}" if where else f"p. {block.page}"
-    body = _rows(block) if block.kind == "table" else block.text
-    return f"{head}\n{body}" if body else head
+def header(chunk: ChunkDraft) -> str:
+    first, last = chunk.pages[0], chunk.pages[-1]
+    pages = f"p. {first}" if first == last else f"pp. {first}-{last}"
+    return f"{' > '.join(chunk.path)} · {pages}" if chunk.path else pages
+
+
+def block_text(block: Block) -> str:
+    return _rows(block) if block.kind == "table" else block.text
 
 
 def _rows(table: Block) -> str:

@@ -193,3 +193,17 @@ def test_a_heading_with_no_content_of_its_own_joins_the_next_chunk():
     assert first.text.startswith("NOTE 2. DIVIDENDES\n\n2.1 Distribution\n\n| a | b | c |")
     assert first.refers_to == (), "a heading is not a citation"
     assert (last.kind, last.text) == ("text", "Sous-titre")
+
+
+def test_a_chunk_knows_its_section_path_outermost_first():
+    sections = [*SECTIONS, SectionRef(id="s21", title="2.1 Distribution", page=2, parent="s2")]
+    blocks = [
+        heading("NOTE 2. DIVIDENDES", page=2),
+        para("Le dividende proposé est de 5 dirhams.", page=2),
+        heading("2.1 Distribution", page=2),
+        para("Il est versé en juin.", page=2),
+    ]
+    first, second = chunk(blocks, sections, cap=100, count=words)
+
+    assert first.path == ("NOTE 2. DIVIDENDES",)
+    assert second.path == ("NOTE 2. DIVIDENDES", "2.1 Distribution")

@@ -77,6 +77,7 @@ class RunStep(StrEnum):
 
     parse = "parse"
     chunk = "chunk"
+    embed = "embed"
 
 
 class RunStatus(StrEnum):

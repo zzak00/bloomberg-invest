@@ -15,6 +15,8 @@ class Settings:
     parser: str = "docling"
     # The token cap for a section's text Chunk (#19 R2); tables are never split.
     chunk_cap: int = 2000
+    # Which model embeds Paragraphs and queries; see `bootstrap.EMBEDDERS`.
+    embedder: str = "qwen3-0.6b"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -25,4 +27,5 @@ class Settings:
             data_dir=Path(os.environ.get("DATA_DIR", "data")),
             parser=os.environ.get("PARSER", "docling"),
             chunk_cap=int(os.environ.get("CHUNK_CAP", "2000")),
+            embedder=os.environ.get("EMBEDDER", "qwen3-0.6b"),
         )

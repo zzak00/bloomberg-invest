@@ -1,4 +1,4 @@
-"""Contract tests for storing Chunks and Paragraphs (#21 AC2, AC5) against a real Neo4j."""
+"""Contract tests for storing Chunks (#21 AC2, AC5) against a real Neo4j."""
 
 from datetime import UTC, datetime
 
@@ -70,13 +70,9 @@ def current_chunks(driver, document_id):
         OPTIONAL MATCH (k)-[:REFERS_TO]->(note:Section)
         MATCH (k)-[:PRODUCED_BY]->(r:Run)
         CALL (k) { MATCH (k)-[:ON_PAGE]->(p:Page) RETURN collect(p.number) AS pages }
-        CALL (k) {
-            MATCH (n:Paragraph)-[:PART_OF]->(k)
-            WHERE coalesce(n.superseded, false) = false
-            RETURN collect(n {.text, .page, .boxes}) AS paragraphs
-        }
         RETURN k.index AS index, k.kind AS kind, s.title AS section, next.index AS next,
-               note.title AS refers_to, r.step AS step, r.id AS run, pages, paragraphs
+               note.title AS refers_to, r.step AS step, r.id AS run, pages, k.boxes AS boxes,
+               k.index_text AS index_text
         ORDER BY index
         """,
         id=document_id,
@@ -96,9 +92,8 @@ def test_chunks_are_linked_to_their_document_section_pages_notes_and_run(store, 
         1,
     )
     assert first["refers_to"] == "2. VUE D'ENSEMBLE"
-    assert first["paragraphs"] == [
-        {"text": "Voir note 2.", "page": 1, "boxes": [1.0, 50.0, 100.0, 300.0, 120.0]}
-    ]
+    assert first["boxes"] == [1.0, 50.0, 100.0, 300.0, 120.0]
+    assert first["index_text"] == "p. 1\nVoir note 2."
     assert (second["kind"], second["section"], sorted(second["pages"]), second["next"]) == (
         "table",
         "1.1 En dirham",
@@ -123,7 +118,7 @@ def test_re_chunking_supersedes_earlier_chunks_but_not_the_parse(store, driver, 
         """,
         run=latest,
     )
-    assert [(r["label"], r["n"]) for r in records] == [("Chunk", 2), ("Paragraph", 2)]
+    assert [(r["label"], r["n"]) for r in records] == [("Chunk", 2)]
     assert len(store.get_document(document_id).sections) == 2
 
 

@@ -31,6 +31,25 @@ class DocumentSummary(BaseModel):
     ingested_at: datetime
 
 
+class DocumentRef(BaseModel):
+    id: str
+    issuer: Organisation
+    doc_type: DocType
+    fiscal_year: int
+
+
+class SearchHit(BaseModel):
+    """A Chunk search returned, with where to find it."""
+
+    chunk_id: str
+    text: str
+    pages: list[int]
+    # (page, left, top, right, bottom) in PDF points, top-left origin: the source viewer draws them.
+    boxes: list[tuple[int, float, float, float, float]]
+    section_path: list[str]
+    document: DocumentRef
+
+
 class DocumentDetail(DocumentSummary):
     sha256: str
     pages: list[PageInfo]

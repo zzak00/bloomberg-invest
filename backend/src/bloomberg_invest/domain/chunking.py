@@ -54,6 +54,7 @@ class SectionRef:
     id: str
     title: str
     page: int
+    parent: str | None = None  # the id of the Section it sits in
 
 
 @dataclass(frozen=True)
@@ -66,6 +67,7 @@ class ChunkDraft:
     token_count: int
     pages: tuple[int, ...]
     refers_to: tuple[str, ...]  # ids of the NOTE sections the text cites
+    path: tuple[str, ...] = ()  # titles of its Section and the Sections above, outermost first
 
 
 def chunk(
@@ -94,6 +96,7 @@ def chunk(
             groups.append((table[0][0], "table", section_id, [b for _, b in table]))
 
     notes = _note_sections(sections)
+    paths = _paths(sections)
     chunks = []
     for index, (_, kind, section_id, part) in enumerate(sorted(groups, key=lambda g: g[0])):
         text = "\n\n".join(b.text for b in part)
@@ -110,9 +113,18 @@ def chunk(
                 token_count=count(text),
                 pages=tuple(sorted({p for b in part for p in b.pages})),
                 refers_to=refers_to,
+                path=paths.get(section_id, ()),
             )
         )
     return chunks
+
+
+def _paths(sections: Sequence[SectionRef]) -> dict[str | None, tuple[str, ...]]:
+    """Each Section's title path, outermost first; parents come before their children."""
+    paths: dict[str | None, tuple[str, ...]] = {}
+    for s in sections:
+        paths[s.id] = (*paths.get(s.parent, ()), s.title) if s.parent else (s.title,)
+    return paths
 
 
 def _join_tables(blocks: Sequence[Block]) -> list[Block]:
