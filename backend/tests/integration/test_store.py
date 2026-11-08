@@ -1,11 +1,9 @@
 """Contract tests for the graph store against a real Neo4j."""
 
 import pytest
-from conftest import make_run
+from conftest import SHA, make_run
 
 from bloomberg_invest.domain.model import ParsedDocument, RunStatus
-
-SHA = "90e8b73c7f11bfde45d0c7ddb3ce506d162bac2030244d48d9ca2f641ddd4214"
 
 
 def titles(sections) -> list[str]:
@@ -22,8 +20,20 @@ def test_schema_creates_the_uniqueness_constraints(store, driver):
         ("Organisation", "isin"),
         ("Section", "id"),
         ("Chunk", "id"),
-        ("Paragraph", "id"),
     } <= found
+
+
+def test_schema_creates_the_full_precision_vector_index_on_chunks(store, driver):
+    records, _, _ = driver.execute_query(
+        """
+        SHOW VECTOR INDEXES YIELD labelsOrTypes, properties, options
+        RETURN labelsOrTypes, properties, options.indexConfig AS config
+        """
+    )
+    [index] = [r for r in records if r["labelsOrTypes"] == ["Chunk"]]
+    assert index["properties"] == ["embedding"]
+    assert index["config"]["vector.quantization.type"] == "NONE"
+    assert index["config"]["vector.similarity_function"] == "COSINE"
 
 
 def test_a_recorded_parse_is_listed_with_its_issuer(store, meta, parsed):

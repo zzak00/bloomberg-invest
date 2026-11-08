@@ -5,6 +5,7 @@ The cap is set low (200 tokens) so the fixture's long section must split.
 
 import pytest
 from conftest import FIXTURES
+from fakes import FakeEmbedder
 
 pytestmark = pytest.mark.ingest
 pytest.importorskip("docling", reason="needs the ingest extra")
@@ -35,7 +36,9 @@ def counter():
 @pytest.fixture
 def ingested(store, meta, tmp_path, counter):
     files = DocumentFiles(tmp_path)
-    result = ingest(FIXTURES / "chunking.pdf", meta, store, files, DoclingParser(), counter, CAP)
+    result = ingest(
+        FIXTURES / "chunking.pdf", meta, store, files, DoclingParser(), counter, CAP, FakeEmbedder()
+    )
     return result, files
 
 
@@ -47,15 +50,10 @@ def chunks(driver, document_id):
         MATCH (k)-[:IN_SECTION]->(s:Section)
         OPTIONAL MATCH (k)-[:REFERS_TO]->(note:Section)
         CALL (k) { MATCH (k)-[:ON_PAGE]->(p:Page) RETURN collect(p.number) AS pages }
-        CALL (k) {
-            MATCH (p:Paragraph)-[:PART_OF]->(k)
-            WITH p ORDER BY p.index
-            RETURN collect(p.text) AS paragraphs
-        }
         MATCH (k)-[:PRODUCED_BY]->(r:Run)
         RETURN k.index AS index, k.kind AS kind, s.title AS section, k.token_count AS tokens,
                k.text AS text,
-               note.title AS note, pages, paragraphs, r.id AS run
+               note.title AS note, pages, r.id AS run
         ORDER BY index
         """,
         id=document_id,
@@ -74,9 +72,11 @@ def test_ingest_chunks_the_filing_by_its_structure(ingested, driver, counter):
     ], "the table running onto page 2 is one Chunk"
     overview = [c for c in found if c["section"] == "2. VUE D'ENSEMBLE"]
     assert len(overview) > 1, "the long section splits"
-    # A paragraph is never split, so only a lone paragraph may exceed the cap.
-    sizes = [[counter(p) for p in c["paragraphs"]] for c in overview]
-    assert all(c["tokens"] <= CAP or len(c["paragraphs"]) == 1 for c in overview), sizes
+    # A paragraph is never split, so only a lone paragraph may exceed the cap. A Chunk's text
+    # joins its blocks with a blank line.
+    blocks = [c["text"].split("\n\n") for c in overview]
+    sizes = [[counter(b) for b in c] for c in blocks]
+    assert all(c["tokens"] <= CAP or len(b) == 1 for c, b in zip(overview, blocks)), sizes
     # Docling cuts paragraphs differently per machine (#21), so check the text, not the count.
     text = " ".join(c["text"] for c in overview)
     assert all(text.count(p) == 2 for p in OVERVIEW), "no paragraph is lost"

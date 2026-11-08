@@ -3,8 +3,7 @@
 from datetime import UTC, datetime
 
 import pytest
-from conftest import make_run
-from test_store_chunks import SHA, chunk_run
+from test_store_chunks import chunk_run
 
 from bloomberg_invest.domain.chunking import Block, ChunkDraft
 from bloomberg_invest.domain.model import RunInfo, RunStatus, RunStep
@@ -28,15 +27,6 @@ def embed_run(minute: int = 30, status: RunStatus = RunStatus.succeeded) -> RunI
         status=status,
         error=None if status == RunStatus.succeeded else "RuntimeError: out of memory",
     )
-
-
-@pytest.fixture
-def document(store, meta, parsed):
-    document_id = store.record_parse(meta, parsed, make_run(), SHA)
-    detail = store.get_document(document_id)
-    ids = {s.title: s.id for s in detail.sections}
-    ids |= {c.title: c.id for s in detail.sections for c in s.children}
-    return document_id, ids
 
 
 def drafts(ids: dict[str, str]) -> list[ChunkDraft]:

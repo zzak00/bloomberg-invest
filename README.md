@@ -22,7 +22,7 @@ docker compose run --rm ingest /data/inbox/Maroc_Telecom_RFA_2025.pdf \
 
 The first ingest downloads Docling's models (kept in a volume). A 90-page report takes about 10 minutes in the container. On the host it takes about 4: `cd backend && NEO4J_PASSWORD=... DATA_DIR=../data uv run --extra ingest bloomberg ingest ...`.
 
-Ingest also chunks the filing (#21). To re-chunk an ingested filing from its saved parse, for example after changing `CHUNK_CAP`: `docker compose run --rm chunk <document id>`.
+Ingest also chunks the filing and embeds each Chunk for search (#21), with `Qwen3-Embedding-0.6B` (downloaded on first use, about 1.2 GB). To re-chunk an ingested filing from its saved parse, for example after changing `CHUNK_CAP`: `docker compose run --rm chunk <document id>`, which embeds the new Chunks too. To re-embed only: `docker compose run --rm embed <document id>`.
 
 | Part | Where | Notes |
 | --- | --- | --- |
@@ -40,6 +40,7 @@ cd backend
 uv sync --locked                         # API only, like the API image
 uv run pytest -m "not ingest"            # store, API and outline tests
 uv run --extra ingest pytest -m ingest   # Docling parser, ingest and chunk tests
+uv run --extra embed pytest -m embed     # the embedding model
 uv run ruff check . && uv run ruff format --check .
 
 cd ../frontend

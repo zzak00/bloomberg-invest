@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 from conftest import FIXTURES
+from fakes import FakeEmbedder
 
 pytestmark = pytest.mark.ingest
 pytest.importorskip("docling", reason="needs the ingest extra")
@@ -27,7 +28,14 @@ GOLDEN_SHA = "90e8b73c7f11bfde45d0c7ddb3ce506d162bac2030244d48d9ca2f641ddd4214"
 def test_ingest_stores_the_pdf_and_records_the_parse(store, meta, tmp_path):
     files = DocumentFiles(tmp_path)
     ingested = ingest(
-        FIXTURES / "filing.pdf", meta, store, files, DoclingParser(), TiktokenCounter(), 2000
+        FIXTURES / "filing.pdf",
+        meta,
+        store,
+        files,
+        DoclingParser(),
+        TiktokenCounter(),
+        2000,
+        FakeEmbedder(),
     )
     document_id = ingested.document_id
 
@@ -41,6 +49,7 @@ def test_ingest_stores_the_pdf_and_records_the_parse(store, meta, tmp_path):
     assert detail.run.output.startswith(f"parses/{sha}/")
     assert (tmp_path / detail.run.output).stat().st_size > 0
     assert ingested.chunked.chunks > 0
+    assert ingested.embedded.chunks == ingested.chunked.chunks, "every Chunk is embedded"
 
 
 @pytest.mark.golden
@@ -49,7 +58,9 @@ def test_the_golden_report_parses_into_its_outline_and_chunks(store, meta, tmp_p
     assert hashlib.sha256(GOLDEN_PDF.read_bytes()).hexdigest() == GOLDEN_SHA
     files = DocumentFiles(tmp_path)
     counter = TiktokenCounter()
-    ingested = ingest(GOLDEN_PDF, meta, store, files, DoclingParser(), counter, 2000)
+    ingested = ingest(
+        GOLDEN_PDF, meta, store, files, DoclingParser(), counter, 2000, FakeEmbedder()
+    )
     document_id = ingested.document_id
 
     detail = store.get_document(document_id)
@@ -69,10 +80,9 @@ def test_the_golden_report_parses_into_its_outline_and_chunks(store, meta, tmp_p
     records, _, _ = driver.execute_query(
         """
         MATCH (k:Chunk)-[:FROM_DOCUMENT]->(:Document {id: $id})
-        CALL (k) { MATCH (p:Paragraph)-[:PART_OF]->(k) RETURN count(p) AS paragraphs }
         OPTIONAL MATCH (k)-[:REFERS_TO]->(note:Section)
-        RETURN k.id AS id, k.kind AS kind, k.token_count AS tokens, paragraphs,
-               count(note) AS notes
+        RETURN k.id AS id, k.kind AS kind, k.token_count AS tokens,
+               size(split(k.text, '\n\n')) AS paragraphs, count(note) AS notes
         """,
         id=document_id,
     )

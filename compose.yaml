@@ -51,6 +51,7 @@ services:
       NEO4J_PASSWORD: ${NEO4J_PASSWORD}
       PARSER: ${PARSER:-docling}
       CHUNK_CAP: ${CHUNK_CAP:-2000}
+      EMBEDDER: ${EMBEDDER:-qwen3-0.6b}
       # tiktoken's encoding files, kept with Docling's models.
       TIKTOKEN_CACHE_DIR: /root/.cache/tiktoken
     volumes:
@@ -59,10 +60,16 @@ services:
     depends_on:
       neo4j: { condition: service_healthy }
 
-  # Re-chunk an ingested filing from its saved parse: docker compose run --rm chunk <document id>
+  # Re-chunk an ingested filing from its saved parse, then embed the new Chunks:
+  # docker compose run --rm chunk <document id>
   chunk:
     extends: { service: ingest }
     entrypoint: ["bloomberg", "chunk"]
+
+  # Re-embed an ingested filing's Chunks: docker compose run --rm embed <document id>
+  embed:
+    extends: { service: ingest }
+    entrypoint: ["bloomberg", "embed"]
 
   # Throwaway database for the backend tests; its data lives in memory and goes with it.
   neo4j-test:

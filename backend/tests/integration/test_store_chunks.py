@@ -3,12 +3,10 @@
 from datetime import UTC, datetime
 
 import pytest
-from conftest import make_run
+from conftest import SHA, make_run
 
 from bloomberg_invest.domain.chunking import Block, ChunkDraft
 from bloomberg_invest.domain.model import RunInfo, RunStatus, RunStep
-
-SHA = "90e8b73c7f11bfde45d0c7ddb3ce506d162bac2030244d48d9ca2f641ddd4214"
 
 
 def chunk_run(minute: int = 10, status: RunStatus = RunStatus.succeeded) -> RunInfo:
@@ -22,15 +20,6 @@ def chunk_run(minute: int = 10, status: RunStatus = RunStatus.succeeded) -> RunI
         status=status,
         error=None if status == RunStatus.succeeded else "ValueError: boom",
     )
-
-
-@pytest.fixture
-def document(store, meta, parsed):
-    document_id = store.record_parse(meta, parsed, make_run(), SHA)
-    detail = store.get_document(document_id)
-    ids = {s.title: s.id for s in detail.sections}
-    ids |= {c.title: c.id for s in detail.sections for c in s.children}
-    return document_id, ids
 
 
 def drafts(ids: dict[str, str]) -> list[ChunkDraft]:
