@@ -14,6 +14,7 @@ The user-facing surface is the web app at http://localhost:8080 (nginx serving t
 
    ```bash
    docker compose up -d --build --wait     # neo4j, api, web; --wait returns when all are healthy
+   docker compose --profile tools build ingest   # ingest, chunk and embed share this image; `up --build` skips it
    ```
 
 3. A journey needs at least one filing. The golden report (Maroc Telecom 2025, not committed: download it from the source URL in `golden/maroc-telecom-rfa-2025/golden.md` and check its SHA-256) goes in `data/inbox/`:

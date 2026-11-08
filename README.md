@@ -24,6 +24,8 @@ The first ingest downloads Docling's models (kept in a volume). A 90-page report
 
 Ingest also chunks the filing and embeds each Chunk for search (#21), with `Qwen3-Embedding-0.6B` (downloaded on first use, about 1.2 GB). To re-chunk an ingested filing from its saved parse, for example after changing `CHUNK_CAP`: `docker compose run --rm chunk <document id>`, which embeds the new Chunks too. To re-embed only: `docker compose run --rm embed <document id>`.
 
+`docker compose up --build` does not rebuild these three tools, which share one image. After changing backend code, rebuild it before running them: `docker compose --profile tools build ingest`.
+
 | Part | Where | Notes |
 | --- | --- | --- |
 | API | `backend/` (FastAPI, Python 3.12, uv) | `/api/docs` for the OpenAPI UI |
