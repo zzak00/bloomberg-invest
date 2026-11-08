@@ -92,10 +92,68 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/chunks/{chunk_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Chunk
+         * @description One Chunk, current or not, so a search result's link keeps working after a re-chunk.
+         */
+        get: operations["chunk_api_chunks__chunk_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * Box
+         * @description A region of a page in PDF points, top-left origin.
+         */
+        Box: {
+            /** Page */
+            page: number;
+            /** Left */
+            left: number;
+            /** Top */
+            top: number;
+            /** Right */
+            right: number;
+            /** Bottom */
+            bottom: number;
+        };
+        /**
+         * Chunk
+         * @description A Chunk with where to find it: what search returns and the source viewer highlights.
+         */
+        Chunk: {
+            /** Id */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "text" | "table";
+            /** Text */
+            text: string;
+            /** Pages */
+            pages: number[];
+            /** Boxes */
+            boxes: components["schemas"]["Box"][];
+            /** Section Path */
+            section_path: string[];
+            document: components["schemas"]["DocumentRef"];
+        };
         /**
          * DocType
          * @enum {string}
@@ -228,29 +286,6 @@ export interface components {
          * @enum {string}
          */
         RunStep: "parse" | "chunk" | "embed";
-        /**
-         * SearchHit
-         * @description A Chunk search returned, with where to find it.
-         */
-        SearchHit: {
-            /** Chunk Id */
-            chunk_id: string;
-            /** Text */
-            text: string;
-            /** Pages */
-            pages: number[];
-            /** Boxes */
-            boxes: [
-                number,
-                number,
-                number,
-                number,
-                number
-            ][];
-            /** Section Path */
-            section_path: string[];
-            document: components["schemas"]["DocumentRef"];
-        };
         /** Section */
         Section: {
             /** Id */
@@ -437,7 +472,47 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SearchHit"][];
+                    "application/json": components["schemas"]["Chunk"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    chunk_api_chunks__chunk_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chunk_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Chunk"];
+                };
+            };
+            /** @description No such chunk */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotFound"];
                 };
             };
             /** @description Validation Error */

@@ -14,7 +14,7 @@ from bloomberg_invest.adapters.files import DocumentFiles
 from bloomberg_invest.adapters.store import GraphStore
 from bloomberg_invest.service_layer.search import search
 from bloomberg_invest.settings import Settings
-from bloomberg_invest.views import DocumentDetail, DocumentSummary, SearchHit
+from bloomberg_invest.views import Chunk, DocumentDetail, DocumentSummary
 
 
 class NotFound(BaseModel):
@@ -22,6 +22,7 @@ class NotFound(BaseModel):
 
 
 NOT_FOUND = {404: {"model": NotFound, "description": "No such document, or no such page in it"}}
+NO_CHUNK = {404: {"model": NotFound, "description": "No such chunk"}}
 
 
 def create_app(
@@ -100,9 +101,17 @@ def create_app(
     def search_chunks(
         q: Annotated[str, Query(min_length=1, max_length=500, pattern=r"\S")],
         limit: Annotated[int, Query(ge=1, le=50)] = 10,
-    ) -> list[SearchHit]:
+    ) -> list[Chunk]:
         """The current Chunks nearest the query, best first."""
         return search(q, limit, get_store(), app.state.embedder)
+
+    @app.get("/api/chunks/{chunk_id}", responses=NO_CHUNK)
+    def chunk(chunk_id: str) -> Chunk:
+        """One Chunk, current or not, so a search result's link keeps working after a re-chunk."""
+        found = get_store().chunks([chunk_id])
+        if not found:
+            raise HTTPException(404, "Chunk not found")
+        return found[0]
 
     return app
 

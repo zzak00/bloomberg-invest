@@ -4,7 +4,7 @@ from typing import Protocol
 
 from bloomberg_invest.domain.chunking import ChunkDraft
 from bloomberg_invest.domain.model import DocumentMeta, ParsedDocument, RunInfo
-from bloomberg_invest.views import DocumentDetail, DocumentSummary, SearchHit
+from bloomberg_invest.views import Chunk, DocumentDetail, DocumentSummary
 
 
 class GraphStore(Protocol):
@@ -50,7 +50,7 @@ class GraphStore(Protocol):
     def search_vector(self, vector: list[float], limit: int) -> list[str]:
         """Current Chunk ids whose vectors are nearest the query's, best first."""
 
-    def hits(self, chunk_ids: list[str]) -> list[SearchHit]:
+    def chunks(self, chunk_ids: list[str]) -> list[Chunk]:
         """The Chunks, in the order given, with their Document, section path, pages and boxes."""
 
     def list_documents(self) -> list[DocumentSummary]: ...

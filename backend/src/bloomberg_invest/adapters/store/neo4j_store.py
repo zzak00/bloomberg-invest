@@ -24,11 +24,12 @@ from bloomberg_invest.domain.model import (
     section_not_on_parsed_page,
 )
 from bloomberg_invest.views import (
+    Box,
+    Chunk,
     DocumentDetail,
     DocumentRef,
     DocumentSummary,
     Run,
-    SearchHit,
     Section,
 )
 
@@ -120,7 +121,7 @@ class Neo4jStore(GraphStore):
         )
         return [r["id"] for r in records]
 
-    def hits(self, chunk_ids: list[str]) -> list[SearchHit]:
+    def chunks(self, chunk_ids: list[str]) -> list[Chunk]:
         records, _, _ = self._driver.execute_query(
             """
             UNWIND range(0, size($ids) - 1) AS i
@@ -138,8 +139,9 @@ class Neo4jStore(GraphStore):
             ids=chunk_ids,
         )
         return [
-            SearchHit(
-                chunk_id=r["n"]["id"],
+            Chunk(
+                id=r["n"]["id"],
+                kind=r["n"]["kind"],
                 text=r["n"]["text"],
                 pages=r["pages"],
                 boxes=_boxes(r["n"]["boxes"]),
@@ -420,9 +422,15 @@ def _record_embeddings(
     return run_id
 
 
-def _boxes(flat: list[float]) -> list[tuple[int, float, float, float, float]]:
+def _boxes(flat: list[float]) -> list[Box]:
     return [
-        (int(flat[i]), flat[i + 1], flat[i + 2], flat[i + 3], flat[i + 4])
+        Box(
+            page=int(flat[i]),
+            left=flat[i + 1],
+            top=flat[i + 2],
+            right=flat[i + 3],
+            bottom=flat[i + 4],
+        )
         for i in range(0, len(flat), 5)
     ]
 

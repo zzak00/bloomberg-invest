@@ -91,6 +91,44 @@ try {
     await page.mouse.move(0, vp.height - 1);
     await shot("04-viewer-section");
 
+    // Search: "/" and the header field, or on a phone the search icon and the page's field.
+    const QUERY = "dividende proposé";
+    const icon = page.getByRole("link", { name: "Search the filings" });
+    if (await icon.isVisible()) {
+      await icon.click();
+      await page.getByRole("searchbox", { name: "Search the filings" }).fill(QUERY);
+    } else {
+      await page.keyboard.press("/");
+      const focused = await page.evaluate(() => document.activeElement?.id);
+      check(vp.name, '"/" focuses the header search', focused === "header-search", focused);
+      await page.keyboard.type(QUERY);
+    }
+    await page.keyboard.press("Enter");
+    const results = page.getByRole("list", { name: "Passages" }).getByRole("link");
+    await results.first().waitFor();
+    const first = (await results.first().innerText()).replace(/\s+/g, " ");
+    check(vp.name, "search lists passages", (await results.count()) >= 1, `${await results.count()} result(s)`);
+    check(vp.name, "AC3: the p. 10 dividend comes first", /Dividende/.test(first) && /p\. 10\b/.test(first), first.slice(0, 120));
+    await page.mouse.move(0, vp.height - 1);
+    await shot("05-search");
+
+    // A result opens the source viewer on its page with the passage highlighted.
+    await results.first().click();
+    const resultPage = page.getByRole("img", { name: /^Page 10 of/ });
+    await resultPage.waitFor();
+    await resultPage.evaluate((img) => img.complete || new Promise((done) => (img.onload = done)));
+    const mark = page.locator(".paper-sheet .mark").first();
+    await mark.waitFor();
+    const [sheetBox, markBox] = [await page.locator(".paper-sheet").boundingBox(), await mark.boundingBox()];
+    check(
+      vp.name,
+      "the passage is highlighted on its page",
+      markBox && sheetBox && markBox.width > 20 && markBox.x >= sheetBox.x && markBox.x + markBox.width <= sheetBox.x + sheetBox.width + 1,
+      markBox && `${Math.round(markBox.width)}x${Math.round(markBox.height)} at ${Math.round(markBox.x)},${Math.round(markBox.y)}`,
+    );
+    check(vp.name, "the passage bar names it", /Dividende/.test(await page.getByRole("status").innerText()));
+    await shot("06-search-result");
+
     // MAP, CHECKS and KPIs show their empty states.
     for (const [path, title] of [
       ["map", "The map arrives with entities and facts"],
@@ -101,7 +139,7 @@ try {
       const heading = page.getByRole("heading", { name: title });
       await heading.waitFor();
       check(vp.name, `${path.toUpperCase()} empty state`, await heading.isVisible());
-      await shot(`05-empty-${path}`);
+      await shot(`07-empty-${path}`);
     }
 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

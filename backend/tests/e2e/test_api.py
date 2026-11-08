@@ -124,9 +124,10 @@ def test_openapi_declares_the_contract(client):
         "/api/documents/{document_id}",
         "/api/documents/{document_id}/pages/{number}.png",
         "/api/search",
+        "/api/chunks/{chunk_id}",
     }
     schemas = spec["components"]["schemas"]
-    assert {"DocumentSummary", "DocumentDetail", "Section", "Run", "PageInfo", "SearchHit"} <= set(
+    assert {"DocumentSummary", "DocumentDetail", "Section", "Run", "PageInfo", "Chunk"} <= set(
         schemas
     )
 
@@ -172,9 +173,12 @@ def test_search_returns_the_nearest_chunks_with_where_they_are(client, searchabl
 
     assert response.status_code == 200
     first, second = response.json()
-    assert first["text"] == "Le dividende proposé"
+    assert (first["text"], first["kind"]) == ("Le dividende proposé", "text")
     assert first["section_path"] == ["1. RÉSULTATS", "1.1 En dirham"]
-    assert (first["pages"], first["boxes"]) == ([2], [[2, 50.0, 100.0, 300.0, 120.0]])
+    assert first["pages"] == [2]
+    assert first["boxes"] == [
+        {"page": 2, "left": 50.0, "top": 100.0, "right": 300.0, "bottom": 120.0}
+    ]
     assert first["document"]["id"] == searchable
     assert first["document"]["issuer"]["name"] == "Maroc Telecom"
     assert second["text"] == "Le chiffre d'affaires"
@@ -193,3 +197,18 @@ def test_a_blank_query_or_a_limit_out_of_range_is_rejected(client, params):
 
 def test_search_with_nothing_embedded_returns_nothing(client):
     assert client.get("/api/search", params={"q": "dividende"}).json() == []
+
+
+def test_a_chunk_opens_by_its_id_for_the_source_viewer(client, searchable):
+    [hit] = client.get("/api/search", params={"q": "dividende", "limit": 1}).json()
+
+    response = client.get(f"/api/chunks/{hit['id']}")
+
+    assert response.status_code == 200
+    assert response.json() == hit
+
+
+def test_an_unknown_chunk_is_404(client):
+    response = client.get("/api/chunks/nope")
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Chunk not found"}

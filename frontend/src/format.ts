@@ -1,4 +1,4 @@
-import type { DocumentSummary } from "./api/client";
+import type { Chunk, DocumentSummary } from "./api/client";
 
 const DATE_TIME = new Intl.DateTimeFormat("fr-FR", {
   day: "2-digit",
@@ -18,3 +18,29 @@ export const DOC_TYPE_LABELS: Record<DocumentSummary["doc_type"], string> = {
   half_year_report: "Half-year financial report",
   issuer_page: "Issuer page",
 };
+
+/** "p. 10", or "pp. 68-69" for a chunk over several pages. */
+export function pagesLabel(pages: number[]): string {
+  const [first, last] = [pages[0], pages[pages.length - 1]];
+  return first === last ? `p. ${first}` : `pp. ${first}-${last}`;
+}
+
+/** A chunk's text as one plain passage: its own heading dropped, table rows as "a · b". */
+export function snippet(chunk: Chunk): string {
+  const heading = chunk.section_path[chunk.section_path.length - 1];
+  const lines = chunk.text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line && line !== heading && !/^\|?[\s:|-]+\|?$/.test(line))
+    .map((line) =>
+      line.startsWith("|")
+        ? line
+            .replace(/^\||\|$/g, "")
+            .split("|")
+            .map((cell) => cell.trim())
+            .filter(Boolean)
+            .join(" · ")
+        : line,
+    );
+  return lines.join(" ");
+}

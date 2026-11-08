@@ -42,7 +42,7 @@ Read-only. Checks that docker is reachable, `.env` exists, neo4j, api and web ar
 node .claude/skills/verify-bloomberg-invest/scripts/journey.mjs [--base http://localhost:8080]
 ```
 
-For each viewport (1440×900, 1024×768, 390×844) it opens INDEX, opens the first filing, pages to 2, jumps to NOTE 13 from the outline (page 54 in the golden report), then visits MAP, CHECKS and KPIs. It checks what a user sees: rows, rendered page images, the page field, the highlighted section, the empty-state headings, no horizontal scroll and no console errors. It selects by role and accessible name (`list "Filings"`, `navigation "Sections"`, `button "NEXT →"`, `img "Page N of ..."`), not by coordinates.
+For each viewport (1440×900, 1024×768, 390×844) it opens INDEX, opens the first filing, pages to 2, jumps to NOTE 13 from the outline (page 54 in the golden report), searches "dividende proposé" (with "/", or the search icon at 390) and opens the first result, which must be page 10 with the dividend passage highlighted (#21 AC3), then visits MAP, CHECKS and KPIs. It checks what a user sees: rows, rendered page images, the page field, the highlighted section, the empty-state headings, no horizontal scroll and no console errors. It selects by role and accessible name (`list "Filings"`, `navigation "Sections"`, `button "NEXT →"`, `img "Page N of ..."`), not by coordinates.
 
 The per-feature recipes are in [features/README.md](features/README.md). A change to a feature is proven only when its file's journey passes, not just the one convenient entry point.
 

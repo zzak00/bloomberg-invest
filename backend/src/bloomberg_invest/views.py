@@ -1,6 +1,7 @@
 """Read models: the shapes the store returns and the API serves."""
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -38,14 +39,24 @@ class DocumentRef(BaseModel):
     fiscal_year: int
 
 
-class SearchHit(BaseModel):
-    """A Chunk search returned, with where to find it."""
+class Box(BaseModel):
+    """A region of a page in PDF points, top-left origin."""
 
-    chunk_id: str
+    page: int
+    left: float
+    top: float
+    right: float
+    bottom: float
+
+
+class Chunk(BaseModel):
+    """A Chunk with where to find it: what search returns and the source viewer highlights."""
+
+    id: str
+    kind: Literal["text", "table"]
     text: str
     pages: list[int]
-    # (page, left, top, right, bottom) in PDF points, top-left origin: the source viewer draws them.
-    boxes: list[tuple[int, float, float, float, float]]
+    boxes: list[Box]  # the regions of its blocks, which the source viewer highlights
     section_path: list[str]
     document: DocumentRef
 

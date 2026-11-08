@@ -165,16 +165,20 @@ def test_superseded_chunks_leave_the_index(store, document, chunked):
     assert store.search_vector(axis(0), 5) == [], "the new Chunks are not embedded yet"
 
 
-def test_hits_carry_document_section_path_pages_and_boxes_in_the_order_asked(store, chunked):
+def test_chunks_carry_kind_document_section_path_pages_and_boxes_in_the_order_asked(store, chunked):
     document_id, units = chunked
     dividend, revenue = units
 
-    first, second = store.hits([revenue, dividend])
+    first, second = store.chunks([revenue, dividend])
 
-    assert (first.chunk_id, second.chunk_id) == (revenue, dividend)
+    assert (first.id, second.id) == (revenue, dividend)
     assert second.text == "1.1 En dirham\n\nLe dividende proposé est de 4,00 dirhams par action."
     assert second.section_path == ["1. RÉSULTATS", "1.1 En dirham"]
-    assert (second.pages, second.boxes) == ([2], [(2, 50.0, 100.0, 300.0, 120.0)])
+    assert second.pages == [2]
+    assert [b.model_dump() for b in second.boxes] == [
+        {"page": 2, "left": 50.0, "top": 100.0, "right": 300.0, "bottom": 120.0}
+    ]
     assert second.document.id == document_id
     assert second.document.issuer.name == "Maroc Telecom"
     assert first.section_path == ["1. RÉSULTATS", "1.2 En euro"]
+    assert (first.kind, second.kind) == ("table", "text")
