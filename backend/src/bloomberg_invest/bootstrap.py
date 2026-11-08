@@ -4,7 +4,7 @@ Entrypoints ask for dependencies here and never name an implementation. Switchin
 implementation is a settings change; adding one is an adapter file plus a registry line.
 """
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 
@@ -66,18 +66,19 @@ def connect(settings: Settings) -> Iterator[Deps]:
 
 def parser(settings: Settings) -> Parser:
     """The parser `settings.parser` names."""
-    if settings.parser not in PARSERS:
-        expected = ", ".join(sorted(PARSERS))
-        raise ValueError(f"unknown parser {settings.parser!r}, expected {expected}")
-    return PARSERS[settings.parser](settings)
+    return _choose(PARSERS, "parser", settings.parser)(settings)
 
 
 def embedder(settings: Settings) -> Embedder:
     """The embedding model `settings.embedder` names; it loads when this is called."""
-    if settings.embedder not in EMBEDDERS:
-        expected = ", ".join(sorted(EMBEDDERS))
-        raise ValueError(f"unknown embedder {settings.embedder!r}, expected {expected}")
-    return EMBEDDERS[settings.embedder]()
+    return _choose(EMBEDDERS, "embedder", settings.embedder)()
+
+
+def _choose[F](registry: Mapping[str, F], kind: str, name: str) -> F:
+    """The factory registered under `name`; an unknown name fails naming the valid choices."""
+    if name not in registry:
+        raise ValueError(f"unknown {kind} {name!r}, expected {', '.join(sorted(registry))}")
+    return registry[name]
 
 
 def token_counter() -> TokenCounter:

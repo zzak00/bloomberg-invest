@@ -143,13 +143,12 @@ class Neo4jStore(GraphStore):
             UNWIND range(0, size($ids) - 1) AS i
             MATCH (n:Chunk {id: $ids[i]})-[:FROM_DOCUMENT]->(d:Document)
             MATCH (d)-[:ISSUED_BY]->(o:Organisation)
-            OPTIONAL MATCH path = (d)-[:HAS_SECTION*]->(:Section)<-[:IN_SECTION]-(n)
             CALL (n) {
                 MATCH (n)-[:ON_PAGE]->(p:Page)
                 WITH p ORDER BY p.number
                 RETURN collect(p.number) AS pages
             }
-            RETURN n, d, o, pages, [s IN coalesce(nodes(path)[1..-1], []) | s.title] AS section_path
+            RETURN n, d, o, pages
             ORDER BY i
             """,
             ids=chunk_ids,
@@ -161,7 +160,7 @@ class Neo4jStore(GraphStore):
                 text=r["n"]["text"],
                 pages=r["pages"],
                 boxes=_boxes(r["n"]["boxes"]),
-                section_path=r["section_path"],
+                section_path=r["n"]["section_path"],
                 document=DocumentRef(
                     id=r["d"]["id"],
                     issuer={"isin": r["o"]["isin"], "name": r["o"]["name"]},
@@ -352,7 +351,8 @@ def _record_chunks(
         MATCH (d:Document {{id: $document_id}}), (r:Run {{id: $run_id}})
         UNWIND $chunks AS c
         CREATE (k:Chunk {{id: c.id, index: c.index, kind: c.kind, text: c.text,
-                          token_count: c.token_count, index_text: c.index_text, boxes: c.boxes}})
+                          token_count: c.token_count, index_text: c.index_text, boxes: c.boxes,
+                          section_path: c.section_path}})
         CREATE (k)-[:FROM_DOCUMENT]->(d), (k)-[:PRODUCED_BY]->(r)
         WITH d, r, c, k
         CALL (d, c, k) {{
@@ -477,6 +477,8 @@ def _chunk_row(c: ChunkDraft) -> dict[str, Any]:
         "pages": list(c.pages),
         "refers_to": list(c.refers_to),
         "index_text": index_text(c),
+        # The titles from the top Section down, as the index text's header has them.
+        "section_path": list(c.path),
         # Neo4j has no nested lists: each box is five numbers, page, left, top, right, bottom.
         "boxes": [float(v) for p in c.paragraphs for box in p.boxes for v in box],
     }

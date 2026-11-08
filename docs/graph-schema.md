@@ -53,6 +53,7 @@ erDiagram
         Integer token_count
         String index_text "what is embedded: section path and pages, then the text"
         Float[] boxes "its blocks' regions, in groups of five: page, left, top, right, bottom"
+        String[] section_path "the Section titles from the top down, as the index text's header has them"
         Float[] embedding "optional: set by an embed Run"
         Boolean superseded "optional"
     }
