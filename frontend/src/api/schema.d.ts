@@ -72,6 +72,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search Chunks
+         * @description The current Chunks nearest the query, best first.
+         */
+        get: operations["search_chunks_api_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -107,6 +127,15 @@ export interface components {
             /** Sections */
             sections: components["schemas"]["Section"][];
             run: components["schemas"]["Run"];
+        };
+        /** DocumentRef */
+        DocumentRef: {
+            /** Id */
+            id: string;
+            issuer: components["schemas"]["Organisation"];
+            doc_type: components["schemas"]["DocType"];
+            /** Fiscal Year */
+            fiscal_year: number;
         };
         /** DocumentSummary */
         DocumentSummary: {
@@ -198,7 +227,30 @@ export interface components {
          * @description The processing steps a Run records (AGENTS.md); later steps add theirs.
          * @enum {string}
          */
-        RunStep: "parse" | "chunk";
+        RunStep: "parse" | "chunk" | "embed";
+        /**
+         * SearchHit
+         * @description A Chunk search returned, with where to find it.
+         */
+        SearchHit: {
+            /** Chunk Id */
+            chunk_id: string;
+            /** Text */
+            text: string;
+            /** Pages */
+            pages: number[];
+            /** Boxes */
+            boxes: [
+                number,
+                number,
+                number,
+                number,
+                number
+            ][];
+            /** Section Path */
+            section_path: string[];
+            document: components["schemas"]["DocumentRef"];
+        };
         /** Section */
         Section: {
             /** Id */
@@ -354,6 +406,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NotFound"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_chunks_api_search_get: {
+        parameters: {
+            query: {
+                q: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchHit"][];
                 };
             };
             /** @description Validation Error */

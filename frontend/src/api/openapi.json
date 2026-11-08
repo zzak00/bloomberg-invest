@@ -152,6 +152,65 @@
           }
         }
       }
+    },
+    "/api/search": {
+      "get": {
+        "summary": "Search Chunks",
+        "description": "The current Chunks nearest the query, best first.",
+        "operationId": "search_chunks_api_search_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "pattern": "\\S",
+              "title": "Q"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 10,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SearchHit"
+                  },
+                  "title": "Response Search Chunks Api Search Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -243,6 +302,32 @@
           "run"
         ],
         "title": "DocumentDetail"
+      },
+      "DocumentRef": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "issuer": {
+            "$ref": "#/components/schemas/Organisation"
+          },
+          "doc_type": {
+            "$ref": "#/components/schemas/DocType"
+          },
+          "fiscal_year": {
+            "type": "integer",
+            "title": "Fiscal Year"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "issuer",
+          "doc_type",
+          "fiscal_year"
+        ],
+        "title": "DocumentRef"
       },
       "DocumentSummary": {
         "properties": {
@@ -456,10 +541,77 @@
         "type": "string",
         "enum": [
           "parse",
-          "chunk"
+          "chunk",
+          "embed"
         ],
         "title": "RunStep",
         "description": "The processing steps a Run records (AGENTS.md); later steps add theirs."
+      },
+      "SearchHit": {
+        "properties": {
+          "chunk_id": {
+            "type": "string",
+            "title": "Chunk Id"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "pages": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Pages"
+          },
+          "boxes": {
+            "items": {
+              "prefixItems": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array",
+              "maxItems": 5,
+              "minItems": 5
+            },
+            "type": "array",
+            "title": "Boxes"
+          },
+          "section_path": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Section Path"
+          },
+          "document": {
+            "$ref": "#/components/schemas/DocumentRef"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chunk_id",
+          "text",
+          "pages",
+          "boxes",
+          "section_path",
+          "document"
+        ],
+        "title": "SearchHit",
+        "description": "A Chunk search returned, with where to find it."
       },
       "Section": {
         "properties": {

@@ -24,7 +24,7 @@ The user-facing surface is the web app at http://localhost:8080 (nginx serving t
      --fiscal-year 2025 --source-url https://www.ammc.ma/sites/default/files/Maroc_Telecom_RFA_2025.pdf
    ```
 
-   Ready when it prints `Parsed 90 pages, ... sections (run ...), document ...`. Expect about 10 minutes in the container (about 4 on the Mac host). The first run downloads Docling's models into the `docling-models` volume. Re-ingesting the same PDF supersedes the previous parse; it does not duplicate the filing.
+   Ready when it prints `Parsed 90 pages, ... sections (run ...), document ...`. Expect about 10 minutes in the container (about 4 on the Mac host). The first run downloads Docling's models and the embedding model into the `models` volume. Re-ingesting the same PDF supersedes the previous parse; it does not duplicate the filing.
 
 The Playwright browser comes from `frontend/node_modules`: run `npm ci` in `frontend/` and `npx playwright install chromium` there once.
 
@@ -55,7 +55,7 @@ Side effects worth checking alongside the UI: `data/documents/<sha256>.pdf` (the
 ## Cleanup
 
 ```bash
-docker compose down            # stops the stack; keeps the neo4j-data and docling-models volumes
+docker compose down            # stops the stack; keeps the neo4j-data and models volumes
 docker compose down -v         # also deletes the graph and the downloaded models
 ```
 

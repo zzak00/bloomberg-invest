@@ -12,10 +12,12 @@ from fakes import FakeEmbedder
 pytestmark = pytest.mark.ingest
 pytest.importorskip("docling", reason="needs the ingest extra")
 
+from bloomberg_invest import bootstrap
 from bloomberg_invest.adapters.files import DocumentFiles
 from bloomberg_invest.adapters.parsing.docling_parser import DoclingParser
 from bloomberg_invest.adapters.tokens import TiktokenCounter
 from bloomberg_invest.service_layer.ingest import ingest
+from bloomberg_invest.service_layer.search import search
 
 GOLDEN_PDF = Path(
     os.environ.get(
@@ -53,14 +55,16 @@ def test_ingest_stores_the_pdf_and_records_the_parse(store, meta, tmp_path):
 
 
 @pytest.mark.golden
+@pytest.mark.embed
 @pytest.mark.skipif(not GOLDEN_PDF.exists(), reason=f"golden PDF not found at {GOLDEN_PDF}")
-def test_the_golden_report_parses_into_its_outline_and_chunks(store, meta, tmp_path, driver):
+def test_the_golden_report_parses_into_its_outline_and_chunks_and_is_searchable(
+    store, meta, tmp_path, driver
+):
     assert hashlib.sha256(GOLDEN_PDF.read_bytes()).hexdigest() == GOLDEN_SHA
     files = DocumentFiles(tmp_path)
     counter = TiktokenCounter()
-    ingested = ingest(
-        GOLDEN_PDF, meta, store, files, DoclingParser(), counter, 2000, FakeEmbedder()
-    )
+    embedder = bootstrap.EMBEDDERS["qwen3-0.6b"]()
+    ingested = ingest(GOLDEN_PDF, meta, store, files, DoclingParser(), counter, 2000, embedder)
     document_id = ingested.document_id
 
     detail = store.get_document(document_id)
@@ -90,3 +94,11 @@ def test_the_golden_report_parses_into_its_outline_and_chunks(store, meta, tmp_p
     assert any(r["kind"] == "table" for r in records)
     assert all(r["tokens"] <= 2000 or r["paragraphs"] == 1 or r["kind"] == "table" for r in records)
     assert sum(r["notes"] for r in records) > 0, "some chunks cite a note"
+
+    # Search (#21 AC3): "dividende proposé" finds the p. 10 dividend in the top 5, with its
+    # document, section path and page.
+    hits = search("dividende proposé", 5, store, embedder)
+    dividend = [h for h in hits if h.pages == [10] and h.section_path[-1] == "Dividende"]
+    assert dividend, [(h.pages, h.section_path[-1]) for h in hits]
+    assert "4,00 dirhams par action" in dividend[0].text
+    assert dividend[0].document.id == document_id

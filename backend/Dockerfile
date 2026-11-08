@@ -1,4 +1,5 @@
-# One image definition, two targets: `api` (no Docling) and `ingest` (with the ingest extra).
+# One image definition, two targets: `api` (the embedder, no Docling) and `ingest` (the ingest
+# extra, which includes the embedder).
 FROM python:3.12-slim AS base
 COPY --from=ghcr.io/astral-sh/uv:0.11.21 /uv /usr/local/bin/uv
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PROJECT_ENVIRONMENT=/opt/venv \
@@ -7,9 +8,9 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 
 FROM base AS api
-RUN uv sync --frozen --no-dev --no-install-project
+RUN uv sync --frozen --no-dev --extra embed --no-install-project
 COPY src ./src
-RUN uv sync --frozen --no-dev
+RUN uv sync --frozen --no-dev --extra embed
 EXPOSE 8000
 CMD ["uvicorn", "bloomberg_invest.entrypoints.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
 

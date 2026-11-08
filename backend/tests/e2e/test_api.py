@@ -5,12 +5,16 @@ import shutil
 
 import pytest
 from conftest import FIXTURES, make_run
+from fakes import FakeEmbedder
 from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator
 from starlette.routing import Match
 
 from bloomberg_invest.adapters.files import DocumentFiles
+from bloomberg_invest.domain.chunking import Block, ChunkDraft
+from bloomberg_invest.domain.model import RunStep
 from bloomberg_invest.entrypoints.api.app import create_app
+from bloomberg_invest.service_layer.embed import embed_document
 
 PDF = FIXTURES / "filing.pdf"
 SHA = hashlib.sha256(PDF.read_bytes()).hexdigest()
@@ -52,8 +56,13 @@ class ContractClient(TestClient):
 
 
 @pytest.fixture
-def client(store, files) -> TestClient:
-    return ContractClient(create_app(store=store, files=files))
+def embedder() -> FakeEmbedder:
+    return FakeEmbedder()
+
+
+@pytest.fixture
+def client(store, files, embedder) -> TestClient:
+    return ContractClient(create_app(store=store, files=files, embedder=embedder))
 
 
 @pytest.fixture
@@ -114,11 +123,73 @@ def test_openapi_declares_the_contract(client):
         "/api/documents",
         "/api/documents/{document_id}",
         "/api/documents/{document_id}/pages/{number}.png",
+        "/api/search",
     }
     schemas = spec["components"]["schemas"]
-    assert {"DocumentSummary", "DocumentDetail", "Section", "Run", "PageInfo"} <= set(schemas)
+    assert {"DocumentSummary", "DocumentDetail", "Section", "Run", "PageInfo", "SearchHit"} <= set(
+        schemas
+    )
 
 
-def test_the_app_takes_both_store_and_files_or_neither(files):
-    with pytest.raises(TypeError, match="both store and files, or neither"):
+def test_the_app_takes_all_its_dependencies_or_none(files):
+    with pytest.raises(TypeError, match="store, files and embedder, or none"):
         create_app(files=files)
+
+
+def block(text: str, page: int) -> Block:
+    return Block(kind="text", text=text, page=page, boxes=((page, 50.0, 100.0, 300.0, 120.0),))
+
+
+@pytest.fixture
+def searchable(store, document, embedder) -> str:
+    """Two embedded Chunks: the dividend on p. 2, revenue on p. 3."""
+    document_id, ids = document
+    texts = [
+        (ids["1.1 En dirham"], ("1. RÉSULTATS", "1.1 En dirham"), "Le dividende proposé", 2),
+        (ids["1.2 En euro"], ("1. RÉSULTATS", "1.2 En euro"), "Le chiffre d'affaires", 3),
+    ]
+    drafts = [
+        ChunkDraft(
+            index=i,
+            kind="text",
+            section_id=section,
+            paragraphs=(block(text, page),),
+            text=text,
+            token_count=4,
+            pages=(page,),
+            refers_to=(),
+            path=path,
+        )
+        for i, (section, path, text, page) in enumerate(texts)
+    ]
+    store.record_chunks(document_id, drafts, make_run().model_copy(update={"step": RunStep.chunk}))
+    embed_document(document_id, store, embedder)
+    return document_id
+
+
+def test_search_returns_the_nearest_chunks_with_where_they_are(client, searchable):
+    response = client.get("/api/search", params={"q": "dividende proposé"})
+
+    assert response.status_code == 200
+    first, second = response.json()
+    assert first["text"] == "Le dividende proposé"
+    assert first["section_path"] == ["1. RÉSULTATS", "1.1 En dirham"]
+    assert (first["pages"], first["boxes"]) == ([2], [[2, 50.0, 100.0, 300.0, 120.0]])
+    assert first["document"]["id"] == searchable
+    assert first["document"]["issuer"]["name"] == "Maroc Telecom"
+    assert second["text"] == "Le chiffre d'affaires"
+
+
+def test_search_returns_at_most_the_limit(client, searchable):
+    assert len(client.get("/api/search", params={"q": "dividende", "limit": 1}).json()) == 1
+
+
+@pytest.mark.parametrize(
+    "params", [{"q": ""}, {"q": "   "}, {"q": "x", "limit": 0}, {"q": "x", "limit": 51}]
+)
+def test_a_blank_query_or_a_limit_out_of_range_is_rejected(client, params):
+    assert client.get("/api/search", params=params).status_code == 422
+
+
+def test_search_with_nothing_embedded_returns_nothing(client):
+    assert client.get("/api/search", params={"q": "dividende"}).json() == []
