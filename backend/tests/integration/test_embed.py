@@ -4,7 +4,7 @@ import json
 
 import pytest
 from fakes import FakeEmbedder
-from test_store_search import chunk_run, drafts
+from test_store_search import chunk_run, drafts, embed_texts
 
 from bloomberg_invest.service_layer.embed import EmbedFailed, embed_document
 
@@ -46,10 +46,10 @@ def test_embedding_records_a_run_with_the_model_and_the_chunk_run_it_embedded(
 def test_search_finds_a_chunk_by_the_query_s_vector(store, chunked):
     embedder = FakeEmbedder()
     embed_document(chunked, store, embedder)
-    units = dict(store.search_units(chunked))
+    texts = embed_texts(store, chunked)
 
-    [hit] = store.search_vector(embedder.embed_query(next(iter(units.values()))), 1)
-    assert hit == next(iter(units))
+    [hit] = store.search_vector(embedder.embed_query(next(iter(texts.values()))), 1)
+    assert hit == next(iter(texts))
 
 
 def test_a_failed_embedding_is_recorded_and_keeps_the_last_good_vectors(store, driver, chunked):

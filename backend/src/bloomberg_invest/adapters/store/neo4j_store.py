@@ -12,7 +12,7 @@ from neo4j import Driver, ManagedTransaction
 
 from bloomberg_invest.adapters.store import GraphStore
 from bloomberg_invest.domain.chunking import ChunkDraft
-from bloomberg_invest.domain.indexing import index_text
+from bloomberg_invest.domain.indexing import EmbedInput, index_text
 from bloomberg_invest.domain.model import (
     DocumentMeta,
     PageInfo,
@@ -43,9 +43,15 @@ CONSTRAINTS = [
 ]
 
 CURRENT = "coalesce(n.superseded, false) = false"
+# The Document's Chunks an embed Run must cover, bound to `n`; `d` is the Document.
+EMBEDDABLE_CHUNKS = f"""
+MATCH (n:Chunk)-[:FROM_DOCUMENT]->(d:Document {{id: $document_id}})
+WHERE n.index_text IS NOT NULL AND {CURRENT}
+"""
 
 # Chunks are the search unit: the vector index reads the vector embedded from a Chunk's index
-# text. A superseded Chunk loses both properties, so it leaves the index.
+# text. A superseded Chunk loses both properties, so it leaves the index and vector search needs
+# no filter for current Chunks (a filter after SEARCH ... LIMIT could only shorten the results).
 VECTOR_INDEX = "chunk_embedding"
 INDEXES = [
     # Neo4j quantizes vectors to bits by default; full precision keeps the measured ranking.
@@ -90,16 +96,15 @@ class Neo4jStore(GraphStore):
         with self._driver.session() as session:
             return session.execute_write(_record_chunks, document_id, chunks, run)
 
-    def search_units(self, document_id: str) -> list[tuple[str, str]]:
+    def embed_inputs(self, document_id: str) -> list[EmbedInput]:
         records, _, _ = self._driver.execute_query(
-            """
-            MATCH (n:Chunk)-[:FROM_DOCUMENT]->(:Document {id: $id})
-            WHERE n.index_text IS NOT NULL
+            f"""
+            {EMBEDDABLE_CHUNKS}
             RETURN n.id AS id, n.index_text AS text ORDER BY n.index
             """,
-            id=document_id,
+            document_id=document_id,
         )
-        return [(r["id"], r["text"]) for r in records]
+        return [EmbedInput(r["id"], r["text"]) for r in records]
 
     def record_embeddings(
         self, document_id: str, vectors: dict[str, list[float]], run: RunInfo
@@ -125,7 +130,6 @@ class Neo4jStore(GraphStore):
             CYPHER 25
             MATCH (n:Chunk)
             SEARCH n IN (VECTOR INDEX {VECTOR_INDEX} FOR $vector LIMIT $limit) SCORE AS score
-            WHERE {CURRENT}
             RETURN n.id AS id ORDER BY score DESC
             """,
             vector=vector,
@@ -274,6 +278,7 @@ def _record_parse(
         document_id=document_id,
         run_id=run_id,
     )
+    _supersede_embed_runs(tx, run_id)
     tx.run(
         """
         MATCH (d:Document {id: $document_id}), (r:Run {id: $run_id})
@@ -341,6 +346,7 @@ def _record_chunks(
         run_id=run_id,
         step=RunStep.chunk.value,
     )
+    _supersede_embed_runs(tx, run_id)
     tx.run(
         f"""
         MATCH (d:Document {{id: $document_id}}), (r:Run {{id: $run_id}})
@@ -405,8 +411,7 @@ def _record_embeddings(
     # Run made each vector: no link per Chunk. Raising rolls the whole transaction back.
     current = tx.run(
         f"""
-        MATCH (n:Chunk)-[:FROM_DOCUMENT]->(:Document {{id: $document_id}})
-        WHERE n.index_text IS NOT NULL AND {CURRENT}
+        {EMBEDDABLE_CHUNKS}
         RETURN collect(n.id) AS ids
         """,
         document_id=document_id,
@@ -414,8 +419,8 @@ def _record_embeddings(
     if set(vectors) != set(current):
         stray, missing = len(set(vectors) - set(current)), len(set(current) - set(vectors))
         raise ValueError(
-            f"an embed Run covers every current search unit: {stray} ids are not current search "
-            f"units, {missing} current ones have no vector"
+            f"an embed Run covers every current Chunk: {stray} ids are not current Chunks, "
+            f"{missing} current ones have no vector"
         )
     tx.run(
         """
@@ -423,8 +428,18 @@ def _record_embeddings(
         MATCH (n:Chunk {id: row.id})
         SET n.embedding = row.vector
         """,
-        rows=[{"id": pid, "vector": v} for pid, v in vectors.items()],
+        rows=[{"id": chunk_id, "vector": v} for chunk_id, v in vectors.items()],
     )
+    _supersede_embed_runs(tx, run_id)
+    return run_id
+
+
+def _supersede_embed_runs(tx: ManagedTransaction, run_id: str) -> None:
+    """Supersede the Document's current embed Run by `run_id`, in the same transaction.
+
+    An embed Run vouches for the vectors of every current Chunk. A re-embed replaces them, and a
+    re-parse or re-chunk supersedes the Chunks (removing their vectors), so each ends it.
+    """
     tx.run(
         """
         MATCH (r:Run {id: $run_id})-[:PROCESSED]->(d)
@@ -436,7 +451,6 @@ def _record_embeddings(
         run_id=run_id,
         step=RunStep.embed.value,
     )
-    return run_id
 
 
 def _boxes(flat: list[float]) -> list[Box]:

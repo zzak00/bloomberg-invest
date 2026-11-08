@@ -26,9 +26,9 @@ class Embedded:
 def embed_document(document_id: str, store: GraphStore, embedder: Embedder) -> Embedded:
     if store.get_document(document_id) is None:
         raise LookupError(f"no document {document_id}")
-    units = store.search_units(document_id)
+    inputs = store.embed_inputs(document_id)
     chunk_run = store.current_chunk_run(document_id)
-    if not units or chunk_run is None:
+    if not inputs or chunk_run is None:
         raise ValueError(f"no current chunks to embed on {document_id}; chunk it first")
 
     started_at = datetime.now(UTC)
@@ -45,9 +45,9 @@ def embed_document(document_id: str, store: GraphStore, embedder: Embedder) -> E
             error=error,
         )
 
-    ids, texts = zip(*units, strict=True)
+    ids = [i.chunk_id for i in inputs]
     try:
-        vectors = embedder.embed_documents(list(texts))
+        vectors = embedder.embed_documents([i.text for i in inputs])
     except Exception as error:
         failed = run_info(RunStatus.failed, f"{type(error).__name__}: {error}")
         raise EmbedFailed(document_id, store.record_embeddings(document_id, {}, failed)) from error

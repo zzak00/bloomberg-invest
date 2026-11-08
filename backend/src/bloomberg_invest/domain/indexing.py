@@ -1,12 +1,22 @@
 """What the search indexes see for a Chunk (#21). Pure: no store or model here.
 
-Readers see a Chunk's own text. The full-text and vector indexes see a header first, its
+Readers see a Chunk's own text. The vector index sees a header first, its
 section path and pages, so a short Chunk ("Néant.") still says what it is about. Then each
 block: a heading or paragraph as written, a table one line per row with each value after its
 column name, so a single figure can match a question.
 """
 
+from dataclasses import dataclass
+
 from bloomberg_invest.domain.chunking import Block, ChunkDraft
+
+
+@dataclass(frozen=True)
+class EmbedInput:
+    """A current Chunk and the index text its vector is embedded from."""
+
+    chunk_id: str
+    text: str
 
 
 def index_text(chunk: ChunkDraft) -> str:

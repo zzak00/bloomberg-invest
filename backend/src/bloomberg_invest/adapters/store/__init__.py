@@ -3,6 +3,7 @@
 from typing import Protocol
 
 from bloomberg_invest.domain.chunking import ChunkDraft
+from bloomberg_invest.domain.indexing import EmbedInput
 from bloomberg_invest.domain.model import DocumentMeta, ParsedDocument, RunInfo
 from bloomberg_invest.views import Chunk, DocumentDetail, DocumentSummary
 
@@ -32,18 +33,15 @@ class GraphStore(Protocol):
         with no outputs and supersedes nothing.
         """
 
-    def search_units(self, document_id: str) -> list[tuple[str, str]]:
-        """The Document's current Chunks in reading order: (Chunk id, index text).
-
-        Every Chunk is a search unit; its index text is what gets embedded.
-        """
+    def embed_inputs(self, document_id: str) -> list[EmbedInput]:
+        """The Document's current Chunks in reading order, with the index text to embed."""
 
     def record_embeddings(
         self, document_id: str, vectors: dict[str, list[float]], run: RunInfo
     ) -> str:
         """Store an embed Run's vectors, by Chunk id, for the Document; return the Run id.
 
-        A succeeded Run gives a vector to every current search unit of the Document, no more and
+        A succeeded Run gives a vector to every current Chunk of the Document, no more and
         no fewer, replacing earlier embed Runs' vectors and superseding those Runs. A failed Run
         is recorded with no vectors.
         """

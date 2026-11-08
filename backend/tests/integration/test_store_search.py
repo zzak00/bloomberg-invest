@@ -3,6 +3,7 @@
 from datetime import UTC, datetime
 
 import pytest
+from conftest import SHA, make_run
 from test_store_chunks import chunk_run
 
 from bloomberg_invest.domain.chunking import Block, ChunkDraft
@@ -71,16 +72,21 @@ def drafts(ids: dict[str, str]) -> list[ChunkDraft]:
     ]
 
 
+def embed_texts(store, document_id) -> dict[str, str]:
+    """The Document's current Chunks to embed: index text by Chunk id, in reading order."""
+    return {i.chunk_id: i.text for i in store.embed_inputs(document_id)}
+
+
 @pytest.fixture
 def chunked(store, document):
     document_id, ids = document
     store.record_chunks(document_id, drafts(ids), chunk_run())
-    return document_id, dict(store.search_units(document_id))
+    return document_id, embed_texts(store, document_id)
 
 
 def embedded(store, document_id, units):
     """Each Chunk embedded along its own axis, in reading order."""
-    vectors = {pid: axis(i) for i, pid in enumerate(units)}
+    vectors = {chunk_id: axis(i) for i, chunk_id in enumerate(units)}
     return store.record_embeddings(document_id, vectors, embed_run())
 
 
@@ -139,7 +145,7 @@ def test_re_embedding_supersedes_the_previous_embed_run(store, driver, chunked):
     document_id, units = chunked
     first = embedded(store, document_id, units)
     second = store.record_embeddings(
-        document_id, {pid: axis(7 - i) for i, pid in enumerate(units)}, embed_run(40)
+        document_id, {chunk_id: axis(7 - i) for i, chunk_id in enumerate(units)}, embed_run(40)
     )
 
     runs, _ = embed_state(driver, document_id)
@@ -163,10 +169,10 @@ def test_a_failed_embed_run_keeps_the_last_good_vectors(store, driver, chunked):
     ]
 
 
-def test_embeddings_for_chunks_that_are_not_current_search_units_fail(store, chunked):
+def test_embeddings_for_chunks_that_are_not_current_fail(store, chunked):
     document_id, units = chunked
-    vectors = {pid: axis(i) for i, pid in enumerate(units)} | {"nope": axis(5)}
-    with pytest.raises(ValueError, match="1 ids are not current search units"):
+    vectors = {chunk_id: axis(i) for i, chunk_id in enumerate(units)} | {"nope": axis(5)}
+    with pytest.raises(ValueError, match="1 ids are not current Chunks"):
         store.record_embeddings(document_id, vectors, embed_run())
 
 
@@ -184,9 +190,53 @@ def test_superseded_chunks_leave_the_index(store, document, chunked):
     embedded(store, document_id, old)
     store.record_chunks(document_id, drafts(ids), chunk_run(20))
 
-    current = dict(store.search_units(document_id))
+    current = embed_texts(store, document_id)
     assert not set(current) & set(old)
     assert store.search_vector(axis(0), 5) == [], "the new Chunks are not embedded yet"
+
+
+def test_a_re_chunk_supersedes_the_embed_run_of_the_old_chunks(store, driver, document, chunked):
+    document_id, ids = document
+    _, old = chunked
+    stale = embedded(store, document_id, old)
+    rechunk = store.record_chunks(document_id, drafts(ids), chunk_run(20))
+
+    runs, vectors = embed_state(driver, document_id)
+    assert runs == [{"run": stale, "status": "succeeded", "superseded_by": rechunk}]
+    assert vectors == 0
+
+
+def test_a_re_parse_supersedes_the_embed_run_of_the_old_chunks(
+    store, driver, meta, parsed, chunked
+):
+    document_id, units = chunked
+    stale = embedded(store, document_id, units)
+    store.record_parse(meta, parsed, make_run(30), SHA)
+
+    runs, vectors = embed_state(driver, document_id)
+    [run] = runs
+    assert run["run"] == stale
+    assert run["superseded_by"] is not None, "the re-parse supersedes it"
+    assert vectors == 0
+
+
+def test_an_embed_after_a_re_chunk_is_the_only_current_embed_run(store, driver, document, chunked):
+    document_id, ids = document
+    _, old = chunked
+    embedded(store, document_id, old)
+    rechunk = store.record_chunks(document_id, drafts(ids), chunk_run(20))
+    fresh = embedded(store, document_id, embed_texts(store, document_id))
+
+    [current], _, _ = driver.execute_query(
+        """
+        MATCH (r:Run {step: 'embed'})-[:PROCESSED]->(:Document {id: $id})
+        WHERE coalesce(r.superseded, false) = false
+        RETURN collect(r.id) AS ids
+        """,
+        id=document_id,
+    )
+    assert current["ids"] == [fresh]
+    assert store.current_chunk_run(document_id) == rechunk
 
 
 def test_chunks_carry_kind_document_section_path_pages_and_boxes_in_the_order_asked(store, chunked):
