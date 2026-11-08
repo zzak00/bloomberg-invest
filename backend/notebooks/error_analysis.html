@@ -132,7 +132,17 @@
   .seg[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0, 0, 0, .06); }
   .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--ink-3); }
   .dot.good { background: var(--green); }
+  .dot.warn { background: var(--amber); }
   .dot.bad { background: var(--red); }
+  .evidence { display: grid; gap: 8px; list-style: none; margin: 0; padding: 0; }
+  .evidence li { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 8px; font-size: 14px; }
+  .evidence .state { display: inline-flex; height: 20px; align-items: center; }
+  .evidence .state .icon { width: 14px; height: 14px; }
+  .evidence .state.good { color: var(--green); }
+  .evidence .state.bad { color: var(--red); }
+  .evidence .where { margin-top: 2px; font-size: 12px; color: var(--ink-3); }
+  .evidence .nowrap { white-space: nowrap; }
+  .evidence + .caption { margin-top: 8px; font-size: 12px; color: var(--ink-3); }
 
   .result { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 12px; width: 100%; padding: 16px; margin-bottom: 8px; cursor: pointer; transition: border-color 150ms var(--ease); }
   .result:hover { border-color: var(--line-strong); }
@@ -358,7 +368,15 @@ const pageLevel = (n) => {
   const f = DATA.pages[n].flags;
   return f.some((x) => x.level === "lost") ? "lost" : f.length ? "warn" : "ok";
 };
-const verdict = (q, m) => !q.pages.length ? "plain" : q.results[m].hit ? "good" : "bad";
+// Evidence: the places a question's citation names, each found or not in a method's top 5.
+const answerable = DATA.questions.filter((q) => q.evidence.length);
+const foundCount = (q, m) => q.results[m].found.filter(Boolean).length;
+const verdict = (q, m) => {
+  if (!q.evidence.length) return "plain";
+  const n = foundCount(q, m);
+  return n === q.evidence.length ? "good" : n ? "warn" : "bad";
+};
+const evidenceRate = (m) => answerable.reduce((sum, q) => sum + q.results[m].evidence, 0) / answerable.length;
 const missedFigures = DATA.figures.filter((f) => !f.on_page).length;
 const levelWord = (level) => level === "lost" ? "lost" : "check";
 const filters = (options, current) => `<div class="filters">${options.map(([id, name, count]) =>
@@ -409,15 +427,13 @@ function thumb(n) {
 
 function overview(main) {
   const d = DATA.document;
-  const answerable = DATA.questions.filter((q) => q.pages.length);
-  const hitRate = (m) => answerable.filter((q) => q.results[m].hit).length / answerable.length;
-  const best = Math.max(...DATA.methods.map(hitRate));
+  const best = Math.max(...DATA.methods.map(evidenceRate));
   const issues = flagged.flatMap((n) => DATA.pages[n].flags.map((f) => ({n, ...f})))
     .sort((a, b) => (a.level === "lost" ? 0 : 1) - (b.level === "lost" ? 0 : 1));
   const lostPages = flagged.filter((n) => pageLevel(n) === "lost").length;
   const missByPage = {};
   DATA.figures.filter((f) => !f.on_page).forEach((f) => missByPage[f.page] = (missByPage[f.page] || 0) + 1);
-  const allMissed = answerable.filter((q) => DATA.methods.every((m) => !q.results[m].hit));
+  const allMissed = answerable.filter((q) => DATA.methods.every((m) => !foundCount(q, m)));
   const found = DATA.figures.length - missedFigures;
   main.innerHTML = `<div class="view overview"><div class="wrap">
     <div class="doc-head">
@@ -447,8 +463,8 @@ function overview(main) {
         </div>
         <div class="finding">
           <h3>Search</h3>
-          <p>Questions with a top-5 result on a cited page, of ${answerable.length}</p>
-          <div class="bars">${DATA.methods.map((m) => { const r = hitRate(m);
+          <p>Cited evidence found in the top 5, over ${answerable.length} questions</p>
+          <div class="bars">${DATA.methods.map((m) => { const r = evidenceRate(m);
             return `<div class="bar-row"><span>${esc(m)}</span><span class="bar ${r === best ? "lead" : ""}"><i style="width:${(r * 100).toFixed(0)}%"></i></span><span class="mono">${(r * 100).toFixed(0)}%</span></div>`; }).join("")}</div>
           ${allMissed.length ? `<div class="issues">${allMissed.map((q) => `<button class="issue" data-question="${q.id}">
             <span class="mono mark lost lost-text">${q.id}</span><span>${esc(q.question)}</span></button>`).join("")}</div>` : ""}
@@ -539,13 +555,13 @@ function search(main) {
   const r = q.results[state.method];
   const top = r.top.map((i) => DATA.paragraphs[i]);
   const score = (x) => {
-    if (!x.pages.length) return "";
-    const n = DATA.methods.filter((m) => x.results[m].hit).length;
-    return `<span class="${n === DATA.methods.length ? "good" : n ? "warn" : "lost"}-text">${n} of ${DATA.methods.length} methods</span>`;
+    if (!x.evidence.length) return "";
+    const tone = {good: "good", warn: "warn", bad: "lost"}[verdict(x, state.method)];
+    return `<span class="${tone}-text">${foundCount(x, state.method)} of ${x.evidence.length} found</span>`;
   };
   main.innerHTML = `<div class="view panes">
     <aside class="pane list">
-      <div class="list-head"><h2>Golden questions</h2><p>A hit is a top-5 Paragraph on a cited page</p></div>
+      <div class="list-head"><h2>Golden questions</h2><p>Cited evidence in the top 5 of ${esc(state.method)}</p></div>
       ${DATA.questions.map((x) => `<button class="row" data-q="${x.id}" aria-current="${x.id === state.question}">
         <span class="title">${x.id} · ${esc(x.question)}</span>
         <span class="sub"><span class="muted">${esc(x.type)}</span>${score(x)}</span></button>`).join("")}
@@ -556,8 +572,12 @@ function search(main) {
       <dl class="card facts">
         <dt>Expected</dt><dd class="block">${highlight(q.expected, q.numbers)}</dd>
         <dt>Cited</dt><dd class="block">${esc(q.citation)}</dd>
-        ${q.numbers.length ? `<dt>In the top 5</dt><dd>${q.numbers.map((n) => { const ok = r.numbers_found.includes(n);
-          return `<span class="check ${ok ? "good" : "bad"}" title="${ok ? "found" : "missing"}">${icon(ok ? "check" : "x")}${esc(n)}</span>`; }).join("")}</dd>` : ""}
+        ${q.evidence.length ? `<dt>Evidence</dt><dd class="block"><ul class="evidence">${q.evidence.map((e, k) => {
+          const ok = r.found[k], inSection = r.in_section[k];
+          return `<li><span class="state ${ok ? "good" : "bad"}" title="${ok ? "found" : "missing"}">${icon(ok ? "check" : "x")}</span>
+            <div><div>${esc(e.text)}</div><div class="where">p.&nbsp;${e.page} · <span title="${esc(e.section)}">${esc(clip(e.section, 40))}</span>
+            · <span class="nowrap ${inSection ? "good" : "lost"}-text">${inSection ? "section found" : "section missed"}</span></div></div></li>`; }).join("")}</ul>
+          <p class="caption">In the top 5 of ${esc(state.method)}</p></dd>` : ""}
       </dl>
       <h3 class="section-title">Results by method</h3>
       <div class="methods">${DATA.methods.map((m) => `<button class="seg" data-m="${esc(m)}" aria-pressed="${m === state.method}">
@@ -565,7 +585,7 @@ function search(main) {
       ${top.map((p, i) => `<div class="card result" role="button" tabindex="0" data-i="${i}" aria-current="${i === state.hit}">
         <span class="rank">${i + 1}</span>
         <div><div class="where"><span class="mono ${q.pages.includes(p.page) ? "good-text" : "muted"}">p. ${p.page}</span>
-          <span>${esc(clip(p.section, 70))} · chunk ${p.chunk}</span></div>
+          <span>${esc(clip(p.section, 70))} · chunk ${p.chunk}</span>${p.noise ? `<span class="warn-text">noise</span>` : ""}</div>
           <div class="text">${renderText(isTable(p.text) ? p.text : clip(p.text, 600), q.numbers)}</div></div>
       </div>`).join("")}
       ${!q.pages.length ? `<p class="hint">This question has no answer in the document: these are what search returns anyway.</p>` : ""}
@@ -654,8 +674,8 @@ function figures(main) {
 /* Golden set: each question with its answer, citation and cited pages */
 function golden(main) {
   const q = DATA.questions.find((x) => x.id === state.question);
-  // Parsed Paragraphs on the cited pages that hold a number from the answer.
-  const evidence = DATA.paragraphs.filter((p) => q.pages.includes(p.page) && q.numbers.some((n) => numberPattern(n).test(p.text)));
+  // Parsed Paragraphs that hold the question's evidence.
+  const evidence = [...new Set(q.evidence.flatMap((e) => e.paragraphs))].map((i) => DATA.paragraphs[i]);
   const groups = [...new Set(DATA.questions.map((x) => x.type.split(" (")[0]))];
   const label = {text: "Text", figure: "Figures", graph: "Graph", "not answerable": "Not answerable"};
   main.innerHTML = `<div class="view panes">
@@ -674,7 +694,11 @@ function golden(main) {
         <dt>Citation</dt><dd class="block">${esc(q.citation)}</dd>
         <dt>Cited pages</dt><dd>${q.pages.length ? q.pages.map((n) => `<button class="pg" data-view="${n}">p. ${n}</button>`).join("")
           : `<span class="muted">None: the answer is not in this document</span>`}</dd>
-        ${q.numbers.length ? `<dt>Numbers</dt><dd>${q.numbers.map((n) => `<span class="mono">${esc(n)}</span>`).join("")}</dd>` : ""}
+        ${q.evidence.length ? `<dt>Evidence</dt><dd class="block"><ul class="evidence">${q.evidence.map((e) => {
+          const ok = e.paragraphs.length;
+          return `<li><span class="state ${ok ? "good" : "bad"}" title="${ok ? "in the parse" : "not in the parse"}">${icon(ok ? "check" : "x")}</span>
+            <div><div>${esc(e.text)}</div><div class="where">p.&nbsp;${e.page} · <span title="${esc(e.section)}">${esc(clip(e.section, 40))}</span></div></div></li>`; }).join("")}</ul>
+          <p class="caption">Found in the parsed text of its page</p></dd>` : ""}
       </dl>
       ${q.pages.length ? `<div class="head-row"><h3 class="section-title">Where the parse has the answer</h3>
         <button class="open" data-search>Search results${icon("arrow")}</button></div>
@@ -682,7 +706,7 @@ function golden(main) {
         <span class="rank">${i + 1}</span>
         <div><div class="where"><span class="mono good-text">p. ${p.page}</span><span>${esc(clip(p.section, 70))} · chunk ${p.chunk}</span></div>
           <div class="text">${renderText(isTable(p.text) ? p.text : clip(p.text, 600), q.numbers)}</div></div></div>`).join("")
-        || `<p class="hint">${q.numbers.length ? "No parsed Paragraph on the cited pages holds a number from the answer." : "The answer has no numbers to find: read the cited page."}</p>`}` : ""}
+        || `<p class="hint">No parsed Paragraph holds the cited evidence.</p>`}` : ""}
     </section>
     <section class="pane page" id="viewer"></section>
   </div>`;
@@ -697,7 +721,7 @@ function golden(main) {
   renderPageViewer($("#viewer"), {
     pages: q.pages, cited: q.pages, focus: evidence[state.hit]?.page ?? q.pages[0],
     boxes: evidence.flatMap((p, i) => p.boxes.map(([pg, l, t, r, b]) => ({page: pg, box: [l, t, r, b], color: BLUE, label: `${i + 1}`, focus: i === state.hit}))),
-    legend: `<span><i class="swatch" style="background:${BLUE}"></i>Parsed text holding an answer number</span>`,
+    legend: `<span><i class="swatch" style="background:${BLUE}"></i>Parsed text holding the evidence</span>`,
   });
 }
 

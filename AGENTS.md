@@ -4,7 +4,7 @@ Knowledge-graph analyst tool for companies listed on the Casablanca Stock Exchan
 
 Product decisions live in the map issue (#1) and its closed tickets; one-way decisions are ADRs in `docs/adr/`. The Neo4j graph shape is in `docs/graph-schema.md`.
 
-The golden set in `golden/<document>/` is the ground truth for parser, extractor and answer tests: `golden.md` holds entities, facts and test questions, `figures.csv` the expected figures. The source PDFs are not committed; each `golden.md` gives the AMMC link and SHA256.
+The golden set in `golden/<document>/` is the ground truth for parser, extractor and answer tests: `golden.md` holds entities, facts and test questions, `figures.csv` the expected figures, `evidence.csv` where each test question's answer sits. The source PDFs are not committed; each `golden.md` gives the AMMC link and SHA256.
 
 Run, test and develop: see `README.md`. To prove a change in the running app, follow `.claude/skills/verify-bloomberg-invest/SKILL.md`. Prototype a new pipeline step in `backend/notebooks/pipeline.ipynb` first, then move it into `bloomberg_invest`; commit notebooks without outputs.
 
