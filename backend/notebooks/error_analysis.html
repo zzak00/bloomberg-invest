@@ -1,0 +1,755 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Error Analysis</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<!--
+  Error Analysis: a small, standalone tool to find where the ingest pipeline (parse, chunk,
+  embed, search) loses something on one filing, checked against its golden answers. Not part of
+  the app. The pipeline notebook fills DATA and writes this page, with the rendered pages, to
+  data/notebook/error-analysis/ (gitignored: it shows the report).
+-->
+<style>
+  :root {
+    --bg: #fafafa;
+    --surface: #ffffff;
+    --raised: #f4f4f5;
+    --desk: #ededee;
+    --line: rgba(23, 23, 23, .08);
+    --line-strong: rgba(23, 23, 23, .16);
+    --ink: #171717;
+    --ink-2: #525252;
+    --ink-3: #737373;
+    /* The proofreader's pen: the one accent, for anything lost or wrong. */
+    --red: #c8372d;
+    --red-tint: rgba(200, 55, 45, .06);
+    --amber: #b45309;
+    --amber-tint: rgba(180, 83, 9, .06);
+    --green: #15803d;
+    --blue: #2563eb;
+    --highlight: #fbeaa0;
+    --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    --ease: cubic-bezier(.22, 1, .36, 1);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font: 14px/20px Geist, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-variant-numeric: tabular-nums;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0; text-align: left; }
+  button, .row, .item, .thumb { transition: color 150ms var(--ease), background-color 150ms var(--ease), border-color 150ms var(--ease); }
+  :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: 4px; }
+  h1, h2, h3, p, dl, dd { margin: 0; }
+  .mono { font-family: var(--mono); font-size: 12px; line-height: 16px; }
+  .muted { color: var(--ink-3); }
+  .icon { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* The signature: a proofreader's mark in the margin of anything flagged. */
+  .mark { border-left: 2px solid var(--line-strong); padding-left: 8px; }
+  .mark.lost { border-color: var(--red); }
+  .mark.warn { border-color: var(--amber); }
+  .lost-text { color: var(--red); }
+  .warn-text { color: var(--amber); }
+  .good-text { color: var(--green); }
+
+  /* Top bar */
+  .top {
+    display: flex; align-items: center; gap: 24px; height: 56px; padding: 0 24px; flex: none;
+    background: var(--surface); border-bottom: 1px solid var(--line);
+  }
+  .brand { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+  .brand h1 { font-size: 15px; font-weight: 600; white-space: nowrap; }
+  .brand p { font-size: 13px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tabs { display: flex; gap: 4px; margin-left: auto; }
+  .tab { white-space: nowrap; height: 32px; padding: 0 12px; border-radius: 8px; color: var(--ink-2); font-weight: 500; display: inline-flex; align-items: center; gap: 8px; }
+  .tab:hover { color: var(--ink); background: var(--raised); }
+  .tab[aria-selected="true"] { color: var(--ink); background: var(--raised); }
+  .tab .mono { color: var(--ink-3); }
+
+  main { flex: 1; min-height: 0; }
+  .view { height: 100%; }
+
+  /* Three panes: list, detail, page */
+  .panes { display: grid; grid-template-columns: 320px minmax(360px, 1fr) minmax(420px, 44%); height: 100%; }
+  .pane { min-height: 0; overflow: auto; }
+  .pane.list { background: var(--surface); border-right: 1px solid var(--line); }
+  .pane.detail { padding: 24px 32px 48px; }
+  .pane.page { border-left: 1px solid var(--line); background: var(--desk); display: flex; flex-direction: column; overflow: hidden; }
+
+  .list-head { position: sticky; top: 0; z-index: 2; background: var(--surface); padding: 16px; border-bottom: 1px solid var(--line); }
+  .list-head h2 { font-size: 14px; font-weight: 500; }
+  .list-head p { margin-top: 4px; font-size: 13px; color: var(--ink-3); }
+  .filters { display: inline-flex; gap: 2px; margin-top: 12px; padding: 2px; border-radius: 8px; background: var(--raised); }
+  .filter { height: 28px; padding: 0 10px; border-radius: 6px; font-size: 13px; color: var(--ink-2); display: inline-flex; align-items: center; gap: 6px; }
+  .filter:hover { color: var(--ink); }
+  .filter[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0, 0, 0, .06); }
+  .filter .mono { color: var(--ink-3); }
+  .search {
+    display: block; width: 100%; height: 36px; margin-top: 12px; padding: 0 12px;
+    border: 1px solid var(--line-strong); border-radius: 8px; font: inherit; background: var(--surface); color: var(--ink);
+  }
+  .search:focus { outline: none; border-color: var(--ink); }
+  .row { display: block; width: 100%; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  .row:hover { background: var(--bg); }
+  .row[aria-current="true"] { background: var(--raised); box-shadow: inset 2px 0 var(--ink); }
+  .group-label { padding: 16px 16px 8px; font-size: 12px; color: var(--ink-3); border-bottom: 1px solid var(--line); }
+  .row .title.wrap { white-space: normal; }
+  .head-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 24px 0 12px; }
+  .head-row .section-title { margin: 0; }
+  .row .title { display: block; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .sub { display: flex; align-items: baseline; gap: 4px 12px; margin-top: 4px; flex-wrap: wrap; font-size: 13px; color: var(--ink-2); }
+  .row .notes { display: grid; gap: 4px; margin-top: 8px; font-size: 13px; color: var(--ink-2); }
+
+  .meta { font-size: 13px; color: var(--ink-3); margin-bottom: 8px; }
+  .detail h2 { font-size: 20px; font-weight: 500; line-height: 28px; margin-bottom: 16px; }
+  .detail h2 .value { font-family: var(--mono); font-size: 18px; font-weight: 400; color: var(--ink-2); margin-left: 8px; }
+  .flag { display: flex; gap: 12px; align-items: baseline; padding: 8px 12px; margin-bottom: 8px; border-radius: 0 8px 8px 0; }
+  .flag.lost { background: var(--red-tint); }
+  .flag.warn { background: var(--amber-tint); }
+  .hint { margin: 16px 0 12px; font-size: 13px; color: var(--ink-3); }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+  .facts { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 8px 16px; padding: 16px 20px; }
+  .facts dt { color: var(--ink-3); font-size: 13px; }
+  .facts dd { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: baseline; }
+  .facts dd.block { display: block; }
+  .check { display: inline-flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: 13px; }
+  .check.status { font-family: inherit; font-size: 14px; gap: 6px; }
+  .check .icon { width: 14px; height: 14px; }
+  .check.good .icon { color: var(--green); }
+  .check.bad .icon { color: var(--red); }
+  .section-title { font-size: 14px; font-weight: 500; margin: 24px 0 12px; }
+  mark { background: var(--highlight); color: var(--ink); border-radius: 2px; padding: 0 2px; }
+
+  .methods { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 2px; margin-bottom: 12px; border-radius: 10px; background: var(--raised); }
+  .seg { height: 32px; padding: 0 12px; border-radius: 8px; font-size: 13px; color: var(--ink-2); display: inline-flex; align-items: center; gap: 8px; }
+  .seg:hover { color: var(--ink); }
+  .seg[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0, 0, 0, .06); }
+  .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--ink-3); }
+  .dot.good { background: var(--green); }
+  .dot.warn { background: var(--amber); }
+  .dot.bad { background: var(--red); }
+  .evidence { display: grid; gap: 8px; list-style: none; margin: 0; padding: 0; }
+  .evidence li { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 8px; font-size: 14px; }
+  .evidence .state { display: inline-flex; height: 20px; align-items: center; }
+  .evidence .state .icon { width: 14px; height: 14px; }
+  .evidence .state.good { color: var(--green); }
+  .evidence .state.bad { color: var(--red); }
+  .evidence .where { margin-top: 2px; font-size: 12px; color: var(--ink-3); }
+  .evidence .nowrap { white-space: nowrap; }
+  .evidence + .caption { margin-top: 8px; font-size: 12px; color: var(--ink-3); }
+
+  .result { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 12px; width: 100%; padding: 16px; margin-bottom: 8px; cursor: pointer; transition: border-color 150ms var(--ease); }
+  .result:hover { border-color: var(--line-strong); }
+  .result[aria-current="true"] { border-color: var(--ink); }
+  .rank { font-family: var(--mono); font-size: 13px; color: var(--ink-3); }
+  .result[aria-current="true"] .rank { color: var(--ink); }
+  .result .where { display: flex; gap: 4px 12px; align-items: baseline; flex-wrap: wrap; margin-bottom: 4px; font-size: 12px; color: var(--ink-3); }
+  .result .text { color: var(--ink-2); font-size: 13px; overflow-wrap: anywhere; }
+  .text { display: grid; gap: 8px; }
+  .text p { white-space: pre-wrap; }
+  /* Markdown tables from the parse, drawn as tables. */
+  .table-wrap { max-width: 100%; max-height: 320px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+  .md { border-collapse: collapse; font-size: 12px; line-height: 16px; color: var(--ink-2); overflow-wrap: normal; }
+  .md th, .md td { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; min-width: 72px; max-width: 320px; }
+  .md td:first-child, .md th:first-child { min-width: 160px; }
+  .md th { position: sticky; top: 0; background: var(--raised); color: var(--ink); font-weight: 500; }
+  .md .num { text-align: right; white-space: nowrap; }
+  .md tr:last-child td { border-bottom: 0; }
+  .md tr.gap td { color: var(--ink-3); text-align: center; padding: 0 8px; }
+
+  /* Page viewer */
+  .page-bar { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 8px 16px; background: var(--surface); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .page-bar .pages { display: flex; gap: 4px; flex-wrap: wrap; }
+  .pg { height: 28px; padding: 0 8px; border-radius: 6px; border: 1px solid var(--line-strong); font: 12px/1 var(--mono); display: inline-flex; align-items: center; gap: 6px; }
+  .pg:hover { border-color: var(--ink-3); }
+  .pg[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: #fff; }
+  .cited-note { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); }
+  .legend { margin-left: auto; display: flex; gap: 4px 16px; font-size: 12px; color: var(--ink-2); flex-wrap: wrap; }
+  .legend span, .legend button { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-2); }
+  .legend button[aria-pressed="false"] { opacity: .4; }
+  .swatch { display: inline-block; width: 8px; height: 8px; border-radius: 2px; flex: none; }
+  .canvas { flex: 1; overflow: auto; padding: 24px 24px 24px 48px; }
+  .sheet { position: relative; margin: 0 auto; max-width: 780px; background: #fff; border-radius: 2px; box-shadow: 0 1px 2px rgba(0, 0, 0, .06), 0 8px 24px rgba(0, 0, 0, .06); }
+  .sheet img { display: block; width: 100%; height: auto; border-radius: 2px; }
+  .box { position: absolute; border: 1.5px solid; border-radius: 2px; }
+  .box.dim { opacity: .45; }
+  .box .tag {
+    position: absolute; right: 100%; top: -1px; margin-right: 6px; padding: 0 4px; border-radius: 4px;
+    color: #fff; font: 500 11px/16px var(--mono); white-space: nowrap;
+  }
+
+  /* Overview */
+  .overview { overflow: auto; padding: 32px 32px 64px; }
+  .overview .wrap { max-width: 1440px; margin: 0 auto; }
+  .doc-head h2 { font-size: 28px; font-weight: 500; line-height: 36px; }
+  .doc-head .mono { margin-top: 8px; color: var(--ink-3); }
+  .stats { display: flex; flex-wrap: wrap; gap: 16px 48px; margin-top: 24px; padding: 16px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .stat .value { font-size: 24px; font-weight: 500; line-height: 32px; }
+  .stat .name { font-size: 13px; color: var(--ink-3); }
+  .board { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 32px; margin-top: 32px; align-items: start; }
+  .board-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+  .board-head h3 { font-size: 15px; font-weight: 500; }
+  .board-head p { font-size: 13px; color: var(--ink-2); }
+  .board-head .legend { font-size: 12px; }
+  .board-head .legend span { gap: 8px; }
+  .board-head .legend .mark { display: inline-block; height: 12px; padding: 0; }
+
+  /* The contact sheet: every page of the filing, problems marked in the margin. */
+  .contact { background: var(--desk); border-radius: 16px; padding: 24px 24px 24px 32px; display: grid; grid-template-columns: repeat(auto-fill, minmax(56px, 1fr)); gap: 12px 16px; }
+  .thumb { position: relative; display: block; }
+  .thumb .paper { position: relative; display: block; background: #fff; border-radius: 2px; box-shadow: 0 1px 2px rgba(0, 0, 0, .08); outline: 1px solid transparent; }
+  .thumb img { display: block; width: 100%; height: auto; border-radius: 2px; }
+  .thumb:hover .paper { outline-color: var(--ink-3); }
+  .thumb .folio { display: block; margin-top: 4px; text-align: center; font: 11px/16px var(--mono); color: var(--ink-3); }
+  .thumb.lost .folio { color: var(--red); }
+  .thumb.warn .folio { color: var(--amber); }
+  .thumb.lost::before, .thumb.warn::before { content: ""; position: absolute; left: -8px; top: 0; height: calc(100% - 20px); width: 2px; border-radius: 1px; }
+  .thumb.lost::before { background: var(--red); }
+  .thumb.warn::before { background: var(--amber); }
+  .thumb .spot { position: absolute; border: 1px solid; border-radius: 1px; }
+
+  .findings { display: grid; gap: 24px; position: sticky; top: 0; }
+  .finding { display: grid; gap: 12px; padding-bottom: 24px; border-bottom: 1px solid var(--line); }
+  .finding:last-child { border-bottom: 0; padding-bottom: 0; }
+  .finding h3 { font-size: 15px; font-weight: 500; }
+  .finding > p { font-size: 13px; color: var(--ink-2); margin-top: -8px; }
+  .issues { display: grid; gap: 4px; }
+  .issue { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 8px; align-items: baseline; padding: 4px 0; font-size: 13px; color: var(--ink-2); }
+  .issue:hover { color: var(--ink); }
+  .issue .mono { white-space: nowrap; }
+  .bars { display: grid; gap: 8px; }
+  .bar-row { display: grid; grid-template-columns: 136px minmax(0, 1fr) 40px; gap: 12px; align-items: center; font-size: 13px; color: var(--ink-2); }
+  .bar-row .mono { text-align: right; }
+  .bar { height: 4px; border-radius: 2px; background: var(--raised); overflow: hidden; }
+  .bar i { display: block; height: 100%; background: var(--ink-3); border-radius: 2px; }
+  .bar.lead i { background: var(--ink); }
+  .open { display: inline-flex; align-items: center; gap: 6px; justify-self: start; font-size: 13px; font-weight: 500; }
+  .open:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+  .item { display: grid; grid-template-columns: 128px minmax(0, 1fr); gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  .item:last-child { border-bottom: 0; }
+  .item:hover { background: var(--bg); }
+  .item .labels { display: grid; gap: 4px; align-content: start; }
+  .item .kind { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); }
+  .item.flagged.warn { background: var(--amber-tint); box-shadow: inset 2px 0 var(--amber); }
+  .item.flagged.lost { background: var(--red-tint); box-shadow: inset 2px 0 var(--red); }
+  .item .text { font-size: 13px; color: var(--ink-2); overflow-wrap: anywhere; }
+  .item.unused .text { color: var(--ink-3); }
+  .empty { padding: 40px 24px; text-align: center; color: var(--ink-3); }
+
+  @media (max-width: 1100px) {
+    html, body { height: auto; }
+    body { overflow: auto; }
+    .panes { display: block; height: auto; }
+    .pane { overflow: visible; }
+    .pane.list { max-height: 45vh; overflow: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+    .pane.page { border-left: 0; overflow: visible; }
+    .canvas { overflow: visible; }
+    .board { grid-template-columns: 1fr; }
+    .findings { position: static; order: -1; max-width: 640px; }
+  }
+  @media (max-width: 640px) {
+    .top { height: auto; padding: 12px 16px; flex-wrap: wrap; gap: 8px; }
+    .brand p { display: none; }
+    .tabs { margin: 0 -16px 0 -12px; width: calc(100% + 28px); overflow-x: auto; scrollbar-width: none; }
+    .overview, .pane.detail { padding: 24px 16px 48px; }
+    .contact { padding: 16px 16px 16px 24px; gap: 12px 16px; grid-template-columns: repeat(auto-fill, minmax(48px, 1fr)); }
+    .doc-head h2 { font-size: 22px; line-height: 28px; }
+    .stats { gap: 12px 32px; }
+  }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><h1>Error Analysis</h1><p id="doc-title"></p></div>
+  <nav class="tabs" role="tablist" id="tabs"></nav>
+</header>
+<main id="main"></main>
+
+<script>
+const DATA = /*DATA*/null;
+
+// Each Docling label kind keeps one colour wherever a page is drawn.
+const KINDS = [
+  ["Text", "#2563eb", ["text", "paragraph", "list_item", "caption", "footnote"]],
+  ["Heading", "#7c4dd6", ["title", "section_header"]],
+  ["Table", "#0f8a7e", ["table"]],
+  ["Picture", "#c8372d", ["picture", "chart"]],
+  ["Code", "#b45309", ["code"]],
+  ["Other", "#8a8a8f", null],
+];
+const kindOf = (label) => KINDS.find(([, , labels]) => labels && labels.includes(label)) || KINDS.at(-1);
+const BLUE = "#2563eb";
+const LEVEL = {lost: "#c8372d", warn: "#b45309"};
+
+const ICONS = {
+  arrow: '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+};
+const icon = (name) => `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name]}</svg>`;
+
+const $ = (s, root = document) => root.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"})[c]);
+const pct = (v, total) => `${(100 * v / total).toFixed(3)}%`;
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+// One number format across the page, the report's own: 1 003.
+const fmt = (n) => n.toLocaleString("fr-FR");
+const clip = (s, n) => s.length > n ? s.slice(0, n) + "…" : s;
+
+// A number as written, with or without thousands separators (\s covers the no-break spaces);
+// the notebook matches numbers the same way.
+const numberPattern = (n, flags = "") => new RegExp(
+  `(?<![\\d,])(${(n.match(/\d+(?:,\d+)?%?/g) || []).join("[\\s.]?")})(?!\\d|,\\d)`, flags);
+function highlight(text, numbers) {
+  let out = esc(text);
+  for (const n of numbers) out = out.replace(numberPattern(n, "g"), "<mark>$1</mark>");
+  return out;
+}
+const isTable = (text) => text.split("\n").some(isRow);
+const isRow = (line) => line.trim().startsWith("|");
+const cellsOf = (line) => line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
+const isRule = (cells) => cells.every((c) => /^:?-{3,}:?$/.test(c));
+const NUMERIC = /^[-+(]?[\d\s.,%()-]*\d[\d\s.,%()-]*$/;
+
+// A Paragraph's text with its Markdown tables drawn as tables; golden numbers highlighted.
+function renderText(text, numbers = []) {
+  const lines = text.split("\n"), out = [];
+  const inTable = (i) => isRow(lines[i]) || (lines[i].trim() === "…" && i + 1 < lines.length && isRow(lines[i + 1]));
+  for (let i = 0; i < lines.length;) {
+    const start = i;
+    if (!inTable(i)) {
+      while (i < lines.length && !inTable(i)) i++;
+      const para = lines.slice(start, i).join("\n").trim();
+      if (para) out.push(`<p>${highlight(para, numbers)}</p>`);
+      continue;
+    }
+    while (i < lines.length && inTable(i)) i++;
+    out.push(table(lines.slice(start, i), numbers));
+  }
+  return out.join("");
+}
+function table(lines, numbers) {
+  const rows = lines.map((l) => l.trim() === "…" ? null : cellsOf(l));
+  const header = rows.length > 1 && rows[1] && isRule(rows[1]);
+  const body = rows.filter((r) => !r || !isRule(r));
+  const width = Math.max(...body.filter(Boolean).map((r) => r.length));
+  // Docling often adds columns that are empty in every row.
+  const keep = [...Array(width).keys()].filter((c) => body.some((r) => r && (r[c] || "").length));
+  const cell = (tag, c) => {
+    const value = c.replace(/\.{4,}/g, " … ");
+    return `<${tag} class="${NUMERIC.test(value) ? "num" : ""}">${highlight(value, numbers)}</${tag}>`;
+  };
+  const html = body.map((r, i) => !r ? `<tr class="gap"><td colspan="${keep.length}">…</td></tr>`
+    : `<tr>${keep.map((c) => cell(header && i === 0 ? "th" : "td", r[c] || "")).join("")}</tr>`);
+  return `<div class="table-wrap"><table class="md">${header ? `<thead>${html[0]}</thead><tbody>${html.slice(1).join("")}</tbody>` : `<tbody>${html.join("")}</tbody>`}</table></div>`;
+}
+const keyClick = (root, selector, handler) => root.querySelectorAll(selector).forEach((el) => {
+  el.onclick = () => handler(el);
+  el.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handler(el); } };
+});
+
+const state = {
+  tab: "overview",
+  page: 1, hidden: new Set(), pageFilter: "issues",
+  question: DATA.questions[0].id, method: DATA.methods.at(-1), hit: 0,
+  figure: null, figureFilter: "missing", figureQuery: "",
+  view: null,
+};
+const pages = Object.keys(DATA.pages).map(Number).sort((a, b) => a - b);
+const flagged = pages.filter((n) => DATA.pages[n].flags.length);
+const pageLevel = (n) => {
+  const f = DATA.pages[n].flags;
+  return f.some((x) => x.level === "lost") ? "lost" : f.length ? "warn" : "ok";
+};
+// Evidence: the places a question's citation names, each found or not in a method's top 5.
+const answerable = DATA.questions.filter((q) => q.evidence.length);
+const foundCount = (q, m) => q.results[m].found.filter(Boolean).length;
+const verdict = (q, m) => {
+  if (!q.evidence.length) return "plain";
+  const n = foundCount(q, m);
+  return n === q.evidence.length ? "good" : n ? "warn" : "bad";
+};
+const evidenceRate = (m) => answerable.reduce((sum, q) => sum + q.results[m].evidence, 0) / answerable.length;
+const missedFigures = DATA.figures.filter((f) => !f.on_page).length;
+const levelWord = (level) => level === "lost" ? "lost" : "check";
+const filters = (options, current) => `<div class="filters">${options.map(([id, name, count]) =>
+  `<button class="filter" data-f="${id}" aria-pressed="${id === current}">${name}<span class="mono">${count}</span></button>`).join("")}</div>`;
+
+/* Page viewer, shared by every view.
+   view = {pages, cited, focus, legend, boxes: [{page, box, color, label, focus, dim, id}]} */
+function renderPageViewer(root, view) {
+  const shown = state.view === null || !view.pages.includes(state.view) ? view.focus : state.view;
+  const page = DATA.pages[shown];
+  const cited = view.cited.includes(shown);
+  root.innerHTML = `
+    <div class="page-bar">
+      <div class="pages">${view.pages.map((n) => `<button class="pg" data-p="${n}" aria-pressed="${n === shown}">${view.cited.includes(n) && view.pages.length > 1 ? `<span class="dot good"></span>` : ""}p. ${n}</button>`).join("")}</div>
+      ${cited ? `<span class="cited-note"><span class="dot good"></span>Cited page</span>` : ""}
+      <div class="legend">${view.legend || ""}</div>
+    </div>
+    <div class="canvas"><div class="sheet">
+      <img alt="Page ${shown}" src="pages/${shown}.jpg">
+      ${view.boxes.filter((b) => b.page === shown).map((b) => {
+        const [l, t, r, bt] = b.box;
+        return `<div class="box ${b.focus ? "focus" : ""} ${b.dim ? "dim" : ""}" data-id="${b.id ?? ""}" data-color="${b.color}"
+          style="left:${pct(l, page.width)};top:${pct(t, page.height)};width:${pct(r - l, page.width)};height:${pct(bt - t, page.height)};border-color:${b.color};background:${b.color}${b.focus ? "2a" : "08"}">
+          ${b.label ? `<span class="tag" style="background:${b.color}">${esc(b.label)}</span>` : ""}</div>`;
+      }).join("")}
+    </div></div>`;
+  root.querySelectorAll(".pg").forEach((b) => b.onclick = () => { state.view = +b.dataset.p; renderPageViewer(root, view); });
+  const target = $(".box.focus", root), canvas = $(".canvas", root), img = $("img", root);
+  const place = () => {
+    if (!target || canvas.scrollHeight <= canvas.clientHeight) return;
+    canvas.scrollTop = $(".sheet", root).offsetTop + target.offsetTop - canvas.clientHeight / 3;
+  };
+  img.complete ? place() : img.addEventListener("load", place, {once: true});
+}
+
+/* Overview */
+function thumb(n) {
+  const page = DATA.pages[n], level = pageLevel(n);
+  const spots = page.items.filter((it) => it.check).map((it) => {
+    const [l, t, r, b] = it.box, c = LEVEL[it.check.level];
+    return `<i class="spot" style="left:${pct(l, page.width)};top:${pct(t, page.height)};width:${pct(r - l, page.width)};height:${pct(b - t, page.height)};border-color:${c};background:${c}${it.check.level === "lost" ? "26" : "14"}"></i>`;
+  }).join("");
+  const title = `p. ${n}${page.flags.map((f) => " · " + f.text).join("")}`;
+  return `<button class="thumb ${level}" data-page="${n}" title="${esc(title)}">
+    <span class="paper" style="aspect-ratio:${page.width}/${page.height}"><img loading="lazy" alt="" src="thumbs/${n}.jpg">${spots}</span>
+    <span class="folio">${n}</span></button>`;
+}
+
+function overview(main) {
+  const d = DATA.document;
+  const best = Math.max(...DATA.methods.map(evidenceRate));
+  const issues = flagged.flatMap((n) => DATA.pages[n].flags.map((f) => ({n, ...f})))
+    .sort((a, b) => (a.level === "lost" ? 0 : 1) - (b.level === "lost" ? 0 : 1));
+  const lostPages = flagged.filter((n) => pageLevel(n) === "lost").length;
+  const missByPage = {};
+  DATA.figures.filter((f) => !f.on_page).forEach((f) => missByPage[f.page] = (missByPage[f.page] || 0) + 1);
+  const allMissed = answerable.filter((q) => DATA.methods.every((m) => !foundCount(q, m)));
+  const found = DATA.figures.length - missedFigures;
+  main.innerHTML = `<div class="view overview"><div class="wrap">
+    <div class="doc-head">
+      <h2>${esc(d.title)}</h2>
+      <p class="mono">${esc(d.parser)} · parsed ${esc(d.parsed_at)} · chunk cap ${fmt(d.cap)} tokens</p>
+    </div>
+    <div class="stats">
+      ${[[pages.length, "pages"], [d.sections, "sections"], [d.chunks, "chunks"], [d.tables, "table chunks"], [d.paragraphs, "paragraphs"]]
+        .map(([v, n]) => `<div class="stat"><div class="value">${fmt(v)}</div><div class="name">${n}</div></div>`).join("")}
+    </div>
+    <div class="board">
+      <section>
+        <div class="board-head">
+          <h3>Pages</h3>
+          <p>${flagged.length} of ${pages.length} flagged, ${lostPages} with content lost</p>
+          <div class="legend"><span><i class="mark lost"></i>content lost</span><span><i class="mark warn"></i>check</span></div>
+        </div>
+        <div class="contact">${pages.map(thumb).join("")}</div>
+      </section>
+      <aside class="findings">
+        <div class="finding">
+          <h3>Parsing</h3>
+          <p>What Docling got wrong, the worst first</p>
+          <div class="issues">${issues.slice(0, 5).map((i) => `<button class="issue" data-page="${i.n}">
+            <span class="mono mark ${i.level} ${i.level}-text">p. ${i.n}</span><span>${esc(i.text)}</span></button>`).join("")}</div>
+          <button class="open" data-go="parsing">All ${flagged.length} flagged pages${icon("arrow")}</button>
+        </div>
+        <div class="finding">
+          <h3>Search</h3>
+          <p>Cited evidence found in the top 5, over ${answerable.length} questions</p>
+          <div class="bars">${DATA.methods.map((m) => { const r = evidenceRate(m);
+            return `<div class="bar-row"><span>${esc(m)}</span><span class="bar ${r === best ? "lead" : ""}"><i style="width:${(r * 100).toFixed(0)}%"></i></span><span class="mono">${(r * 100).toFixed(0)}%</span></div>`; }).join("")}</div>
+          ${allMissed.length ? `<div class="issues">${allMissed.map((q) => `<button class="issue" data-question="${q.id}">
+            <span class="mono mark lost lost-text">${q.id}</span><span>${esc(q.question)}</span></button>`).join("")}</div>` : ""}
+          <button class="open" data-go="search">Every question by method${icon("arrow")}</button>
+        </div>
+        <div class="finding">
+          <h3>Figures</h3>
+          <p>Golden numbers found in the parsed text of their page</p>
+          <div class="bar-row" style="grid-template-columns:minmax(0, 1fr) auto"><span class="bar lead"><i style="width:${(100 * found / DATA.figures.length).toFixed(0)}%"></i></span>
+            <span class="mono">${found} of ${DATA.figures.length}</span></div>
+          <div class="issues">${Object.entries(missByPage).sort((a, b) => b[1] - a[1]).map(([p, n]) => `<button class="issue" data-figpage="${p}">
+            <span class="mono mark lost lost-text">p. ${p}</span><span>${plural(n, "figure")} missing${DATA.pages[p]?.flags.length ? ": " + esc(DATA.pages[p].flags[0].text) : ""}</span></button>`).join("")}</div>
+          <button class="open" data-go="figures">All ${DATA.figures.length} figures${icon("arrow")}</button>
+        </div>
+      </aside>
+    </div>
+  </div></div>`;
+  main.querySelectorAll("[data-page]").forEach((b) => b.onclick = () => go("parsing", {page: +b.dataset.page, pageFilter: DATA.pages[b.dataset.page].flags.length ? "issues" : "all"}));
+  main.querySelectorAll("[data-question]").forEach((b) => b.onclick = () => go("search", {question: b.dataset.question}));
+  main.querySelectorAll("[data-go]").forEach((b) => b.onclick = () => go(b.dataset.go));
+  main.querySelectorAll("[data-figpage]").forEach((b) => b.onclick = () => {
+    const first = DATA.figures.findIndex((f) => !f.on_page && f.page === +b.dataset.figpage);
+    go("figures", {figure: first, figureFilter: "missing"});
+  });
+}
+
+/* Parsing */
+function parsing(main) {
+  const list = state.pageFilter === "issues" ? flagged : pages;
+  if (!list.includes(state.page) && list.length) state.page = list[0];
+  const page = DATA.pages[state.page];
+  const items = page.items.map((it, i) => ({...it, i, kind: kindOf(it.label)}));
+  main.innerHTML = `<div class="view panes">
+    <aside class="pane list">
+      <div class="list-head">
+        <h2>Pages</h2><p>Flagged by the parse checks</p>
+        ${filters([["issues", "Flagged", flagged.length], ["all", "All", pages.length]], state.pageFilter)}
+      </div>
+      ${list.map((n) => { const p = DATA.pages[n];
+        return `<button class="row" data-p="${n}" aria-current="${n === state.page}">
+          <span class="title">Page ${n}</span>
+          ${p.flags.length ? `<span class="notes">${p.flags.map((f) => `<span class="mark ${f.level}">${esc(f.text.split(":")[0])}</span>`).join("")}</span>` : ""}
+          <span class="sub"><span class="muted">${plural(p.items.length, "item")}</span></span></button>`; }).join("") || `<div class="empty">No flagged pages</div>`}
+    </aside>
+    <section class="pane detail">
+      <p class="meta">Parsing · page ${state.page} of ${pages.length}</p>
+      <h2>What Docling found on page ${state.page}</h2>
+      ${page.flags.map((f) => `<div class="flag mark ${f.level}"><span class="mono ${f.level}-text">${levelWord(f.level)}</span><span>${esc(f.text)}</span></div>`).join("")}
+      <p class="hint">${plural(items.length, "item")} in reading order. Greyed items never reach a Chunk: page headers, footers and pictures. Hover an item to find it on the page.</p>
+      <div class="card" style="overflow:hidden">${items.map((it) => `
+        <div class="item ${it.used ? "" : "unused"} ${it.check ? "flagged " + it.check.level : ""}" data-i="${it.i}">
+          <span class="labels"><span class="kind mono"><i class="swatch" style="background:${it.kind[1]}"></i>${esc(it.label.replace("_", " "))}</span>
+            ${it.check ? `<span class="mono ${it.check.level}-text">${levelWord(it.check.level)}</span>` : ""}</span>
+          <div class="text">${it.text ? renderText(it.text) : `<span class="muted">No text</span>`}</div>
+        </div>`).join("") || `<div class="empty">Docling found nothing on this page</div>`}</div>
+    </section>
+    <section class="pane page" id="viewer"></section>
+  </div>`;
+  main.querySelectorAll("[data-f]").forEach((b) => b.onclick = () => { state.pageFilter = b.dataset.f; render(); });
+  main.querySelectorAll(".row[data-p]").forEach((b) => b.onclick = () => { state.page = +b.dataset.p; render(); });
+  const viewer = $("#viewer");
+  const draw = () => {
+    renderPageViewer(viewer, {
+      pages: [state.page], cited: [], focus: state.page,
+      boxes: items.filter((it) => !state.hidden.has(it.kind[0])).map((it) => ({
+        page: state.page, box: it.box, color: it.kind[1], id: it.i, dim: !it.used,
+      })),
+      legend: KINDS.map(([k, c]) => `<button data-k="${k}" aria-pressed="${!state.hidden.has(k)}"><i class="swatch" style="background:${c}"></i>${k}</button>`).join(""),
+    });
+    viewer.querySelectorAll("[data-k]").forEach((b) => b.onclick = () => {
+      state.hidden.has(b.dataset.k) ? state.hidden.delete(b.dataset.k) : state.hidden.add(b.dataset.k); draw(); });
+  };
+  draw();
+  const light = (id, on) => viewer.querySelectorAll(".box").forEach((b) => {
+    const hit = on && b.dataset.id === id;
+    b.style.background = b.dataset.color + (hit ? "33" : "08");
+    b.style.outline = hit ? `3px solid ${b.dataset.color}55` : "";
+  });
+  main.querySelectorAll(".item").forEach((el) => {
+    el.onmouseenter = () => light(el.dataset.i, true);
+    el.onmouseleave = () => light(el.dataset.i, false);
+  });
+}
+
+/* Search */
+function search(main) {
+  const q = DATA.questions.find((x) => x.id === state.question);
+  const r = q.results[state.method];
+  const top = r.top.map((i) => DATA.paragraphs[i]);
+  const score = (x) => {
+    if (!x.evidence.length) return "";
+    const tone = {good: "good", warn: "warn", bad: "lost"}[verdict(x, state.method)];
+    return `<span class="${tone}-text">${foundCount(x, state.method)} of ${x.evidence.length} found</span>`;
+  };
+  main.innerHTML = `<div class="view panes">
+    <aside class="pane list">
+      <div class="list-head"><h2>Golden questions</h2><p>Cited evidence in the top 5 of ${esc(state.method)}</p></div>
+      ${DATA.questions.map((x) => `<button class="row" data-q="${x.id}" aria-current="${x.id === state.question}">
+        <span class="title">${x.id} · ${esc(x.question)}</span>
+        <span class="sub"><span class="muted">${esc(x.type)}</span>${score(x)}</span></button>`).join("")}
+    </aside>
+    <section class="pane detail">
+      <p class="meta">${q.id} · ${esc(q.type)}</p>
+      <h2>${esc(q.question)}</h2>
+      <dl class="card facts">
+        <dt>Expected</dt><dd class="block">${highlight(q.expected, q.numbers)}</dd>
+        <dt>Cited</dt><dd class="block">${esc(q.citation)}</dd>
+        ${q.evidence.length ? `<dt>Evidence</dt><dd class="block"><ul class="evidence">${q.evidence.map((e, k) => {
+          const ok = r.found[k], inSection = r.in_section[k];
+          return `<li><span class="state ${ok ? "good" : "bad"}" title="${ok ? "found" : "missing"}">${icon(ok ? "check" : "x")}</span>
+            <div><div>${esc(e.text)}</div><div class="where">p.&nbsp;${e.page} · <span title="${esc(e.section)}">${esc(clip(e.section, 40))}</span>
+            · <span class="nowrap ${inSection ? "good" : "lost"}-text">${inSection ? "section found" : "section missed"}</span></div></div></li>`; }).join("")}</ul>
+          <p class="caption">In the top 5 of ${esc(state.method)}</p></dd>` : ""}
+      </dl>
+      <h3 class="section-title">Results by method</h3>
+      <div class="methods">${DATA.methods.map((m) => `<button class="seg" data-m="${esc(m)}" aria-pressed="${m === state.method}">
+        <span class="dot ${verdict(q, m)}"></span>${esc(m)}</button>`).join("")}</div>
+      ${top.map((p, i) => `<div class="card result" role="button" tabindex="0" data-i="${i}" aria-current="${i === state.hit}">
+        <span class="rank">${i + 1}</span>
+        <div><div class="where"><span class="mono ${q.pages.includes(p.page) ? "good-text" : "muted"}">p. ${p.page}</span>
+          <span>${esc(clip(p.section, 70))} · chunk ${p.chunk}</span>${p.noise ? `<span class="warn-text">noise</span>` : ""}</div>
+          <div class="text">${renderText(isTable(p.text) ? p.text : clip(p.text, 600), q.numbers)}</div></div>
+      </div>`).join("")}
+      ${!q.pages.length ? `<p class="hint">This question has no answer in the document: these are what search returns anyway.</p>` : ""}
+    </section>
+    <section class="pane page" id="viewer"></section>
+  </div>`;
+  main.querySelectorAll(".row[data-q]").forEach((b) => b.onclick = () => { state.question = b.dataset.q; state.hit = 0; state.view = null; render(); });
+  main.querySelectorAll(".seg").forEach((b) => b.onclick = () => { state.method = b.dataset.m; state.hit = 0; state.view = null; render(); });
+  keyClick(main, ".result", (b) => { state.hit = +b.dataset.i; state.view = null; render(); });
+  renderPageViewer($("#viewer"), {
+    pages: [...new Set([...q.pages, ...top.map((p) => p.page)])].sort((a, b) => a - b),
+    cited: q.pages, focus: top[state.hit]?.page ?? q.pages[0],
+    boxes: top.flatMap((p, i) => p.boxes.map(([pg, l, t, rr, b]) => ({page: pg, box: [l, t, rr, b], color: BLUE, label: `${i + 1}`, focus: i === state.hit}))),
+    legend: `<span><i class="swatch" style="background:${BLUE}"></i>Result, by rank</span>`,
+  });
+}
+
+/* Figures */
+function figures(main) {
+  const query = state.figureQuery.toLowerCase();
+  const shown = DATA.figures.map((f, i) => ({...f, i})).filter((f) =>
+    (state.figureFilter === "all" || (state.figureFilter === "missing" ? !f.on_page : f.on_page)) &&
+    (!query || `${f.label} ${f.line_item} ${f.value} p. ${f.page}`.toLowerCase().includes(query)));
+  if (state.figure === null || !shown.some((f) => f.i === state.figure)) state.figure = shown[0]?.i ?? 0;
+  const f = DATA.figures[state.figure];
+  const matches = f.matches.map((i) => DATA.paragraphs[i]);
+  const elsewhere = [...new Set(f.elsewhere.map((i) => DATA.paragraphs[i].page))];
+  // A long table keeps its header and the rows holding the number.
+  const excerpt = (text) => {
+    if (text.length < 600) return text;
+    const lines = text.split("\n"), head = lines.findIndex(isRow);
+    if (head < 0) return clip(text, 600);
+    const top = head + 2, rows = lines.slice(top).filter((l) => numberPattern(f.value).test(l)).slice(0, 3);
+    return rows.length ? [...lines.slice(0, top), "…", ...rows, "…"].join("\n") : text;
+  };
+  main.innerHTML = `<div class="view panes">
+    <aside class="pane list">
+      <div class="list-head">
+        <h2>Golden figures</h2><p>Is each number in the parsed text of its page?</p>
+        ${filters([["missing", "Missing", missedFigures], ["found", "Found", DATA.figures.length - missedFigures], ["all", "All", DATA.figures.length]], state.figureFilter)}
+        <input class="search" placeholder="Label, value or page" aria-label="Filter figures" value="${esc(state.figureQuery)}">
+      </div>
+      ${shown.map((x) => `<button class="row" data-i="${x.i}" aria-current="${x.i === state.figure}">
+        <span class="title">${esc(x.label)}</span>
+        <span class="sub"><span class="mono">${esc(x.value)}</span><span class="muted">p. ${x.page} · ${esc(x.period)}</span>
+          ${x.on_page ? "" : `<span class="lost-text">missing</span>`}</span></button>`).join("") || `<div class="empty">No figures match</div>`}
+    </aside>
+    <section class="pane detail">
+      <p class="meta">${esc(f.scope.charAt(0).toUpperCase() + f.scope.slice(1))} · ${esc(f.standard)} · ${esc(f.period)}</p>
+      <h2>${esc(f.label)}<span class="value">${esc(f.value)}</span></h2>
+      <dl class="card facts">
+        <dt>Status</dt><dd>${f.on_page ? `<span class="check status good">${icon("check")}In ${plural(matches.length, "Paragraph")} on p. ${f.page}</span>`
+          : `<span class="check status bad">${icon("x")}Not in the text of p. ${f.page}</span><span class="muted">${elsewhere.length ? `the number appears on p. ${elsewhere.join(", ")}` : "nowhere in the parsed text"}</span>`}</dd>
+        <dt>Line item</dt><dd>${esc(f.line_item)} · ${esc(f.unit)}</dd>
+        <dt>Where</dt><dd class="block">p. ${f.page} · ${esc(f.table)}<br><span class="muted">row ${esc(f.row)} · column ${esc(f.column)}</span></dd>
+        ${DATA.pages[f.page]?.flags.length ? `<dt>Page check</dt><dd class="block">${DATA.pages[f.page].flags.map((x) => `<div class="mark ${x.level}">${esc(x.text)}</div>`).join("")}</dd>` : ""}
+        ${f.notes ? `<dt>Notes</dt><dd class="block muted">${esc(f.notes)}</dd>` : ""}
+      </dl>
+      ${matches.length ? `<h3 class="section-title">Where the parse has it</h3>` : ""}
+      ${matches.map((p, i) => `<div class="card result" role="button" tabindex="0" data-i="${i}" aria-current="${i === state.hit}">
+        <span class="rank">${i + 1}</span>
+        <div><div class="where"><span>${esc(clip(p.section, 70))} · chunk ${p.chunk}</span></div>
+          <div class="text">${renderText(excerpt(p.text), [f.value])}</div></div></div>`).join("")}
+    </section>
+    <section class="pane page" id="viewer"></section>
+  </div>`;
+  main.querySelectorAll("[data-f]").forEach((b) => b.onclick = () => { state.figureFilter = b.dataset.f; state.hit = 0; render(); });
+  const input = $(".search", main);
+  input.oninput = () => {
+    state.figureQuery = input.value; render();
+    const again = $(".search"); again.focus(); again.setSelectionRange(again.value.length, again.value.length);
+  };
+  main.querySelectorAll(".row[data-i]").forEach((b) => b.onclick = () => { state.figure = +b.dataset.i; state.hit = 0; state.view = null; render(); });
+  keyClick(main, ".result", (b) => { state.hit = +b.dataset.i; render(); });
+  renderPageViewer($("#viewer"), {
+    pages: [f.page], cited: [f.page], focus: f.page,
+    boxes: [
+      ...DATA.pages[f.page].items.filter((it) => it.check).map((it) => ({
+        page: f.page, box: it.box, color: LEVEL[it.check.level], label: levelWord(it.check.level)})),
+      ...matches.flatMap((p, i) => p.boxes.map(([pg, l, t, r, b]) => ({page: pg, box: [l, t, r, b], color: BLUE, label: `${i + 1}`, focus: i === state.hit}))),
+    ],
+    legend: `<span><i class="swatch" style="background:${BLUE}"></i>Where the number was parsed</span><span><i class="swatch" style="background:${LEVEL.lost}"></i>Flagged region</span>`,
+  });
+}
+
+/* Golden set: each question with its answer, citation and cited pages */
+function golden(main) {
+  const q = DATA.questions.find((x) => x.id === state.question);
+  // Parsed Paragraphs that hold the question's evidence.
+  const evidence = [...new Set(q.evidence.flatMap((e) => e.paragraphs))].map((i) => DATA.paragraphs[i]);
+  const groups = [...new Set(DATA.questions.map((x) => x.type.split(" (")[0]))];
+  const label = {text: "Text", figure: "Figures", graph: "Graph", "not answerable": "Not answerable"};
+  main.innerHTML = `<div class="view panes">
+    <aside class="pane list">
+      <div class="list-head"><h2>Golden questions</h2><p>Each question with its answer and citation</p></div>
+      ${groups.map((g) => `<div class="group-label">${esc(label[g] || g)}</div>
+        ${DATA.questions.filter((x) => x.type.split(" (")[0] === g).map((x) => `<button class="row" data-q="${x.id}" aria-current="${x.id === state.question}">
+          <span class="title wrap"><span class="mono muted">${x.id}</span> ${esc(x.question)}</span>
+          <span class="sub">${x.pages.length ? `<span class="mono muted">${x.pages.map((n) => `p. ${n}`).join(", ")}</span>` : `<span class="muted">No citation</span>`}</span></button>`).join("")}`).join("")}
+    </aside>
+    <section class="pane detail">
+      <p class="meta">${q.id} · ${esc(q.type)}</p>
+      <h2>${esc(q.question)}</h2>
+      <dl class="card facts">
+        <dt>Answer</dt><dd class="block">${highlight(q.expected, q.numbers)}</dd>
+        <dt>Citation</dt><dd class="block">${esc(q.citation)}</dd>
+        <dt>Cited pages</dt><dd>${q.pages.length ? q.pages.map((n) => `<button class="pg" data-view="${n}">p. ${n}</button>`).join("")
+          : `<span class="muted">None: the answer is not in this document</span>`}</dd>
+        ${q.evidence.length ? `<dt>Evidence</dt><dd class="block"><ul class="evidence">${q.evidence.map((e) => {
+          const ok = e.paragraphs.length;
+          return `<li><span class="state ${ok ? "good" : "bad"}" title="${ok ? "in the parse" : "not in the parse"}">${icon(ok ? "check" : "x")}</span>
+            <div><div>${esc(e.text)}</div><div class="where">p.&nbsp;${e.page} · <span title="${esc(e.section)}">${esc(clip(e.section, 40))}</span></div></div></li>`; }).join("")}</ul>
+          <p class="caption">Found in the parsed text of its page</p></dd>` : ""}
+      </dl>
+      ${q.pages.length ? `<div class="head-row"><h3 class="section-title">Where the parse has the answer</h3>
+        <button class="open" data-search>Search results${icon("arrow")}</button></div>
+      ${evidence.map((p, i) => `<div class="card result" role="button" tabindex="0" data-i="${i}" aria-current="${i === state.hit}">
+        <span class="rank">${i + 1}</span>
+        <div><div class="where"><span class="mono good-text">p. ${p.page}</span><span>${esc(clip(p.section, 70))} · chunk ${p.chunk}</span></div>
+          <div class="text">${renderText(isTable(p.text) ? p.text : clip(p.text, 600), q.numbers)}</div></div></div>`).join("")
+        || `<p class="hint">No parsed Paragraph holds the cited evidence.</p>`}` : ""}
+    </section>
+    <section class="pane page" id="viewer"></section>
+  </div>`;
+  main.querySelectorAll(".row[data-q]").forEach((b) => b.onclick = () => { state.question = b.dataset.q; state.hit = 0; state.view = null; render(); });
+  main.querySelectorAll("[data-view]").forEach((b) => b.onclick = () => { state.view = +b.dataset.view; render(); });
+  main.querySelectorAll("[data-search]").forEach((b) => b.onclick = () => go("search", {question: q.id}));
+  keyClick(main, ".result", (b) => { state.hit = +b.dataset.i; state.view = null; render(); });
+  if (!q.pages.length) {
+    $("#viewer").innerHTML = `<div class="empty">No cited page: the golden set says the answer is not in this document</div>`;
+    return;
+  }
+  renderPageViewer($("#viewer"), {
+    pages: q.pages, cited: q.pages, focus: evidence[state.hit]?.page ?? q.pages[0],
+    boxes: evidence.flatMap((p, i) => p.boxes.map(([pg, l, t, r, b]) => ({page: pg, box: [l, t, r, b], color: BLUE, label: `${i + 1}`, focus: i === state.hit}))),
+    legend: `<span><i class="swatch" style="background:${BLUE}"></i>Parsed text holding the evidence</span>`,
+  });
+}
+
+/* Shell */
+const TABS = [
+  ["overview", "Overview", overview, 0],
+  ["golden", "Golden set", golden, 0],
+  ["parsing", "Parsing", parsing, flagged.length],
+  ["search", "Search", search, 0],
+  ["figures", "Figures", figures, missedFigures],
+];
+function go(tab, patch = {}) { Object.assign(state, {tab, view: null, hit: 0}, patch); render(); }
+function render() {
+  $("#tabs").innerHTML = TABS.map(([id, name, , count]) =>
+    `<button class="tab" role="tab" data-t="${id}" aria-selected="${id === state.tab}">${name}${count ? `<span class="mono">${count}</span>` : ""}</button>`).join("");
+  $("#tabs").querySelectorAll(".tab").forEach((b) => b.onclick = () => go(b.dataset.t));
+  TABS.find(([id]) => id === state.tab)[2]($("#main"));
+  // Wide tables open scrolled to the first highlighted number.
+  document.querySelectorAll(".table-wrap").forEach((wrap) => {
+    const hit = $("mark", wrap);
+    if (!hit) return;
+    const box = wrap.getBoundingClientRect(), at = hit.getBoundingClientRect();
+    wrap.scrollLeft += at.left - box.left - box.width / 2;
+    wrap.scrollTop += at.top - box.top - box.height / 3;
+  });
+}
+$("#doc-title").textContent = DATA.document.title;
+render();
+</script>
+</body>
+</html>

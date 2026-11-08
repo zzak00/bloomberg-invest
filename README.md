@@ -48,6 +48,18 @@ npm run gen:api       # after an API change: (cd ../backend && uv run python -m 
 npm run typecheck && npm run lint && npm run build
 ```
 
+### The pipeline notebook
+
+`backend/notebooks/pipeline.ipynb` runs each pipeline step on the golden filing with the app's own functions and shows the results. It starts from the app's own parse, so start the stack and ingest the golden PDF first. It shows the outline on the page, blocks, chunks, embeddings and search against the golden questions. New steps are tried there before they move into `bloomberg_invest`.
+
+```bash
+cd backend
+uv run --group notebook nbstripout --install --attributes ../.gitattributes   # once per clone
+uv run --env-file ../.env --extra ingest --group notebook jupyter lab notebooks/pipeline.ipynb
+```
+
+Outputs are stripped on commit, and CI rejects a notebook with outputs: they show pages of the AMMC report.
+
 The `golden` test ingests the real report when it is at `data/inbox/Maroc_Telecom_RFA_2025.pdf`, and is skipped otherwise.
 
 To check a change in the browser at 1440, 1024 and 390, see `.claude/skills/verify-bloomberg-invest/SKILL.md`.

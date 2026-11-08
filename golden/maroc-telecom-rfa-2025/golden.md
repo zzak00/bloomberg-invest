@@ -2,7 +2,7 @@
 
 > **Golden v0, accepted 2026-10-29.** Read once from the PDF, not yet verified value by value. Items still marked UNCERTAIN stay flagged. When a parser in #10 disagrees with a value here, a person checks the page before counting it as a parser error, and this file is corrected if it is the one that's wrong. Pages 26 (no text layer) and 58 (loan table) are excluded until OCRed.
 > Ticket: zzak00/bloomberg-invest#9 (ontology from #8). Prepared 2026-10-29 from the PDF only. No outside knowledge was used to fill values; anything not in the PDF is marked NOT FOUND or "not in document".
-> Companion file: `figures.csv` (160 financial figure rows, golden v0).
+> Companion files: `figures.csv` (160 financial figure rows, golden v0) and `evidence.csv` (where each §8 answer sits: page, section and a figure or quote copied from the page).
 
 ## 1. Document
 
@@ -325,6 +325,8 @@ The auditors' special report on regulated agreements (conventions réglementées
 14. **Bullets in non-ASCII glyphs.** "►", "➢", "✓", "▪" used as list markers (pp. 34, 38, 62, 82).
 
 ## 8. Test questions
+
+`evidence.csv` lists the places each Citation names, so search is scored on finding the answer, not just its page.
 
 | # | Type | Question | Expected answer | Citation |
 |---|---|---|---|---|
