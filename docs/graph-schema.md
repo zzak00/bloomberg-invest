@@ -28,6 +28,7 @@ erDiagram
         String status "succeeded | failed"
         String error "optional: set when failed"
         String output "optional: the tool's full output file"
+        Boolean superseded "optional: embed Runs only"
     }
     Section {
         String id UK "UUID"
@@ -74,7 +75,8 @@ erDiagram
     Chunk |o--o| Chunk : NEXT_CHUNK
     Chunk }o--o{ Section : "REFERS_TO (a cited NOTE)"
     Chunk }o--|| Run : "PRODUCED_BY (chunk Run)"
-    Run |o--o| Run : "SUPERSEDED_BY (re-embed)"
+    Chunk }o--o| Run : "SUPERSEDED_BY (re-chunk, re-ingest)"
+    Run |o--o| Run : "SUPERSEDED_BY (embed Run: re-embed, re-chunk, re-ingest)"
 ```
 
 Arrows in Cypher run from the first entity to the second, for example `(:Document)-[:ISSUED_BY]->(:Organisation)` and `(:Run)-[:PROCESSED]->(:Document)`.
@@ -105,9 +107,9 @@ A Page or Section with `superseded = true` came from an older parse of the same 
 
 A chunk Run supersedes only the Chunks of earlier chunk Runs, never the parse's Pages and Sections. A new parse supersedes everything earlier Runs produced for the Document, Chunks included; ingest then chunks the new parse. A superseded Chunk loses its `index_text` and `embedding`, so it leaves the vector index and search never returns it.
 
-An embed Run sets the `embedding` of every current Chunk of its Document, never some of them, so its `PROCESSED` link to the Document says which Run made each vector: there is no link per Chunk. Its `config` names the model and the chunk Run it embedded. A later embed Run replaces the vectors and marks the earlier one `superseded` with `SUPERSEDED_BY`.
+An embed Run sets the `embedding` of every current Chunk of its Document, never some of them, so its `PROCESSED` link to the Document says which Run made each vector: there is no link per Chunk. Its `config` names the model and the chunk Run it embedded. An embed Run vouches for the vectors of the current Chunks, so whatever replaces them ends it: a later embed Run, a re-chunk or a new parse marks it `superseded` with `SUPERSEDED_BY`, in the same transaction. A Document whose re-chunk stopped before its embed therefore has no current embed Run, rather than one naming Chunks that are gone.
 
-Old nodes are never deleted (ADR 0002): anything that cited them stays traceable, and two parses can be compared. The property is absent on current nodes. Organisation, Document and Run are shared across runs and never superseded; the Organisation and Document link by `PRODUCED_BY` to the Run that first created them, and a re-ingest only matches them.
+Old nodes are never deleted (ADR 0002): anything that cited them stays traceable, and two parses can be compared. The property is absent on current nodes. Organisation and Document are shared across runs and never superseded, and of the Runs only embed Runs are; the Organisation and Document link by `PRODUCED_BY` to the Run that first created them, and a re-ingest only matches them.
 
 ## Failed Runs
 

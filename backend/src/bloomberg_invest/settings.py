@@ -15,7 +15,7 @@ class Settings:
     parser: str = "docling"
     # The token cap for a section's text Chunk (#19 R2); tables are never split.
     chunk_cap: int = 2000
-    # Which model embeds Paragraphs and queries; see `bootstrap.EMBEDDERS`.
+    # Which model embeds Chunks and queries; see `bootstrap.EMBEDDERS`.
     embedder: str = "qwen3-0.6b"
 
     @classmethod

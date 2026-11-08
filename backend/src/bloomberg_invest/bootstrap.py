@@ -38,7 +38,8 @@ def _qwen3() -> Embedder:
     return SentenceTransformerEmbedder("Qwen/Qwen3-Embedding-0.6B", query_prompt="query")
 
 
-# The pipeline notebook compared the candidates; Qwen3 won for hybrid search (#21).
+# Qwen3-Embedding-0.6B: the embedder vector search was measured with in the pipeline notebook
+# (ADR 0004).
 EMBEDDERS: dict[str, Callable[[], Embedder]] = {"qwen3-0.6b": _qwen3}
 
 

@@ -7,6 +7,8 @@ Neo4j Community holds everything the app keeps:
 - Prices;
 - Runs and Reviews.
 
+ADR 0004 later dropped the paragraph nodes and the full-text index: Chunks are the search unit, found by vector alone.
+
 There is no second database. We chose it over PostgreSQL + pgvector, the other option shortlisted in #6. Postgres fits constraints and fact tables best, but we want Cypher open for graph questions beyond the fixed agent tools, and `neo4j-graphrag`'s hybrid retriever. One store also keeps each piece of state in one place, as ADR 0002 requires.
 
 ## Consequences

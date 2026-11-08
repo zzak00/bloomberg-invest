@@ -31,8 +31,8 @@ NOTE_TITLE = re.compile(r"^NOTE\s+(\d+)\b", re.IGNORECASE)
 
 @dataclass(frozen=True)
 class Block:
-    """One item of the document in reading order: a heading, a text paragraph or a table. Inside
-    a Chunk, each is one Paragraph."""
+    """One item of the document in reading order: a heading, a text paragraph or a table. The
+    chunker never splits one; Blocks are not stored on their own (ADR 0004)."""
 
     kind: Literal["heading", "text", "table"]
     text: str
