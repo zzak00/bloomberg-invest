@@ -85,3 +85,21 @@ def test_docling_records_its_version_and_table_settings():
         "mode": "accurate",
         "do_cell_matching": "true",
     }
+
+
+def test_docling_text_it_labels_as_code_is_read_as_text(tmp_path):
+    # Docling labelled all of golden p. 16 (prose) as code; that text must reach the Chunks.
+    from docling_core.types.doc import BoundingBox, CoordOrigin, DoclingDocument, ProvenanceItem
+    from docling_core.types.doc.document import Size
+
+    prose = "Le Conseil proposera un dividende de 1,43 dirham par action."
+    document = DoclingDocument(name="filing")
+    document.add_page(page_no=1, size=Size(width=595, height=842))
+    box = BoundingBox(l=50, t=800, r=500, b=780, coord_origin=CoordOrigin.BOTTOMLEFT)
+    document.add_code(
+        text=prose, prov=ProvenanceItem(page_no=1, bbox=box, charspan=(0, len(prose)))
+    )
+    document.save_as_json(tmp_path / "out.json")
+
+    [block] = make_parser("docling").read_blocks(tmp_path / "out.json")
+    assert (block.kind, block.text, block.page) == ("text", prose, 1)

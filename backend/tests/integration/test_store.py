@@ -21,6 +21,8 @@ def test_schema_creates_the_uniqueness_constraints(store, driver):
         ("Run", "id"),
         ("Organisation", "isin"),
         ("Section", "id"),
+        ("Chunk", "id"),
+        ("Paragraph", "id"),
     } <= found
 
 

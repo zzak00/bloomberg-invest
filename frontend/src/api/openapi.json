@@ -374,8 +374,7 @@
       "Run": {
         "properties": {
           "step": {
-            "type": "string",
-            "title": "Step"
+            "$ref": "#/components/schemas/RunStep"
           },
           "tool": {
             "type": "string",
@@ -452,6 +451,15 @@
           "failed"
         ],
         "title": "RunStatus"
+      },
+      "RunStep": {
+        "type": "string",
+        "enum": [
+          "parse",
+          "chunk"
+        ],
+        "title": "RunStep",
+        "description": "The processing steps a Run records (AGENTS.md); later steps add theirs."
       },
       "Section": {
         "properties": {

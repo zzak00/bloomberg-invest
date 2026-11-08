@@ -15,6 +15,7 @@ from bloomberg_invest.domain.model import (
     PageInfo,
     ParsedDocument,
     RunInfo,
+    RunStep,
     SectionNode,
 )
 
@@ -73,7 +74,7 @@ def parsed() -> ParsedDocument:
 
 def make_run(minute: int = 0) -> RunInfo:
     return RunInfo(
-        step="parse",
+        step=RunStep.parse,
         tool="docling",
         tool_version="2.145.0",
         config={"table_structure": "TableFormer v1"},

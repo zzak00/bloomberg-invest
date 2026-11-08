@@ -3,6 +3,7 @@
 from pathlib import Path
 from typing import Protocol
 
+from bloomberg_invest.domain.chunking import Block
 from bloomberg_invest.domain.model import ParsedDocument
 
 
@@ -13,3 +14,6 @@ class Parser(Protocol):
 
     def parse(self, pdf: Path, output: Path) -> ParsedDocument:
         """Parse the PDF and save the tool's own full output to `output`."""
+
+    def read_blocks(self, output: Path) -> list[Block]:
+        """Read a saved output back as headings, paragraphs and tables in reading order."""
