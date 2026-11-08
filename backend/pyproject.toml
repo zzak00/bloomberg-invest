@@ -28,6 +28,7 @@ notebook = [
     "matplotlib>=3.10",
     "nbconvert>=7.16",
     "nbstripout>=0.8",
+    "openai>=2.0",
     "pandas>=2.3",
     "sentence-transformers>=5.1",
     "transformers>=4.51",

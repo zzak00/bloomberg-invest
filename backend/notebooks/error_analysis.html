@@ -179,10 +179,24 @@
   .sheet img { display: block; width: 100%; height: auto; border-radius: 2px; }
   .box { position: absolute; border: 1.5px solid; border-radius: 2px; }
   .box.dim { opacity: .45; }
-  .box .tag {
-    position: absolute; right: 100%; top: -1px; margin-right: 6px; padding: 0 4px; border-radius: 4px;
-    color: #fff; font: 500 11px/16px var(--mono); white-space: nowrap;
-  }
+  .box.fill { border: 0; }
+  .box .tags { position: absolute; right: 100%; top: -1px; margin-right: 6px; display: flex; gap: 2px; }
+  .box .tags.after { right: auto; left: 100%; margin: 0 0 0 6px; }
+  .box .tag { padding: 0 4px; border-radius: 4px; color: #fff; font: 500 11px/16px var(--mono); white-space: nowrap; }
+  .pg .dots { display: inline-flex; gap: 2px; }
+  .legend button:disabled { cursor: default; }
+  .legend .gt { color: var(--green); }
+  .evidence li.go { cursor: pointer; border-radius: 6px; }
+  .evidence li.go:hover .where { color: var(--ink-2); }
+  .evidence .tag-id { font-family: var(--mono); color: var(--green); }
+  /* Chunks: each chunk a card, its Paragraphs as search sees them. */
+  .chunk { margin-bottom: 12px; overflow: hidden; }
+  .chunk-head { display: flex; align-items: baseline; gap: 4px 12px; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--line); font-size: 13px; color: var(--ink-2); }
+  .chunk-head .name { display: inline-flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 12px; color: var(--ink); }
+  .indexed { display: grid; gap: 4px; min-width: 0; }
+  .indexed .path { font-size: 12px; color: var(--ink-3); overflow-wrap: anywhere; }
+  .indexed .body { white-space: pre-wrap; font-size: 13px; color: var(--ink-2); overflow-wrap: anywhere; max-height: 240px; overflow: auto; }
+  .item.heading .body { color: var(--ink-3); }
 
   /* Overview */
   .overview { overflow: auto; padding: 32px 32px 64px; }
@@ -286,6 +300,11 @@ const KINDS = [
 ];
 const kindOf = (label) => KINDS.find(([, , labels]) => labels && labels.includes(label)) || KINDS.at(-1);
 const BLUE = "#2563eb";
+// Ground truth is green everywhere; each search method keeps one colour, never green.
+const GREEN = "#15803d";
+const HUES = ["#2563eb", "#ea580c", "#7c3aed", "#db2777", "#0891b2", "#a16207", "#475569", "#8b5a2b", "#171717"];
+const methodColor = (m) => HUES[DATA.methods.indexOf(m) % HUES.length];
+const CHUNK_HUES = ["#2563eb", "#ea580c", "#15803d", "#7c3aed", "#db2777", "#0891b2", "#a16207", "#8b5a2b"];
 const LEVEL = {lost: "#c8372d", warn: "#b45309"};
 
 const ICONS = {
@@ -358,7 +377,8 @@ const keyClick = (root, selector, handler) => root.querySelectorAll(selector).fo
 const state = {
   tab: "overview",
   page: 1, hidden: new Set(), pageFilter: "issues",
-  question: DATA.questions[0].id, method: DATA.methods.at(-1), hit: 0,
+  question: DATA.questions[0].id, method: DATA.methods.at(-1), hit: 0, overlay: new Set(), truth: true,
+  chunkPage: 10,
   figure: null, figureFilter: "missing", figureQuery: "",
   view: null,
 };
@@ -390,7 +410,9 @@ function renderPageViewer(root, view) {
   const cited = view.cited.includes(shown);
   root.innerHTML = `
     <div class="page-bar">
-      <div class="pages">${view.pages.map((n) => `<button class="pg" data-p="${n}" aria-pressed="${n === shown}">${view.cited.includes(n) && view.pages.length > 1 ? `<span class="dot good"></span>` : ""}p. ${n}</button>`).join("")}</div>
+      <div class="pages">${view.pages.map((n) => {
+        const dots = [...(view.cited.includes(n) && view.pages.length > 1 ? [GREEN] : []), ...(view.dots?.[n] || [])];
+        return `<button class="pg" data-p="${n}" aria-pressed="${n === shown}">${dots.length ? `<span class="dots">${dots.map((c) => `<span class="dot" style="background:${c}"></span>`).join("")}</span>` : ""}p. ${n}</button>`; }).join("")}</div>
       ${cited ? `<span class="cited-note"><span class="dot good"></span>Cited page</span>` : ""}
       <div class="legend">${view.legend || ""}</div>
     </div>
@@ -398,9 +420,12 @@ function renderPageViewer(root, view) {
       <img alt="Page ${shown}" src="pages/${shown}.jpg">
       ${view.boxes.filter((b) => b.page === shown).map((b) => {
         const [l, t, r, bt] = b.box;
-        return `<div class="box ${b.focus ? "focus" : ""} ${b.dim ? "dim" : ""}" data-id="${b.id ?? ""}" data-color="${b.color}"
-          style="left:${pct(l, page.width)};top:${pct(t, page.height)};width:${pct(r - l, page.width)};height:${pct(bt - t, page.height)};border-color:${b.color};background:${b.color}${b.focus ? "2a" : "08"}">
-          ${b.label ? `<span class="tag" style="background:${b.color}">${esc(b.label)}</span>` : ""}</div>`;
+        const tags = b.tags || (b.label ? [{text: b.label, color: b.color}] : []);
+        const paint = b.fill ? `background:${b.color}30;box-shadow:inset 3px 0 ${b.color}`
+          : `border-color:${b.color};background:${b.color}${b.focus ? "2a" : "08"}`;
+        return `<div class="box ${b.fill ? "fill" : ""} ${b.focus ? "focus" : ""} ${b.dim ? "dim" : ""}" data-id="${b.id ?? ""}" data-color="${b.color}"
+          style="left:${pct(l, page.width)};top:${pct(t, page.height)};width:${pct(r - l, page.width)};height:${pct(bt - t, page.height)};${paint}">
+          ${tags.length ? `<span class="tags ${b.fill ? "after" : ""}">${tags.map((x) => `<span class="tag" style="background:${x.color}" title="${esc(x.title || "")}">${esc(x.text)}</span>`).join("")}</span>` : ""}</div>`;
       }).join("")}
     </div></div>`;
   root.querySelectorAll(".pg").forEach((b) => b.onclick = () => { state.view = +b.dataset.p; renderPageViewer(root, view); });
@@ -549,6 +574,72 @@ function parsing(main) {
   });
 }
 
+/* Chunks: every Paragraph on a page, grouped by its chunk, as the search indexes see it */
+const onPage = (p, n) => p.boxes.some(([pg]) => pg === n);
+function chunks(main) {
+  const n = state.chunkPage;
+  const here = DATA.paragraphs.map((p, i) => ({...p, i})).filter((p) => onPage(p, n));
+  const groups = [];
+  for (const p of here) {
+    if (groups.at(-1)?.chunk !== p.chunk) groups.push({chunk: p.chunk, section: p.section, items: []});
+    groups.at(-1).items.push(p);
+  }
+  const hue = new Map(groups.map((g, k) => [g.chunk, CHUNK_HUES[k % CHUNK_HUES.length]]));
+  const units = here.filter((p) => p.unit !== false).length;
+  const counts = Object.fromEntries(pages.map((pg) => [pg, new Set()]));
+  DATA.paragraphs.forEach((p) => p.boxes.forEach(([pg]) => counts[pg]?.add(p.chunk)));
+  const indexed = (p) => {
+    const text = p.index ?? p.text, cut = text.indexOf("\n");
+    return p.index && cut > 0 ? `<div class="path">${esc(text.slice(0, cut))}</div><div class="body">${esc(text.slice(cut + 1))}</div>`
+      : `<div class="body">${esc(text)}</div>`;
+  };
+  main.innerHTML = `<div class="view panes">
+    <aside class="pane list">
+      <div class="list-head"><h2>Pages</h2><p>Chunks on each page</p></div>
+      ${pages.map((pg) => `<button class="row" data-p="${pg}" aria-current="${pg === n}">
+        <span class="title">Page ${pg}</span>
+        <span class="sub"><span class="muted">${counts[pg].size ? plural(counts[pg].size, "chunk") : "No chunks"}</span></span></button>`).join("")}
+    </aside>
+    <section class="pane detail">
+      <p class="meta">Chunks · page ${n} of ${pages.length}</p>
+      <h2>What search indexes on page ${n}</h2>
+      <p class="hint">${plural(groups.length, "chunk")}, ${plural(units, "search unit")}. Each colour is one chunk; each Paragraph is one search result.
+        Search reads its section path and page, then its text, a table one line per row. Headings are not searched on their own.</p>
+      ${groups.map((g) => `<div class="card chunk">
+        <div class="chunk-head"><span class="name"><i class="swatch" style="background:${hue.get(g.chunk)}"></i>chunk ${g.chunk}</span>
+          <span>${esc(g.section || "Before any section")}</span><span class="muted">${plural(g.items.length, "Paragraph")}</span></div>
+        ${g.items.map((p) => `<div class="item ${p.unit === false ? "heading" : ""}" data-i="${p.i}">
+          <span class="labels"><span class="kind mono">${esc(p.kind || "paragraph")}</span>
+            ${p.unit === false ? `<span class="mono muted">not searched</span>` : ""}
+            ${p.noise ? `<span class="mono warn-text">noise</span>` : ""}</span>
+          <div class="indexed">${indexed(p)}</div></div>`).join("")}
+      </div>`).join("") || `<div class="empty">No chunk on this page</div>`}
+    </section>
+    <section class="pane page" id="viewer"></section>
+  </div>`;
+  main.querySelectorAll(".row[data-p]").forEach((b) => b.onclick = () => { state.chunkPage = +b.dataset.p; render(); });
+  const viewer = $("#viewer"), tagged = new Set();
+  renderPageViewer(viewer, {
+    pages: [n], cited: [], focus: n,
+    boxes: here.flatMap((p) => p.boxes.filter(([pg]) => pg === n).map(([pg, l, t, r, b]) => {
+      const first = !tagged.has(p.chunk);
+      tagged.add(p.chunk);
+      return {page: pg, box: [l, t, r, b], color: hue.get(p.chunk), id: p.i, dim: p.unit === false,
+        tags: first ? [{text: `${p.chunk}`, color: hue.get(p.chunk), title: `chunk ${p.chunk}`}] : []};
+    })),
+    legend: `<span>Outline colour: chunk · tag: chunk number · faded: heading, not searched</span>`,
+  });
+  const light = (id, on) => viewer.querySelectorAll(".box").forEach((b) => {
+    const hit = on && b.dataset.id === id;
+    b.style.background = b.dataset.color + (hit ? "33" : "08");
+    b.style.outline = hit ? `3px solid ${b.dataset.color}55` : "";
+  });
+  main.querySelectorAll(".item[data-i]").forEach((el) => {
+    el.onmouseenter = () => light(el.dataset.i, true);
+    el.onmouseleave = () => light(el.dataset.i, false);
+  });
+}
+
 /* Search */
 function search(main) {
   const q = DATA.questions.find((x) => x.id === state.question);
@@ -574,8 +665,8 @@ function search(main) {
         <dt>Cited</dt><dd class="block">${esc(q.citation)}</dd>
         ${q.evidence.length ? `<dt>Evidence</dt><dd class="block"><ul class="evidence">${q.evidence.map((e, k) => {
           const ok = r.found[k], inSection = r.in_section[k];
-          return `<li><span class="state ${ok ? "good" : "bad"}" title="${ok ? "found" : "missing"}">${icon(ok ? "check" : "x")}</span>
-            <div><div>${esc(e.text)}</div><div class="where">p.&nbsp;${e.page} · <span title="${esc(e.section)}">${esc(clip(e.section, 40))}</span>
+          return `<li class="go" data-view="${e.page}"><span class="state ${ok ? "good" : "bad"}" title="${ok ? "found" : "missing"}">${icon(ok ? "check" : "x")}</span>
+            <div><div>${esc(e.text)}</div><div class="where"><span class="tag-id">E${k + 1}</span> · p.&nbsp;${e.page} · <span title="${esc(e.section)}">${esc(clip(e.section, 40))}</span>
             · <span class="nowrap ${inSection ? "good" : "lost"}-text">${inSection ? "section found" : "section missed"}</span></div></div></li>`; }).join("")}</ul>
           <p class="caption">In the top 5 of ${esc(state.method)}</p></dd>` : ""}
       </dl>
@@ -594,12 +685,52 @@ function search(main) {
   </div>`;
   main.querySelectorAll(".row[data-q]").forEach((b) => b.onclick = () => { state.question = b.dataset.q; state.hit = 0; state.view = null; render(); });
   main.querySelectorAll(".seg").forEach((b) => b.onclick = () => { state.method = b.dataset.m; state.hit = 0; state.view = null; render(); });
+  main.querySelectorAll(".evidence [data-view]").forEach((b) => b.onclick = () => { state.view = +b.dataset.view; render(); });
   keyClick(main, ".result", (b) => { state.hit = +b.dataset.i; state.view = null; render(); });
-  renderPageViewer($("#viewer"), {
-    pages: [...new Set([...q.pages, ...top.map((p) => p.page)])].sort((a, b) => a - b),
-    cited: q.pages, focus: top[state.hit]?.page ?? q.pages[0],
-    boxes: top.flatMap((p, i) => p.boxes.map(([pg, l, t, rr, b]) => ({page: pg, box: [l, t, rr, b], color: BLUE, label: `${i + 1}`, focus: i === state.hit}))),
-    legend: `<span><i class="swatch" style="background:${BLUE}"></i>Result, by rank</span>`,
+  searchViewer(q, top);
+}
+
+/* The search page viewer: the ground truth filled green, and the top 5 of the selected method
+   plus any other method switched on in the legend, each outlined in its own colour. */
+function searchViewer(q, top) {
+  const viewer = $("#viewer");
+  const shown = DATA.methods.filter((m) => m === state.method || state.overlay.has(m));
+  // One outline per Paragraph, with a rank chip for every shown method that returned it.
+  const hits = new Map();
+  for (const m of shown) q.results[m].top.forEach((i, rank) => {
+    if (!hits.has(i)) hits.set(i, []);
+    hits.get(i).push({m, rank});
+  });
+  const truth = state.truth ? q.evidence.flatMap((e, k) => e.paragraphs.flatMap((i) =>
+    DATA.paragraphs[i].boxes.map(([pg, l, t, r, b]) => ({page: pg, box: [l, t, r, b], color: GREEN, fill: true,
+      tags: [{text: `E${k + 1}`, color: GREEN, title: e.text}]})))) : [];
+  const outlines = [...hits].flatMap(([i, by]) => {
+    const lead = by.find((h) => h.m === state.method);
+    const color = by.length === 1 ? methodColor(by[0].m) : lead ? methodColor(state.method) : "#171717";
+    return DATA.paragraphs[i].boxes.map(([pg, l, t, r, b]) => ({page: pg, box: [l, t, r, b], color,
+      focus: lead && lead.rank === state.hit,
+      tags: by.map((h) => ({text: `${h.rank + 1}`, color: methodColor(h.m), title: `${h.m} #${h.rank + 1}`}))}));
+  });
+  const dots = {};
+  for (const m of shown) for (const i of q.results[m].top) {
+    const pg = DATA.paragraphs[i].page;
+    dots[pg] = dots[pg] || [];
+    if (!dots[pg].includes(methodColor(m))) dots[pg].push(methodColor(m));
+  }
+  const truthPages = q.evidence.flatMap((e) => e.paragraphs.map((i) => DATA.paragraphs[i].page));
+  renderPageViewer(viewer, {
+    pages: [...new Set([...q.pages, ...truthPages, ...Object.keys(dots).map(Number)])].sort((a, b) => a - b),
+    cited: q.pages, focus: top[state.hit]?.page ?? q.pages[0], dots,
+    boxes: [...truth, ...outlines],
+    legend: `${q.evidence.length ? `<button data-truth aria-pressed="${state.truth}"><i class="swatch" style="background:${GREEN}"></i><span class="gt">Ground truth</span></button>` : ""}
+      ${DATA.methods.map((m) => `<button data-overlay="${esc(m)}" aria-pressed="${shown.includes(m)}" ${m === state.method ? "disabled" : ""}
+        title="${m === state.method ? "The selected method" : "Show its top 5 on the page"}"><i class="swatch" style="background:${methodColor(m)}"></i>${esc(m)}</button>`).join("")}`,
+  });
+  viewer.querySelectorAll("[data-truth]").forEach((b) => b.onclick = () => { state.truth = !state.truth; searchViewer(q, top); });
+  viewer.querySelectorAll("[data-overlay]").forEach((b) => b.onclick = () => {
+    const m = b.dataset.overlay;
+    state.overlay.has(m) ? state.overlay.delete(m) : state.overlay.add(m);
+    searchViewer(q, top);
   });
 }
 
@@ -730,6 +861,7 @@ const TABS = [
   ["overview", "Overview", overview, 0],
   ["golden", "Golden set", golden, 0],
   ["parsing", "Parsing", parsing, flagged.length],
+  ["chunks", "Chunks", chunks, 0],
   ["search", "Search", search, 0],
   ["figures", "Figures", figures, missedFigures],
 ];
