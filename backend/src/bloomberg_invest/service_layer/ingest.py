@@ -1,14 +1,23 @@
-"""Ingest a filing: store the PDF, parse it and record the parse Run."""
+"""Ingest a filing: store the PDF, parse it, record the parse Run, then chunk it."""
 
 import hashlib
 import shutil
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
 from bloomberg_invest.adapters.files import DocumentFiles
 from bloomberg_invest.adapters.parsing import Parser
 from bloomberg_invest.adapters.store import GraphStore
-from bloomberg_invest.domain.model import DocumentMeta, RunInfo, RunStatus
+from bloomberg_invest.adapters.tokens import TokenCounter
+from bloomberg_invest.domain.model import DocumentMeta, RunInfo, RunStatus, RunStep
+from bloomberg_invest.service_layer.chunk import Chunked, chunk_document
+
+
+@dataclass(frozen=True)
+class Ingested:
+    document_id: str
+    chunked: Chunked
 
 
 class IngestFailed(Exception):
@@ -20,6 +29,20 @@ class IngestFailed(Exception):
 
 
 def ingest(
+    pdf: Path,
+    meta: DocumentMeta,
+    store: GraphStore,
+    files: DocumentFiles,
+    parser: Parser,
+    count: TokenCounter,
+    cap: int,
+) -> Ingested:
+    """Parse the filing, then chunk it (#21): each step records its own Run."""
+    document_id = _parse(pdf, meta, store, files, parser)
+    return Ingested(document_id, chunk_document(document_id, store, files, parser, count, cap))
+
+
+def _parse(
     pdf: Path, meta: DocumentMeta, store: GraphStore, files: DocumentFiles, parser: Parser
 ) -> str:
     """Store the PDF by its SHA-256, parse it and record the parse Run; return the Document id."""
@@ -38,7 +61,7 @@ def ingest(
         output: str | None = None,
     ) -> RunInfo:
         return RunInfo(
-            step="parse",
+            step=RunStep.parse,
             tool=parser.tool,
             tool_version=parser.tool_version,
             config=parser.config,

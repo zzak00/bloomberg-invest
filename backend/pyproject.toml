@@ -15,7 +15,7 @@ dependencies = [
 [project.optional-dependencies]
 # Docling pulls in torch: only the ingest image and the ingest tests install it.
 # torch and torchvision are listed only so the CPU-only source below applies to them.
-ingest = ["docling==2.145.0", "torch", "torchvision"]
+ingest = ["docling==2.145.0", "tiktoken>=0.12", "torch", "torchvision"]
 
 [project.scripts]
 bloomberg = "bloomberg_invest.entrypoints.cli:main"

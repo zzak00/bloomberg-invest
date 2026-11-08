@@ -14,6 +14,7 @@ from bloomberg_invest.adapters.files import DocumentFiles
 from bloomberg_invest.adapters.parsing import Parser
 from bloomberg_invest.adapters.store import GraphStore
 from bloomberg_invest.adapters.store.neo4j_store import Neo4jStore
+from bloomberg_invest.adapters.tokens import TiktokenCounter, TokenCounter
 from bloomberg_invest.settings import Settings
 
 
@@ -54,3 +55,8 @@ def parser(settings: Settings) -> Parser:
         expected = ", ".join(sorted(PARSERS))
         raise ValueError(f"unknown parser {settings.parser!r}, expected {expected}")
     return PARSERS[settings.parser](settings)
+
+
+def token_counter() -> TokenCounter:
+    """The tokenizer the chunk cap is measured in; `tiktoken` loads only when this is called."""
+    return TiktokenCounter()

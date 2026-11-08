@@ -160,8 +160,7 @@ export interface components {
         };
         /** Run */
         Run: {
-            /** Step */
-            step: string;
+            step: components["schemas"]["RunStep"];
             /** Tool */
             tool: string;
             /** Tool Version */
@@ -194,6 +193,12 @@ export interface components {
          * @enum {string}
          */
         RunStatus: "succeeded" | "failed";
+        /**
+         * RunStep
+         * @description The processing steps a Run records (AGENTS.md); later steps add theirs.
+         * @enum {string}
+         */
+        RunStep: "parse" | "chunk";
         /** Section */
         Section: {
             /** Id */
