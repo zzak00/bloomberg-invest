@@ -17,6 +17,7 @@ from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling_core.types.doc import DocItemLabel, DoclingDocument, TableItem
 
 from bloomberg_invest.adapters.parsing import Parser
+from bloomberg_invest.adapters.parsing.furniture import Furniture
 from bloomberg_invest.adapters.parsing.outline import Heading, build_outline
 from bloomberg_invest.domain.chunking import Block
 from bloomberg_invest.domain.model import PageInfo, ParsedDocument
@@ -31,6 +32,7 @@ TEXTS = {
     # Docling can take a page of prose for code (golden p. 16); its text still belongs in Chunks.
     DocItemLabel.CODE,
 }
+FURNITURE = {DocItemLabel.PAGE_HEADER, DocItemLabel.PAGE_FOOTER}
 # "1)", "a.", "(ii)", "-" or "•" opening a paragraph: a numbered point the chunker may split at.
 NUMBERED_POINT = re.compile(r"^(\(?(\d+|[a-z]|[ivx]+)[.)]|[-•–])\s", re.IGNORECASE)
 
@@ -83,6 +85,11 @@ class DoclingParser(Parser):
     def read_blocks(self, output: Path) -> list[Block]:
         document = DoclingDocument.load_from_json(output)
         heights = {number: page.size.height for number, page in document.pages.items()}
+        furniture = Furniture(
+            (item.text, *_top_bottom(item.prov[0], heights))
+            for item in document.texts
+            if item.label in FURNITURE and item.prov
+        )
         blocks = []
         for item, _ in document.iterate_items():
             provs = getattr(item, "prov", None)
@@ -109,6 +116,8 @@ class DoclingParser(Parser):
             elif item.label in HEADINGS and item.text.strip():
                 blocks.append(Block(kind="heading", text=item.text, **where))
             elif item.label in TEXTS and item.text.strip():
+                if furniture.covers(item.text, *_top_bottom(provs[0], heights)):
+                    continue
                 numbered = item.label == DocItemLabel.LIST_ITEM or bool(
                     NUMBERED_POINT.match(item.text)
                 )
@@ -118,3 +127,8 @@ class DoclingParser(Parser):
 
 def _ltrb(box) -> tuple[float, float, float, float]:
     return (box.l, box.t, box.r, box.b)
+
+
+def _top_bottom(prov, heights) -> tuple[float, float]:
+    box = prov.bbox.to_top_left_origin(page_height=heights[prov.page_no])
+    return box.t, box.b
