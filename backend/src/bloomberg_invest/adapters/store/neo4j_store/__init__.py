@@ -244,16 +244,15 @@ class Neo4jStore(GraphStore):
     def issuer(self, isin: str) -> Organisation | None:
         records, _, _ = self._driver.execute_query(
             """
-            MATCH (:Document)-[:ISSUED_BY]->(o:Organisation {isin: $isin})
+            MATCH (d:Document)-[:ISSUED_BY]->(o:Organisation {isin: $isin})
+            WHERE EXISTS { (:Run {step: 'parse', status: 'succeeded'})-[:PROCESSED]->(d) }
             RETURN o LIMIT 1
             """,
             isin=isin,
         )
-        return (
-            Organisation(isin=records[0]["o"]["isin"], name=records[0]["o"]["name"])
-            if records
-            else None
-        )
+        if not records:
+            return None
+        return Organisation(isin=records[0]["o"]["isin"], name=records[0]["o"]["name"])
 
     def get_document(self, document_id: str) -> DocumentDetail | None:
         records, _, _ = self._driver.execute_query(

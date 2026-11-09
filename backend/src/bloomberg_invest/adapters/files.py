@@ -9,9 +9,11 @@ from pathlib import Path
 import pypdfium2 as pdfium
 
 from bloomberg_invest.domain.chunking import Box
+from bloomberg_invest.domain.figures import SPACES, stands_alone
 
 RENDER_SCALE = 2  # 144 dpi: sharp on high-density screens, about 300 KB per page
 TOLERANCE = 2.0  # points a quote's centre may sit outside its paragraph's box
+CONTEXT = 8  # characters read on each side of a match to tell a whole number from part of one
 
 # A value quoted on a page, and the boxes of the paragraph it must be inside.
 Quote = tuple[int, str, Sequence[Box]]
@@ -70,6 +72,10 @@ def _find(
     searcher = text.search(quote, match_case=True)
     while found := searcher.get_next():
         start, count = found
+        before = text.get_text_range(max(0, start - CONTEXT), min(CONTEXT, start))
+        around = SPACES.sub(" ", before + quote + text.get_text_range(start + count, CONTEXT))
+        if not stands_alone(around, len(before), len(before) + len(quote)):
+            continue
         chars = [text.get_charbox(i) for i in range(start, start + count)]
         # pdfium measures from the bottom left; the viewer and Docling from the top left.
         boxes = _lines(

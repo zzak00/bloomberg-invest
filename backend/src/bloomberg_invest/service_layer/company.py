@@ -21,10 +21,10 @@ from bloomberg_invest.views import (
 
 
 def company(isin: str, store: GraphStore) -> Company | None:
-    documents = store.list_documents(isin)
-    if not documents:
+    issuer = store.issuer(isin)
+    if issuer is None:
         return None
-    return Company(issuer=documents[0].issuer, documents=documents)
+    return Company(issuer=issuer, documents=store.list_documents(isin))
 
 
 def company_figures(isin: str, store: GraphStore, label_map: LabelMap) -> FigureGrid | None:
@@ -46,11 +46,12 @@ def figure_detail(fact_id: str, store: GraphStore, label_map: LabelMap) -> Figur
 def figure_grid(figures: Sequence[Figure], label_map: LabelMap) -> FigureGrid:
     """The figures by basis, statement and row, a column per fiscal year. A row is a line item,
     or one breakdown of it, in one currency: the filing's euro tables are rows of their own, not
-    disagreements. A line item the label map no longer has is left out."""
+    disagreements. A line item the label map no longer has is left out, and not counted."""
+    listed = [f for f in figures if f.line_item in label_map.items]
     return FigureGrid(
-        count=len(figures),
+        count=len(listed),
         scopes=[
-            _scope(scope, [f for f in figures if f.basis_scope == scope], label_map)
+            _scope(scope, [f for f in listed if f.basis_scope == scope], label_map)
             for scope in Scope
         ],
     )
@@ -63,8 +64,7 @@ def _scope(scope: Scope, figures: list[Figure], label_map: LabelMap) -> ScopeFig
 
     rows: dict[tuple[str, str, str], list[Figure]] = defaultdict(list)
     for figure in figures:
-        if figure.line_item in label_map.items:
-            rows[(figure.line_item, _currency(figure), figure.breakdown)].append(figure)
+        rows[(figure.line_item, _currency(figure), figure.breakdown)].append(figure)
 
     def order(key: tuple[str, str, str]) -> tuple[int, int, bool, str]:
         line_item, currency, breakdown = key

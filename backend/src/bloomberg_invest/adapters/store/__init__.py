@@ -77,6 +77,6 @@ class GraphStore(Protocol):
         """Every ingested filing, or one issuer's."""
 
     def issuer(self, isin: str) -> Organisation | None:
-        """The Organisation with this ISIN, if a filing of it was ingested."""
+        """The Organisation with this ISIN, if a filing of it is shown: parsed successfully."""
 
     def get_document(self, document_id: str) -> DocumentDetail | None: ...

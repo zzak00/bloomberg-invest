@@ -50,9 +50,27 @@ def matches_cell(value: str, cell: str) -> bool:
 
 
 def matches_span(value: str, paragraph: str) -> bool:
-    """A paragraph figure counts when its value, as written, appears in the paragraph."""
+    """A paragraph figure counts when its value, as written, appears in the paragraph as a whole
+    number: `68` is not in `36 681`, nor `4` in `2024`."""
     quoted = SPACES.sub(" ", value).strip()
-    return bool(quoted) and quoted in SPACES.sub(" ", paragraph)
+    text = SPACES.sub(" ", paragraph)
+    if not quoted:
+        return False
+    return any(stands_alone(text, m.start(), m.end()) for m in re.finditer(re.escape(quoted), text))
+
+
+def stands_alone(text: str, start: int, end: int) -> bool:
+    """Whether `text[start:end]` is a whole number, not part of a longer one: no digit or decimal
+    runs on either side of it, and it neither starts nor ends inside a group of thousands. Tables
+    read as flat text put numbers side by side (`36 699 36 681`), so a digit and a space before
+    it count only when it could be a trailing group (`681`)."""
+    before, quoted, after = text[:start], text[start:end], text[end:]
+    trailing_group = re.match(r"\d{3}(?!\d)", quoted) is not None
+    return not (
+        re.search(r"\d[,.]?$", before)
+        or (trailing_group and re.search(r"\d $", before))
+        or re.match(r"(\d|[,.]\d| \d{3}(?!\d))", after)
+    )
 
 
 def parse_value(text: str) -> Decimal | None:

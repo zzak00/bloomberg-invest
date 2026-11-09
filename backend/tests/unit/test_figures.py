@@ -105,6 +105,24 @@ def test_the_span_check_finds_the_value_as_written_in_the_paragraph():
     assert not matches_span(" ", paragraph)
 
 
+def test_the_span_check_never_finds_a_value_inside_a_longer_number():
+    paragraph = "Le chiffre d'affaires atteint 36 681 MDH en 2024, soit 4,01 dirhams par action."
+    assert not matches_span("68", paragraph)
+    assert not matches_span("36 68", paragraph)
+    assert not matches_span("4", paragraph)  # inside 2024
+    assert not matches_span("4,0", paragraph)
+    assert matches_span("36 681", paragraph)
+    assert matches_span("2024", paragraph)
+    assert matches_span("4,01", paragraph)  # a full stop after it is not a decimal
+    assert not matches_span("681", paragraph)  # the last group of 36 681
+
+
+def test_numbers_side_by_side_in_a_flat_table_row_are_each_whole():
+    row = "Chiffre d'affaires 36 699 36 681"
+    assert matches_span("36 681", row)
+    assert matches_span("36 699", row)
+
+
 def test_a_flow_covers_its_fiscal_year_and_a_stock_holds_on_its_last_day():
     flow = period(2025, "flow")
     assert (flow.start, flow.end, flow.as_of) == (date(2025, 1, 1), date(2025, 12, 31), None)

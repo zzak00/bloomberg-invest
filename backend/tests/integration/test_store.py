@@ -246,3 +246,15 @@ def test_re_parsing_supersedes_the_old_cells(store, meta, parsed, driver):
         "MATCH (c:Cell) WHERE c.id IN $old AND c.superseded RETURN count(c) AS n", old=list(old)
     )
     assert records[0]["n"] == 9
+
+
+def test_an_issuer_is_found_by_isin_once_a_filing_of_it_is_shown(store, meta, parsed):
+    assert store.issuer(meta.issuer.isin) is None
+    failed = make_run(0).model_copy(update={"status": RunStatus.failed, "error": "boom"})
+    store.record_failed_parse(meta, failed, SHA)
+    assert store.issuer(meta.issuer.isin) is None, "a failed parse shows no filing"
+
+    store.record_parse(meta, parsed, make_run(10), SHA)
+
+    assert store.issuer(meta.issuer.isin) == meta.issuer
+    assert store.issuer("MA0000000000") is None

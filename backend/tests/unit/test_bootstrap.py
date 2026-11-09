@@ -42,9 +42,10 @@ def test_extracting_without_the_azure_secrets_fails_naming_them():
 
 def test_a_replay_answers_from_its_recording_without_secrets(tmp_path):
     recording = tmp_path / "recording.jsonl"
+    # A recording's first line names the model; no answers follow here.
     recording.write_text(
         '{"tool": "azure-openai", "tool_version": "3.46.0", "model": "gpt-5.6-sol",'
-        ' "config": {"deployment": "gpt-5.6-sol"}, "responses": {}}'
+        ' "config": {"deployment": "gpt-5.6-sol"}}\n'
     )
     llm = bootstrap.llm(settings_for(llm_replay=recording))
     assert (llm.tool, llm.model) == ("azure-openai", "gpt-5.6-sol")

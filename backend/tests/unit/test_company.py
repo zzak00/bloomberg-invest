@@ -133,5 +133,9 @@ def test_each_basis_has_its_own_years_and_the_count_covers_both():
     ]
 
 
-def test_a_line_item_the_label_map_no_longer_has_is_left_out():
-    assert consolidated([figure("1", "1000000", line_item="retired_item")]).statements == []
+def test_a_line_item_the_label_map_no_longer_has_is_left_out_and_not_counted():
+    retired = [figure("1", "1000000", line_item="retired_item"), figure("36 681", "36681000000")]
+    grid = figure_grid(retired, config.label_map())
+
+    assert grid.count == 1
+    assert [r.line_item for r in grid.scopes[0].statements[0].rows] == ["revenue"]

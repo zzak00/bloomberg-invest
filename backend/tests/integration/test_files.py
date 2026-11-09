@@ -39,3 +39,10 @@ def test_a_quote_outside_its_paragraph_or_not_on_the_page_is_not_found(files):
         None,
         None,
     ]
+
+
+def test_a_quote_inside_a_longer_number_is_not_found(files):
+    page_1 = (1, 0.0, 0.0, 595.0, 842.0)
+    inside, whole = files.quote_boxes(SHA, [(1, "68", (page_1,)), (1, "36 681", (page_1,))])
+    assert inside is None  # in "36 681" and "6 968", never on its own
+    assert whole is not None
