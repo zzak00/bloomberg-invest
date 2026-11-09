@@ -248,7 +248,6 @@ notebook = [
     { name = "nbconvert" },
     { name = "nbstripout" },
     { name = "pandas" },
-    { name = "python-dotenv" },
     { name = "transformers" },
 ]
 
@@ -287,7 +286,6 @@ notebook = [
     { name = "nbconvert", specifier = ">=7.16" },
     { name = "nbstripout", specifier = ">=0.8" },
     { name = "pandas", specifier = ">=2.3" },
-    { name = "python-dotenv", specifier = ">=1.1" },
     { name = "transformers", specifier = ">=4.51" },
 ]
 

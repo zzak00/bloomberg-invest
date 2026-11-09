@@ -31,7 +31,6 @@ notebook = [
     "nbconvert>=7.16",
     "nbstripout>=0.8",
     "pandas>=2.3",
-    "python-dotenv>=1.1",
     "transformers>=4.51",
 ]
 dev = [

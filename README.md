@@ -55,15 +55,21 @@ npm run typecheck && npm run lint && npm run build
 
 ### The pipeline notebook
 
-`backend/notebooks/pipeline.ipynb` runs each pipeline step on the golden filing with the app's own functions and shows the results. It starts from the app's own parse, so start the stack and ingest the golden PDF first. It shows the outline on the page, blocks, chunks, embeddings and search against the golden questions. New steps are tried there before they move into `bloomberg_invest`.
+`backend/notebooks/pipeline.ipynb` runs the whole pipeline on one filing with the app's own functions: Docling's parse, blocks, chunks, embeddings and search, with the time each step takes, then writes an error-analysis page. It needs no running stack. The filing is the golden Maroc Telecom report unless `FILING` names another PDF in `data/inbox/`; only the golden one has ground truth, so only it is scored. New steps are tried there before they move into `bloomberg_invest`.
 
 ```bash
+# once per clone: strip outputs on commit, with a pinned nbstripout that no checkout owns
+git config filter.nbstripout.clean "uvx nbstripout==0.9.1"
+git config filter.nbstripout.smudge cat
+git config filter.nbstripout.required true
+git config diff.ipynb.textconv "uvx nbstripout==0.9.1 -t"
+
 cd backend
-uv run --group notebook nbstripout --install --attributes ../.gitattributes   # once per clone
 uv run --extra ingest --group notebook jupyter lab notebooks/pipeline.ipynb
+FILING=AWB_RFA_2025.pdf uv run --extra ingest --group notebook jupyter lab notebooks/pipeline.ipynb
 ```
 
-The notebook loads the repo's `.env` itself, so it also runs in a kernel VS Code starts.
+The first run on a filing parses it (a few minutes); the parse and the vectors are cached in `data/notebook/`.
 
 Outputs are stripped on commit, and CI rejects a notebook with outputs: they show pages of the AMMC report.
 

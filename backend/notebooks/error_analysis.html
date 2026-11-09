@@ -495,7 +495,7 @@ function overview(main) {
             <span class="mono mark lost lost-text">${q.id}</span><span>${esc(q.question)}</span></button>`).join("")}</div>` : ""}
           <button class="open" data-go="search">Every question by method${icon("arrow")}</button>
         </div>
-        <div class="finding">
+        ${DATA.figures.length ? `<div class="finding">
           <h3>Figures</h3>
           <p>Golden numbers found in the parsed text of their page</p>
           <div class="bar-row" style="grid-template-columns:minmax(0, 1fr) auto"><span class="bar lead"><i style="width:${(100 * found / DATA.figures.length).toFixed(0)}%"></i></span>
@@ -503,7 +503,7 @@ function overview(main) {
           <div class="issues">${Object.entries(missByPage).sort((a, b) => b[1] - a[1]).map(([p, n]) => `<button class="issue" data-figpage="${p}">
             <span class="mono mark lost lost-text">p. ${p}</span><span>${plural(n, "figure")} missing${DATA.pages[p]?.flags.length ? ": " + esc(DATA.pages[p].flags[0].text) : ""}</span></button>`).join("")}</div>
           <button class="open" data-go="figures">All ${DATA.figures.length} figures${icon("arrow")}</button>
-        </div>
+        </div>` : ""}
       </aside>
     </div>
   </div></div>`;
