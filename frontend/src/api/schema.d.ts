@@ -121,7 +121,7 @@ export interface paths {
         };
         /**
          * Company Dossier
-         * @description The issuer's filings, and the statements its figures are grouped by.
+         * @description The issuer's filings.
          */
         get: operations["company_dossier_api_companies__isin__get"];
         put?: never;
@@ -140,10 +140,11 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Company Figures
-         * @description The issuer's current financial figures, each with the Passage it was checked against.
+         * Figures
+         * @description The issuer's current financial figures on each basis, by statement, line item and
+         *     year, each value with the figures stating it and the Passage each was checked against.
          */
-        get: operations["company_figures_api_companies__isin__figures_get"];
+        get: operations["figures_api_companies__isin__figures_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -217,14 +218,12 @@ export interface components {
         };
         /**
          * Company
-         * @description An issuer's dossier: its filings, and how its figures are grouped.
+         * @description An issuer's dossier: its filings.
          */
         Company: {
             issuer: components["schemas"]["Organisation"];
             /** Documents */
             documents: components["schemas"]["DocumentSummary"][];
-            /** Statements */
-            statements: components["schemas"]["Statement"][];
         };
         /**
          * DocType
@@ -296,10 +295,6 @@ export interface components {
             id: string;
             /** Line Item */
             line_item: string;
-            /** Line Item Title */
-            line_item_title: string;
-            /** Statement */
-            statement: string;
             /** Label */
             label: string;
             /** Value */
@@ -320,11 +315,7 @@ export interface components {
             period_end: string | null;
             /** As Of */
             as_of: string | null;
-            /**
-             * Basis Scope
-             * @enum {string}
-             */
-            basis_scope: "consolidated" | "company-only";
+            basis_scope: components["schemas"]["Scope"];
             /** Basis Standard */
             basis_standard: string;
             /** Breakdown */
@@ -336,6 +327,96 @@ export interface components {
             recorded_at: string;
             document: components["schemas"]["DocumentRef"];
             passage: components["schemas"]["Passage"];
+        };
+        /**
+         * FigureDetail
+         * @description A figure with its line item's title in the current label map, as the viewer names it.
+         */
+        FigureDetail: {
+            /** Id */
+            id: string;
+            /** Line Item */
+            line_item: string;
+            /** Label */
+            label: string;
+            /** Value */
+            value: string;
+            /** Value As Written */
+            value_as_written: string;
+            /** Unit */
+            unit: string;
+            /** Scale */
+            scale: number;
+            /** Currency */
+            currency: string | null;
+            /** Fiscal Year */
+            fiscal_year: number;
+            /** Period Start */
+            period_start: string | null;
+            /** Period End */
+            period_end: string | null;
+            /** As Of */
+            as_of: string | null;
+            basis_scope: components["schemas"]["Scope"];
+            /** Basis Standard */
+            basis_standard: string;
+            /** Breakdown */
+            breakdown: string;
+            /**
+             * Recorded At
+             * Format: date-time
+             */
+            recorded_at: string;
+            document: components["schemas"]["DocumentRef"];
+            passage: components["schemas"]["Passage"];
+            /** Line Item Title */
+            line_item_title: string;
+        };
+        /**
+         * FigureGrid
+         * @description An issuer's current figures as the dossier lists them, on each basis.
+         */
+        FigureGrid: {
+            /** Count */
+            count: number;
+            /** Scopes */
+            scopes: components["schemas"]["ScopeFigures"][];
+        };
+        /**
+         * FigureRow
+         * @description A line item, or one breakdown of it, in one currency, by fiscal year.
+         */
+        FigureRow: {
+            /** Line Item */
+            line_item: string;
+            /** Title */
+            title: string;
+            /** Breakdown */
+            breakdown: string;
+            /** Currency */
+            currency: string;
+            /** Unit */
+            unit: string;
+            /** Scale */
+            scale: number;
+            /** Years */
+            years: components["schemas"]["FigureYear"][];
+        };
+        /**
+         * FigureValue
+         * @description One value a line item takes in a year, and every figure stating it, rounded or not.
+         */
+        FigureValue: {
+            shown: components["schemas"]["Figure"];
+            /** Sources */
+            sources: components["schemas"]["Figure"][];
+        };
+        /** FigureYear */
+        FigureYear: {
+            /** Fiscal Year */
+            fiscal_year: number;
+            /** Values */
+            values: components["schemas"]["FigureValue"][];
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -427,6 +508,19 @@ export interface components {
          * @enum {string}
          */
         RunStep: "parse" | "chunk" | "embed" | "extract";
+        /**
+         * Scope
+         * @enum {string}
+         */
+        Scope: "consolidated" | "company-only";
+        /** ScopeFigures */
+        ScopeFigures: {
+            scope: components["schemas"]["Scope"];
+            /** Years */
+            years: number[];
+            /** Statements */
+            statements: components["schemas"]["StatementFigures"][];
+        };
         /** Section */
         Section: {
             /** Id */
@@ -450,14 +544,14 @@ export interface components {
              */
             children: components["schemas"]["Section"][];
         };
-        /** Statement */
-        Statement: {
+        /** StatementFigures */
+        StatementFigures: {
             /** Key */
             key: string;
             /** Title */
             title: string;
-            /** Line Items */
-            line_items: string[];
+            /** Rows */
+            rows: components["schemas"]["FigureRow"][];
         };
         /**
          * TablePart
@@ -728,7 +822,7 @@ export interface operations {
             };
         };
     };
-    company_figures_api_companies__isin__figures_get: {
+    figures_api_companies__isin__figures_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -745,7 +839,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Figure"][];
+                    "application/json": components["schemas"]["FigureGrid"];
                 };
             };
             /** @description No filing from an issuer with this ISIN */
@@ -785,7 +879,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Figure"];
+                    "application/json": components["schemas"]["FigureDetail"];
                 };
             };
             /** @description No such financial figure */

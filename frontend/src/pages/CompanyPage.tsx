@@ -1,9 +1,16 @@
 import { Link, useParams, useSearchParams } from "react-router";
 
 import { ApiError } from "../ApiError";
-import { api, type DocumentSummary, type Figure } from "../api/client";
+import {
+  api,
+  type DocumentSummary,
+  type FigureGrid,
+  type FigureRow,
+  type FigureValue,
+  type Scope,
+} from "../api/client";
 import { useApi } from "../api/useApi";
-import { SCOPES, groupFigures, unitLabel, type FigureRow, type FigureValue, type Scope } from "../figures";
+import { SCOPES, capitalised, unitLabel } from "../figures";
 import { DOC_TYPE_LABELS, formatDateTime } from "../format";
 
 type Tab = "figures" | "filings";
@@ -43,8 +50,8 @@ export function CompanyPage() {
     );
   }
 
-  const { issuer, documents, statements } = company.data;
-  const count = figures.state === "ready" ? figures.data.length : undefined;
+  const { issuer, documents } = company.data;
+  const count = figures.state === "ready" ? figures.data.count : undefined;
   const tabs: { id: Tab; label: string }[] = [
     { id: "figures", label: count === undefined ? "FIGURES" : `FIGURES · ${count}` },
     { id: "filings", label: `FILINGS · ${documents.length}` },
@@ -84,7 +91,7 @@ export function CompanyPage() {
           <div className="skeleton figures-skeleton" aria-hidden="true" />
         ) : figures.state === "error" ? (
           <ApiError title="The figures could not be loaded" message={figures.message} />
-        ) : figures.data.length === 0 ? (
+        ) : figures.data.count === 0 ? (
           <div className="state">
             <h2>No figures extracted yet</h2>
             <p>
@@ -94,8 +101,7 @@ export function CompanyPage() {
           </div>
         ) : (
           <Figures
-            figures={figures.data}
-            statements={statements}
+            grid={figures.data}
             scope={scope}
             onScope={(next) => setParams(next === "consolidated" ? {} : { basis: next })}
           />
@@ -106,17 +112,17 @@ export function CompanyPage() {
 }
 
 function Figures({
-  figures,
-  statements,
+  grid,
   scope,
   onScope,
 }: {
-  figures: Figure[];
-  statements: { key: string; title: string; line_items: string[] }[];
+  grid: FigureGrid;
   scope: Scope;
   onScope: (scope: Scope) => void;
 }) {
-  const { years, groups } = groupFigures(figures, statements, scope);
+  const shown = grid.scopes.find((s) => s.scope === scope);
+  const years = shown?.years ?? [];
+  const groups = shown?.statements ?? [];
   return (
     <>
       <div className="figures-bar">
@@ -159,7 +165,7 @@ function Figures({
             </thead>
             <tbody>
               {group.rows.map((row) => (
-                <Row key={row.key} row={row} years={years} />
+                <Row key={`${row.line_item}·${row.currency}·${row.breakdown}`} row={row} years={years} />
               ))}
             </tbody>
           </table>
@@ -170,25 +176,29 @@ function Figures({
 }
 
 function Row({ row, years }: { row: FigureRow; years: number[] }) {
+  const byYear = new Map(row.years.map((y) => [y.fiscal_year, y.values]));
   return (
     <tr data-breakdown={row.breakdown !== "" || undefined}>
-      <th scope="row">{row.breakdown || row.title}</th>
-      <td className="figures-unit">{row.unit}</td>
-      {years.map((year) => (
-        <td key={year} className="figures-year" data-year={`FY${year}`}>
-          {row.years.has(year) ? (
-            <span className="figure-values">
-              {(row.years.get(year) ?? []).map((v, i) => (
-                <Value key={v.value} value={v} row={row} year={year} conflict={i > 0} />
-              ))}
-            </span>
-          ) : (
-            <span className="figures-none" aria-label="No value">
-              –
-            </span>
-          )}
-        </td>
-      ))}
+      <th scope="row">{capitalised(row.breakdown) || row.title}</th>
+      <td className="figures-unit">{unitLabel(row)}</td>
+      {years.map((year) => {
+        const values = byYear.get(year);
+        return (
+          <td key={year} className="figures-year" data-year={`FY${year}`}>
+            {values ? (
+              <span className="figure-values">
+                {values.map((v, i) => (
+                  <Value key={v.shown.id} value={v} row={row} year={year} conflict={i > 0} />
+                ))}
+              </span>
+            ) : (
+              <span className="figures-none" aria-label="No value">
+                –
+              </span>
+            )}
+          </td>
+        );
+      })}
     </tr>
   );
 }
@@ -196,7 +206,7 @@ function Row({ row, years }: { row: FigureRow; years: number[] }) {
 function Value({ value, row, year, conflict }: { value: FigureValue; row: FigureRow; year: number; conflict: boolean }) {
   const { shown, sources } = value;
   const unit = unitLabel(shown);
-  const name = row.breakdown ? `${row.title}, ${row.breakdown}` : row.title;
+  const name = row.breakdown ? `${row.title}, ${capitalised(row.breakdown)}` : row.title;
   return (
     <span className="figure-value">
       {conflict && (
@@ -210,7 +220,7 @@ function Value({ value, row, year, conflict }: { value: FigureValue; row: Figure
         aria-label={`${name}, FY${year}: ${shown.value_as_written} ${unit}, on page ${shown.passage.page}`}
       >
         {shown.value_as_written}
-        {unit !== row.unit && <span className="figure-unit-inline"> {unit}</span>}
+        {unit !== unitLabel(row) && <span className="figure-unit-inline"> {unit}</span>}
       </Link>
       {sources.length > 1 && <span className="figure-sources">{sources.length} sources</span>}
     </span>

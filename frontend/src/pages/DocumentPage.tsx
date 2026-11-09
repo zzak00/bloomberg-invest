@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
 
 import { ApiError } from "../ApiError";
-import { api, pageImageUrl, type Box, type Chunk, type Figure } from "../api/client";
+import { api, pageImageUrl, type Box, type Chunk, type FigureDetail } from "../api/client";
 import { useApi } from "../api/useApi";
 import { periodLabel, unitLabel } from "../figures";
 import { DOC_TYPE_LABELS, formatDateTime, pagesLabel } from "../format";
@@ -165,7 +165,7 @@ function chunkHighlight(chunk: Chunk): Highlight {
   };
 }
 
-function factHighlight(figure: Figure): Highlight {
+function factHighlight(figure: FigureDetail): Highlight {
   const name = figure.breakdown ? `${figure.line_item_title}, ${figure.breakdown}` : figure.line_item_title;
   return {
     param: "fact",
