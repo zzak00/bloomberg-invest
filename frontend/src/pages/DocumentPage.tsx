@@ -1,10 +1,10 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
 
 import { ApiError } from "../ApiError";
-import { api, pageImageUrl } from "../api/client";
+import { api, pageImageUrl, type Chunk } from "../api/client";
 import { useApi } from "../api/useApi";
-import { DOC_TYPE_LABELS, formatDateTime } from "../format";
+import { DOC_TYPE_LABELS, formatDateTime, pagesLabel } from "../format";
 
 /** What the outline needs from a section. */
 type Section = { id: string; title: string; page: number; children?: Section[] };
@@ -16,8 +16,26 @@ export function DocumentPage() {
   const document = useApi(`document:${documentId}`, () =>
     api.GET("/api/documents/{document_id}", { params: { path: { document_id: documentId } } }),
   );
+  // The chunk a search result opened, highlighted on its pages.
+  const chunkId = params.get("chunk");
+  const chunk = useApi(
+    `chunk:${chunkId}`,
+    chunkId
+      ? () => api.GET("/api/chunks/{chunk_id}", { params: { path: { chunk_id: chunkId } } })
+      : null,
+  );
+  const firstMark = useRef<HTMLSpanElement>(null);
+  // Bring the highlight into view once it is drawn: the page's size is known before its image
+  // loads, so the position is already right.
+  const drawn = document.state === "ready" && chunk.state === "ready" ? `${chunkId}:${params.get("page")}` : "";
+  useEffect(() => {
+    if (drawn) firstMark.current?.scrollIntoView({ block: "center" });
+  }, [drawn]);
 
-  if (document.state === "loading") {
+  // A link to a chunk with no page: its page comes with the chunk, so wait for it rather than
+  // show page 1 first.
+  const pageFromChunk = chunkId !== null && !params.has("page") && chunk.state === "loading";
+  if (document.state === "loading" || pageFromChunk) {
     return (
       <div className="state" aria-busy="true">
         <div className="micro">LOADING THE FILING…</div>
@@ -40,10 +58,17 @@ export function DocumentPage() {
   }
 
   const doc = document.data;
-  const requested = Number(params.get("page") ?? "1");
+  const highlighted = chunk.state === "ready" && chunk.data.document.id === doc.id ? chunk.data : null;
+  const requested = Number(params.get("page") ?? highlighted?.pages[0] ?? "1");
   const page = Number.isInteger(requested) ? clamp(requested, 1, doc.page_count) : 1;
-  const goTo = (target: number) => setParams({ page: String(clamp(target, 1, doc.page_count)) });
+  // Paging keeps the highlighted chunk; picking a section leaves it.
+  const goTo = (target: number) => {
+    const next = String(clamp(target, 1, doc.page_count));
+    setParams(chunkId ? { page: next, chunk: chunkId } : { page: next });
+  };
   const pick = (section: Section) => setParams({ page: String(section.page), section: section.id });
+  const size = doc.pages[page - 1];
+  const marks = highlighted && size ? highlighted.boxes.filter((box) => box.page === page) : [];
   const current = currentSection(doc.sections, page, params.get("section"));
   const title = `${doc.issuer.name} · ${DOC_TYPE_LABELS[doc.doc_type]} ${doc.fiscal_year}`;
 
@@ -56,15 +81,38 @@ export function DocumentPage() {
           <span className="paper-title">{title}</span>
           <Pager key={page} page={page} total={doc.page_count} onGo={goTo} />
         </div>
+        {highlighted && (
+          <HighlightBar
+            highlighted={highlighted}
+            onPage={marks.length > 0}
+            onGo={() => goTo(highlighted.pages[0] ?? page)}
+            onClear={() => setParams({ page: String(page) })}
+          />
+        )}
         <div className="paper-scroll">
           <div className="paper-sheet">
             <img
               key={page}
               src={pageImageUrl(doc.id, page)}
               alt={`Page ${page} of ${title}`}
-              width={doc.pages[page - 1]?.width}
-              height={doc.pages[page - 1]?.height}
+              width={size?.width}
+              height={size?.height}
             />
+            {size &&
+              marks.map(({ left, top, right, bottom }, i) => (
+                <span
+                  key={`${page}-${i}`}
+                  ref={i === 0 ? firstMark : undefined}
+                  className="mark"
+                  aria-hidden="true"
+                  style={{
+                    left: `${(100 * left) / size.width}%`,
+                    top: `${(100 * top) / size.height}%`,
+                    width: `${(100 * (right - left)) / size.width}%`,
+                    height: `${(100 * (bottom - top)) / size.height}%`,
+                  }}
+                />
+              ))}
           </div>
           <div className="paper-meta">
             Parsed by {doc.run.tool} {doc.run.tool_version}
@@ -73,6 +121,39 @@ export function DocumentPage() {
           </div>
         </div>
       </article>
+    </div>
+  );
+}
+
+/** The highlighted chunk: where it is, a way back to it, and a way to clear it. */
+function HighlightBar({
+  highlighted,
+  onPage,
+  onGo,
+  onClear,
+}: {
+  highlighted: Chunk;
+  onPage: boolean;
+  onGo: () => void;
+  onClear: () => void;
+}) {
+  const path = highlighted.section_path;
+  return (
+    <div className="highlight-bar" role="status">
+      <span className="highlight-bar-swatch" aria-hidden="true" />
+      <span className="highlight-bar-where">
+        <span className="paper-label">HIGHLIGHTED</span>{" "}
+        <span title={path.join(" › ")}>{path[path.length - 1] ?? "Before the first section"}</span>{" "}
+        <span className="num nowrap highlight-bar-pages">{pagesLabel(highlighted.pages)}</span>
+      </span>
+      {!onPage && (
+        <button type="button" className="button" onClick={onGo}>
+          GO TO {pagesLabel(highlighted.pages).toUpperCase()} →
+        </button>
+      )}
+      <button type="button" className="button" onClick={onClear}>
+        CLEAR
+      </button>
     </div>
   );
 }

@@ -4,15 +4,17 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Annotated
 
-from fastapi import FastAPI, HTTPException, Path
+from fastapi import FastAPI, HTTPException, Path, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from bloomberg_invest import bootstrap
+from bloomberg_invest.adapters.embedding import Embedder
 from bloomberg_invest.adapters.files import DocumentFiles
 from bloomberg_invest.adapters.store import GraphStore
+from bloomberg_invest.service_layer.search import search
 from bloomberg_invest.settings import Settings
-from bloomberg_invest.views import DocumentDetail, DocumentSummary
+from bloomberg_invest.views import Chunk, DocumentDetail, DocumentSummary
 
 
 class NotFound(BaseModel):
@@ -20,20 +22,29 @@ class NotFound(BaseModel):
 
 
 NOT_FOUND = {404: {"model": NotFound, "description": "No such document, or no such page in it"}}
+NO_CHUNK = {404: {"model": NotFound, "description": "No such chunk"}}
 
 
-def create_app(store: GraphStore | None = None, files: DocumentFiles | None = None) -> FastAPI:
-    """Build the app; without arguments it connects using the environment."""
-    if (store is None) != (files is None):
-        raise TypeError("create_app takes both store and files, or neither")
-    injected = store is not None
+def create_app(
+    store: GraphStore | None = None,
+    files: DocumentFiles | None = None,
+    embedder: Embedder | None = None,
+) -> FastAPI:
+    """Build the app; without arguments it connects and loads the embedder using the environment."""
+    given = [d is not None for d in (store, files, embedder)]
+    if any(given) and not all(given):
+        raise TypeError("create_app takes store, files and embedder, or none")
+    injected = all(given)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if injected:
             yield
             return
-        with bootstrap.connect(Settings.from_env()) as deps:
+        settings = Settings.from_env()
+        # Loaded once at startup: queries are embedded with the model the Chunks were.
+        app.state.embedder = bootstrap.embedder(settings)
+        with bootstrap.connect(settings) as deps:
             app.state.store, app.state.files = deps.store, deps.files
             yield
 
@@ -46,7 +57,7 @@ def create_app(store: GraphStore | None = None, files: DocumentFiles | None = No
         lifespan=lifespan,
     )
     if injected:
-        app.state.store, app.state.files = store, files
+        app.state.store, app.state.files, app.state.embedder = store, files, embedder
 
     def get_store() -> GraphStore:
         return app.state.store
@@ -85,6 +96,22 @@ def create_app(store: GraphStore | None = None, files: DocumentFiles | None = No
         return FileResponse(
             png, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"}
         )
+
+    @app.get("/api/search")
+    def search_chunks(
+        q: Annotated[str, Query(min_length=1, max_length=500, pattern=r"\S")],
+        limit: Annotated[int, Query(ge=1, le=50)] = 10,
+    ) -> list[Chunk]:
+        """The current Chunks nearest the query, best first."""
+        return search(q, limit, get_store(), app.state.embedder)
+
+    @app.get("/api/chunks/{chunk_id}", responses=NO_CHUNK)
+    def chunk(chunk_id: str) -> Chunk:
+        """One Chunk, current or not, so a search result's link keeps working after a re-chunk."""
+        found = get_store().chunks([chunk_id])
+        if not found:
+            raise HTTPException(404, "Chunk not found")
+        return found[0]
 
     return app
 

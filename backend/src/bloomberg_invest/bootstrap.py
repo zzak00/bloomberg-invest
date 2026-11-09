@@ -4,12 +4,13 @@ Entrypoints ask for dependencies here and never name an implementation. Switchin
 implementation is a settings change; adding one is an adapter file plus a registry line.
 """
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 
 from neo4j import GraphDatabase, NotificationDisabledClassification
 
+from bloomberg_invest.adapters.embedding import Embedder
 from bloomberg_invest.adapters.files import DocumentFiles
 from bloomberg_invest.adapters.parsing import Parser
 from bloomberg_invest.adapters.store import GraphStore
@@ -26,6 +27,20 @@ def _docling(settings: Settings) -> Parser:
 
 
 PARSERS: dict[str, Callable[[Settings], Parser]] = {"docling": _docling}
+
+
+def _qwen3() -> Embedder:
+    # Imported here so code that never embeds runs without torch installed.
+    from bloomberg_invest.adapters.embedding.sentence_transformer import (
+        SentenceTransformerEmbedder,
+    )
+
+    return SentenceTransformerEmbedder("Qwen/Qwen3-Embedding-0.6B", query_prompt="query")
+
+
+# Qwen3-Embedding-0.6B: the embedder vector search was measured with in the pipeline notebook
+# (ADR 0004).
+EMBEDDERS: dict[str, Callable[[], Embedder]] = {"qwen3-0.6b": _qwen3}
 
 
 @dataclass(frozen=True)
@@ -51,10 +66,19 @@ def connect(settings: Settings) -> Iterator[Deps]:
 
 def parser(settings: Settings) -> Parser:
     """The parser `settings.parser` names."""
-    if settings.parser not in PARSERS:
-        expected = ", ".join(sorted(PARSERS))
-        raise ValueError(f"unknown parser {settings.parser!r}, expected {expected}")
-    return PARSERS[settings.parser](settings)
+    return _choose(PARSERS, "parser", settings.parser)(settings)
+
+
+def embedder(settings: Settings) -> Embedder:
+    """The embedding model `settings.embedder` names; it loads when this is called."""
+    return _choose(EMBEDDERS, "embedder", settings.embedder)()
+
+
+def _choose[F](registry: Mapping[str, F], kind: str, name: str) -> F:
+    """The factory registered under `name`; an unknown name fails naming the valid choices."""
+    if name not in registry:
+        raise ValueError(f"unknown {kind} {name!r}, expected {', '.join(sorted(registry))}")
+    return registry[name]
 
 
 def token_counter() -> TokenCounter:

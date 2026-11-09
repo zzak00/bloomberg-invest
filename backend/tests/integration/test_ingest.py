@@ -7,27 +7,42 @@ from pathlib import Path
 
 import pytest
 from conftest import FIXTURES
+from fakes import FakeEmbedder
 
 pytestmark = pytest.mark.ingest
 pytest.importorskip("docling", reason="needs the ingest extra")
 
+from transformers import AutoTokenizer
+
+from bloomberg_invest import bootstrap
 from bloomberg_invest.adapters.files import DocumentFiles
 from bloomberg_invest.adapters.parsing.docling_parser import DoclingParser
 from bloomberg_invest.adapters.tokens import TiktokenCounter
+from bloomberg_invest.domain.chunking import Caps
 from bloomberg_invest.service_layer.ingest import ingest
+from bloomberg_invest.service_layer.search import search
 
 GOLDEN_PDF = Path(
     os.environ.get(
         "GOLDEN_PDF", Path(__file__).parents[3] / "data" / "inbox" / "Maroc_Telecom_RFA_2025.pdf"
     )
 )
+# The app's default caps (settings.py).
+CAPS = Caps(text=2000, table=1500)
 GOLDEN_SHA = "90e8b73c7f11bfde45d0c7ddb3ce506d162bac2030244d48d9ca2f641ddd4214"
 
 
 def test_ingest_stores_the_pdf_and_records_the_parse(store, meta, tmp_path):
     files = DocumentFiles(tmp_path)
     ingested = ingest(
-        FIXTURES / "filing.pdf", meta, store, files, DoclingParser(), TiktokenCounter(), 2000
+        FIXTURES / "filing.pdf",
+        meta,
+        store,
+        files,
+        DoclingParser(),
+        TiktokenCounter(),
+        CAPS,
+        FakeEmbedder(),
     )
     document_id = ingested.document_id
 
@@ -41,15 +56,20 @@ def test_ingest_stores_the_pdf_and_records_the_parse(store, meta, tmp_path):
     assert detail.run.output.startswith(f"parses/{sha}/")
     assert (tmp_path / detail.run.output).stat().st_size > 0
     assert ingested.chunked.chunks > 0
+    assert ingested.embedded.chunks == ingested.chunked.chunks, "every Chunk is embedded"
 
 
 @pytest.mark.golden
+@pytest.mark.embed
 @pytest.mark.skipif(not GOLDEN_PDF.exists(), reason=f"golden PDF not found at {GOLDEN_PDF}")
-def test_the_golden_report_parses_into_its_outline_and_chunks(store, meta, tmp_path, driver):
+def test_the_golden_report_parses_into_its_outline_and_chunks_and_is_searchable(
+    store, meta, tmp_path, driver
+):
     assert hashlib.sha256(GOLDEN_PDF.read_bytes()).hexdigest() == GOLDEN_SHA
     files = DocumentFiles(tmp_path)
     counter = TiktokenCounter()
-    ingested = ingest(GOLDEN_PDF, meta, store, files, DoclingParser(), counter, 2000)
+    embedder = bootstrap.EMBEDDERS["qwen3-0.6b"]()
+    ingested = ingest(GOLDEN_PDF, meta, store, files, DoclingParser(), counter, CAPS, embedder)
     document_id = ingested.document_id
 
     detail = store.get_document(document_id)
@@ -69,10 +89,9 @@ def test_the_golden_report_parses_into_its_outline_and_chunks(store, meta, tmp_p
     records, _, _ = driver.execute_query(
         """
         MATCH (k:Chunk)-[:FROM_DOCUMENT]->(:Document {id: $id})
-        CALL (k) { MATCH (p:Paragraph)-[:PART_OF]->(k) RETURN count(p) AS paragraphs }
         OPTIONAL MATCH (k)-[:REFERS_TO]->(note:Section)
-        RETURN k.id AS id, k.kind AS kind, k.token_count AS tokens, paragraphs,
-               count(note) AS notes
+        RETURN k.id AS id, k.kind AS kind, k.token_count AS tokens,
+               size(split(k.text, '\n\n')) AS paragraphs, count(note) AS notes
         """,
         id=document_id,
     )
@@ -80,3 +99,18 @@ def test_the_golden_report_parses_into_its_outline_and_chunks(store, meta, tmp_p
     assert any(r["kind"] == "table" for r in records)
     assert all(r["tokens"] <= 2000 or r["paragraphs"] == 1 or r["kind"] == "table" for r in records)
     assert sum(r["notes"] for r in records) > 0, "some chunks cite a note"
+
+    # Every Chunk fits the embedder's window, so none is cut (ADR 0004): long tables are split.
+    tokenizer = AutoTokenizer.from_pretrained(embedder.name)
+    texts = [i.text for i in store.embed_inputs(document_id)]
+    longest = max(len(tokenizer(t)["input_ids"]) for t in texts)
+    assert longest <= embedder.max_tokens, longest
+
+    # Search (#21 AC3 asks for the top 5): "dividende proposé" ranks the p. 10 dividend first,
+    # with its document, section path and page.
+    first, *_ = hits = search("dividende proposé", 5, store, embedder)
+    assert (first.pages, first.section_path[-1]) == ([10], "Dividende"), [
+        (h.pages, h.section_path[-1:]) for h in hits
+    ]
+    assert "4,00 dirhams par action" in first.text
+    assert first.document.id == document_id

@@ -14,6 +14,7 @@ import { Shell } from "./Shell";
 import { DocumentPage } from "./pages/DocumentPage";
 import { EmptyPage } from "./pages/EmptyPage";
 import { IndexPage } from "./pages/IndexPage";
+import { SearchPage } from "./pages/SearchPage";
 
 const router = createBrowserRouter([
   {
@@ -22,6 +23,7 @@ const router = createBrowserRouter([
       { index: true, element: <Navigate to="/index" replace /> },
       { path: "index", element: <IndexPage /> },
       { path: "documents/:documentId", element: <DocumentPage /> },
+      { path: "search", element: <SearchPage /> },
       {
         path: "map",
         element: (

@@ -1,7 +1,9 @@
 """Chunk a parsed document by its structure (#19 R2). Pure: no parser, store or tokenizer here.
 
-- A table is one Chunk, however long; a table continued at the top of the next page, with the
-  same columns and nothing between, is joined to it first.
+- A table is its own Chunk; a table continued at the top of the next page, with the same columns
+  and nothing between, is joined to it first. A table longer than its cap, read as search reads
+  it (one line per row), splits evenly between rows; every part repeats the column header and
+  the headings above it, and keeps only the pages and boxes of its own rows.
 - A section's paragraphs form one Chunk while they fit the token cap.
 - A longer section splits at its numbered points first, otherwise evenly between paragraphs.
 - A paragraph is never split, even when it alone is over the cap.
@@ -21,6 +23,8 @@ from dataclasses import dataclass, replace
 from itertools import accumulate
 from typing import Literal
 
+from bloomberg_invest.domain import tables
+
 # (page, left, top, right, bottom) in PDF points, top-left origin.
 Box = tuple[int, float, float, float, float]
 TokenCount = Callable[[str], int]
@@ -31,8 +35,8 @@ NOTE_TITLE = re.compile(r"^NOTE\s+(\d+)\b", re.IGNORECASE)
 
 @dataclass(frozen=True)
 class Block:
-    """One item of the document in reading order: a heading, a text paragraph or a table. Inside
-    a Chunk, each is one Paragraph."""
+    """One item of the document in reading order: a heading, a text paragraph or a table. The
+    chunker never splits one; Blocks are not stored on their own (ADR 0004)."""
 
     kind: Literal["heading", "text", "table"]
     text: str
@@ -42,7 +46,12 @@ class Block:
     numbered: bool = False  # a list item or numbered point: "1)", "a.", "-"
     header: str = ""  # tables: the Markdown header row
     rows: tuple[str, ...] = ()  # tables: the Markdown body rows
+    row_pages: tuple[int, ...] = ()  # tables joined across pages: each row's page
     columns: int = 0
+
+    @property
+    def pages_of_rows(self) -> tuple[int, ...]:
+        return self.row_pages or (self.page,) * len(self.rows)
 
     @property
     def pages(self) -> tuple[int, ...]:
@@ -50,10 +59,19 @@ class Block:
 
 
 @dataclass(frozen=True)
+class Caps:
+    """Token caps: a section's text Chunk, and a table read one line per row."""
+
+    text: int
+    table: int
+
+
+@dataclass(frozen=True)
 class SectionRef:
     id: str
     title: str
     page: int
+    parent: str | None = None  # the id of the Section it sits in
 
 
 @dataclass(frozen=True)
@@ -66,16 +84,26 @@ class ChunkDraft:
     token_count: int
     pages: tuple[int, ...]
     refers_to: tuple[str, ...]  # ids of the NOTE sections the text cites
+    path: tuple[str, ...] = ()  # titles of its Section and the Sections above, outermost first
+    table: int | None = None  # tables: shared by the parts of one table
+    part: int = 0  # tables: this part's number, from 1
+    parts: int = 0  # tables: how many parts the table has
+
+
+# Where a Chunk sits in reading order, its kind, Section and blocks, and for a table part the
+# table's reading position, the part number and the number of parts.
+Group = tuple[int, Literal["text", "table"], str | None, list[Block], tuple[int, int, int] | None]
 
 
 def chunk(
-    blocks: Sequence[Block], sections: Sequence[SectionRef], cap: int, count: TokenCount
+    blocks: Sequence[Block], sections: Sequence[SectionRef], caps: Caps, count: TokenCount
 ) -> list[ChunkDraft]:
     """The document's Chunks in reading order."""
-    groups: list[tuple[int, Literal["text", "table"], str | None, list[Block]]] = []
+    groups: list[Group] = []
+    paths = _paths(sections)
     for section_id, items in _by_section(_join_tables(blocks), sections):
         texts: list[tuple[int, Block]] = []
-        tables: list[list[tuple[int, Block]]] = []
+        table_runs: list[list[tuple[int, Block]]] = []
         headings: list[tuple[int, Block]] = []
         for at, b in items:
             if b.kind == "heading":
@@ -84,18 +112,27 @@ def chunk(
                 texts += [*headings, (at, b)]
                 headings = []
             else:
-                tables.append([*headings, (at, replace(b, text=_markdown(b)))])
+                table_runs.append([*headings, (at, b)])
                 headings = []
         texts += headings  # the document's last headings, with nothing after them
-        for part in _split([b for _, b in texts], cap, count):
+        for part in _split([b for _, b in texts], caps.text, count):
             first = next(at for at, b in texts if b is part[0])
-            groups.append((first, "text", section_id, part))
-        for table in tables:
-            groups.append((table[0][0], "table", section_id, [b for _, b in table]))
+            groups.append((first, "text", section_id, part, None))
+        for run in table_runs:
+            at, (*heads, block) = run[0][0], [b for _, b in run]
+            parts = _split_table(block, heads, paths.get(section_id, ()), caps.table, count)
+            for n, part in enumerate(parts, 1):
+                part = replace(part, text=_markdown(part))
+                # Later parts repeat the headings as context: their text, not their place.
+                context = heads if n == 1 else [replace(h, boxes=(), page=part.page) for h in heads]
+                groups.append((at, "table", section_id, [*context, part], (at, n, len(parts))))
 
     notes = _note_sections(sections)
     chunks = []
-    for index, (_, kind, section_id, part) in enumerate(sorted(groups, key=lambda g: g[0])):
+    # Sorting is stable, so a table's parts keep their order.
+    for index, (_, kind, section_id, part, of_table) in enumerate(
+        sorted(groups, key=lambda g: g[0])
+    ):
         text = "\n\n".join(b.text for b in part)
         body = "\n\n".join(b.text for b in part if b.kind != "heading")
         cited = (notes.get(int(n)) for n in NOTE_REFERENCE.findall(body))
@@ -110,9 +147,26 @@ def chunk(
                 token_count=count(text),
                 pages=tuple(sorted({p for b in part for p in b.pages})),
                 refers_to=refers_to,
+                path=paths.get(section_id, ()),
+                **(dict(zip(("table", "part", "parts"), of_table)) if of_table else {}),
             )
         )
     return chunks
+
+
+def header_line(path: Sequence[str], pages: Sequence[int]) -> str:
+    """The index text's first line (indexing.py): the section path, then the pages."""
+    first, last = pages[0], pages[-1]
+    where = f"p. {first}" if first == last else f"pp. {first}-{last}"
+    return f"{' > '.join(path)} · {where}" if path else where
+
+
+def _paths(sections: Sequence[SectionRef]) -> dict[str | None, tuple[str, ...]]:
+    """Each Section's title path, outermost first; parents come before their children."""
+    paths: dict[str | None, tuple[str, ...]] = {}
+    for s in sections:
+        paths[s.id] = (*paths.get(s.parent, ()), s.title) if s.parent else (s.title,)
+    return paths
 
 
 def _join_tables(blocks: Sequence[Block]) -> list[Block]:
@@ -131,6 +185,7 @@ def _join_tables(blocks: Sequence[Block]) -> list[Block]:
             joined[-1] = replace(
                 previous,
                 rows=previous.rows + rows,
+                row_pages=previous.pages_of_rows + (block.page,) * len(rows),
                 boxes=previous.boxes + block.boxes,
                 last_page=block.pages[-1],
             )
@@ -193,17 +248,62 @@ def _even(paragraphs: list[Block], cap: int, count: TokenCount) -> list[list[Blo
     """The fewest parts under the cap, each cut where the running total is closest to an even
     share."""
     sizes = [count(p.text) for p in paragraphs]
+    cuts = _even_cuts(sizes, lambda a, b: _size(paragraphs[a:b], count), cap)
+    return [paragraphs[a:b] for a, b in cuts]
+
+
+def _split_table(
+    table: Block, heads: list[Block], path: tuple[str, ...], cap: int, count: TokenCount
+) -> list[Block]:
+    """The table in the fewest parts whose embedded text fits the cap, cut between rows; a row
+    over the cap is a part of its own. A part is measured as indexing.py writes it: the header
+    line, the headings above the table, then the table one line per row."""
+    corner = tables.corner(table.header)
+    lines = tables.row_lines(table.header, table.rows)
+    pages = table.pages_of_rows
+    head_pages = {p for h in heads for p in h.pages}
+
+    def size(a: int, b: int) -> int:
+        rows = "\n".join(filter(None, [corner, *lines[a:b]]))
+        header = header_line(path, sorted(head_pages | set(pages[a:b])))
+        return count(f"{header}\n" + "\n\n".join([*(h.text for h in heads if h.text), rows]))
+
+    if not lines or size(0, len(lines)) <= cap:
+        return [table]
+    cuts = _even_cuts([count(line) for line in lines], size, cap)
+    parts = []
+    for a, b in cuts:
+        on = tuple(sorted(set(pages[a:b])))
+        parts.append(
+            replace(
+                table,
+                rows=table.rows[a:b],
+                row_pages=pages[a:b],
+                page=on[0],
+                last_page=on[-1] if len(on) > 1 else 0,
+                boxes=tuple(box for box in table.boxes if box[0] in on),
+            )
+        )
+    return parts
+
+
+def _even_cuts(
+    sizes: list[int], size: Callable[[int, int], int], cap: int
+) -> list[tuple[int, int]]:
+    """Cut `sizes` into the fewest runs whose `size(a, b)` fits the cap (a run of one always
+    fits), each cut where the running total is closest to an even share; as a last resort, one
+    item per run."""
     total, running = sum(sizes), list(accumulate(sizes))
-    for n in range(max(1, math.ceil(total / cap)), len(paragraphs) + 1):
+    for n in range(max(1, math.ceil(total / cap)), len(sizes) + 1):
         cuts = [0]
         for k in range(1, n):
-            # Leave at least one paragraph for each part still to come.
-            candidates = range(cuts[-1] + 1, len(paragraphs) - (n - k) + 1)
+            # Leave at least one item for each run still to come.
+            candidates = range(cuts[-1] + 1, len(sizes) - (n - k) + 1)
             cuts.append(min(candidates, key=lambda i: abs(running[i - 1] - total * k / n)))
-        parts = [paragraphs[a:b] for a, b in zip(cuts, [*cuts[1:], len(paragraphs)])]
-        if all(len(part) == 1 or _size(part, count) <= cap for part in parts):
-            return parts
-    return [[p] for p in paragraphs]
+        runs = list(zip(cuts, [*cuts[1:], len(sizes)], strict=True))
+        if all(b - a == 1 or size(a, b) <= cap for a, b in runs):
+            return runs
+    return [(i, i + 1) for i in range(len(sizes))]
 
 
 def _size(paragraphs: list[Block], count: TokenCount) -> int:

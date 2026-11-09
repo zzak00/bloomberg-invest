@@ -20,6 +20,8 @@ from bloomberg_invest.domain.model import (
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
+# The SHA-256 the store tests record their parse under.
+SHA = "90e8b73c7f11bfde45d0c7ddb3ce506d162bac2030244d48d9ca2f641ddd4214"
 
 
 @pytest.fixture(scope="session")
@@ -82,3 +84,13 @@ def make_run(minute: int = 0) -> RunInfo:
         finished_at=datetime(2026, 11, 3, 9, minute + 4, tzinfo=UTC),
         output="parses/90e8b73c/20261103T090000Z-docling.json",
     )
+
+
+@pytest.fixture
+def document(store, meta, parsed):
+    """A recorded parse: its Document id and its Section ids by title."""
+    document_id = store.record_parse(meta, parsed, make_run(), SHA)
+    detail = store.get_document(document_id)
+    ids = {s.title: s.id for s in detail.sections}
+    ids |= {c.title: c.id for s in detail.sections for c in s.children}
+    return document_id, ids

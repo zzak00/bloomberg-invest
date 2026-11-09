@@ -50,17 +50,18 @@ jobs:
       - uses: astral-sh/setup-uv@v10.3.3
         with:
           enable-cache: true
-      # The API image has no Docling: run the API and store tests in the same lean environment,
-      # so a dependency that only the ingest extra brings in fails here.
-      - name: API, store and outline tests (no ingest extra)
-        run: |
-          uv sync --locked
-          uv run pytest -m "not ingest"
-      - name: Cache Docling models
+      # The embedding model and Docling's models, downloaded from Hugging Face on first use.
+      - name: Cache models
         uses: actions/cache@v4
         with:
           path: ~/.cache/huggingface
-          key: docling-models-${{ hashFiles('backend/uv.lock') }}
+          key: models-${{ hashFiles('backend/uv.lock') }}
+      # The API image has the embedder but no Docling: run the API, store and embedder tests in
+      # the same environment, so a dependency that only the ingest extra brings in fails here.
+      - name: API, store and embedder tests (no ingest extra)
+        run: |
+          uv sync --locked --extra embed
+          uv run pytest -m "not ingest"
       - name: Docling parser and ingest tests
         run: |
           uv sync --locked --extra ingest

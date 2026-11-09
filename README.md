@@ -22,7 +22,11 @@ docker compose run --rm ingest /data/inbox/Maroc_Telecom_RFA_2025.pdf \
 
 The first ingest downloads Docling's models (kept in a volume). A 90-page report takes about 10 minutes in the container. On the host it takes about 4: `cd backend && NEO4J_PASSWORD=... DATA_DIR=../data uv run --extra ingest bloomberg ingest ...`.
 
-Ingest also chunks the filing (#21). To re-chunk an ingested filing from its saved parse, for example after changing `CHUNK_CAP`: `docker compose run --rm chunk <document id>`.
+Ingest also chunks the filing and embeds each Chunk for search (#21), with `Qwen3-Embedding-0.6B` (downloaded on first use, about 1.2 GB). To re-chunk an ingested filing from its saved parse, for example after changing `CHUNK_CAP` or `TABLE_CAP`: `docker compose run --rm chunk <document id>`, which embeds the new Chunks too. To re-embed only: `docker compose run --rm embed <document id>`.
+
+Embedding runs on the CPU in the container, about 5 seconds per long Chunk, so a 90-page filing takes over 10 minutes there. On a Mac it uses the GPU and takes about 3 minutes: `cd backend && DATA_DIR=../data uv run --extra ingest --env-file ../.env bloomberg chunk <document id>` (or `ingest`, or `embed`).
+
+`docker compose up --build` does not rebuild these three tools, which share one image. After changing backend code, rebuild it before running them: `docker compose --profile tools build ingest`.
 
 | Part | Where | Notes |
 | --- | --- | --- |
@@ -40,6 +44,7 @@ cd backend
 uv sync --locked                         # API only, like the API image
 uv run pytest -m "not ingest"            # store, API and outline tests
 uv run --extra ingest pytest -m ingest   # Docling parser, ingest and chunk tests
+uv run --extra embed pytest -m embed     # the embedding model
 uv run ruff check . && uv run ruff format --check .
 
 cd ../frontend
@@ -50,13 +55,21 @@ npm run typecheck && npm run lint && npm run build
 
 ### The pipeline notebook
 
-`backend/notebooks/pipeline.ipynb` runs each pipeline step on the golden filing with the app's own functions and shows the results. It starts from the app's own parse, so start the stack and ingest the golden PDF first. It shows the outline on the page, blocks, chunks, embeddings and search against the golden questions. New steps are tried there before they move into `bloomberg_invest`.
+`backend/notebooks/pipeline.ipynb` runs the whole pipeline on one filing with the app's own functions: Docling's parse, blocks, chunks, embeddings and search, with the time each step takes, then writes an error-analysis page. It needs no running stack. The filing is the golden Maroc Telecom report unless `FILING` names another PDF in `data/inbox/`; only the golden one has ground truth, so only it is scored. New steps are tried there before they move into `bloomberg_invest`.
 
 ```bash
+# once per clone: strip outputs on commit, with a pinned nbstripout that no checkout owns
+git config filter.nbstripout.clean "uvx nbstripout==0.9.1"
+git config filter.nbstripout.smudge cat
+git config filter.nbstripout.required true
+git config diff.ipynb.textconv "uvx nbstripout==0.9.1 -t"
+
 cd backend
-uv run --group notebook nbstripout --install --attributes ../.gitattributes   # once per clone
-uv run --env-file ../.env --extra ingest --group notebook jupyter lab notebooks/pipeline.ipynb
+uv run --extra ingest --group notebook jupyter lab notebooks/pipeline.ipynb
+FILING=AWB_RFA_2025.pdf uv run --extra ingest --group notebook jupyter lab notebooks/pipeline.ipynb
 ```
+
+The first run on a filing parses it (a few minutes); the parse and the vectors are cached in `data/notebook/`.
 
 Outputs are stripped on commit, and CI rejects a notebook with outputs: they show pages of the AMMC report.
 

@@ -1,5 +1,7 @@
 import { Link, Outlet, useLocation } from "react-router";
 
+import { HeaderSearch } from "./Search";
+
 /** Each tab, and the other paths that belong to it (a filing opened from the index). */
 const NAV = [
   { to: "/map", label: "Map", also: [] },
@@ -22,6 +24,7 @@ export function Shell() {
           <span className="brand-name">Bloomberg Invest</span>
           <span className="brand-chip">CSE</span>
         </Link>
+        <HeaderSearch />
         <nav className="nav" aria-label="Primary">
           {NAV.map((item) => (
             <Link key={item.to} to={item.to} aria-current={current(item)}>

@@ -2,9 +2,10 @@
 
 import pytest
 from conftest import FIXTURES
-from fakes import BrokenParser, WordCounter
+from fakes import BrokenParser, FakeEmbedder, WordCounter
 
 from bloomberg_invest.adapters.files import DocumentFiles
+from bloomberg_invest.domain.chunking import Caps
 from bloomberg_invest.service_layer.ingest import IngestFailed, ingest
 
 
@@ -26,7 +27,8 @@ def test_a_failed_parse_records_a_failed_run_and_raises(store, meta, tmp_path, d
             DocumentFiles(tmp_path),
             BrokenParser(),
             WordCounter(),
-            2000,
+            Caps(text=2000, table=1500),
+            FakeEmbedder(),
         )
 
     assert failed_runs(driver, failure.value.document_id) == [
@@ -47,7 +49,8 @@ def test_a_parse_that_fails_after_saving_its_output_points_the_failed_run_to_it(
             files,
             BrokenParser(saves_output=True),
             WordCounter(),
-            2000,
+            Caps(text=2000, table=1500),
+            FakeEmbedder(),
         )
 
     [(status, _, _, output)] = failed_runs(driver, failure.value.document_id)

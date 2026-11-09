@@ -91,6 +91,72 @@ try {
     await page.mouse.move(0, vp.height - 1);
     await shot("04-viewer-section");
 
+    // Search: "/" and the header field, or on a phone the search icon and the page's field.
+    const QUERY = "dividende proposé";
+    const icon = page.getByRole("link", { name: "Search the filings" });
+    if (await icon.isVisible()) {
+      await icon.click();
+      await page.getByRole("searchbox", { name: "Search the filings" }).fill(QUERY);
+    } else {
+      await page.keyboard.press("/");
+      const focused = await page.evaluate(() => document.activeElement?.id);
+      check(vp.name, '"/" focuses the header search', focused === "header-search", focused);
+      await page.keyboard.type(QUERY);
+    }
+    await page.keyboard.press("Enter");
+    const results = page.getByRole("list", { name: "Results" }).getByRole("link");
+    await results.first().waitFor();
+    const first = (await results.first().innerText()).replace(/\s+/g, " ");
+    check(vp.name, "search lists results", (await results.count()) >= 1, `${await results.count()} result(s)`);
+    check(vp.name, "AC3: the p. 10 dividend comes first", /Dividende/.test(first) && /p\. 10\b/.test(first), first.slice(0, 120));
+    await page.mouse.move(0, vp.height - 1);
+    await shot("05-search");
+
+    // A result opens the source viewer on its page with the chunk highlighted.
+    await results.first().click();
+    const resultPage = page.getByRole("img", { name: /^Page 10 of/ });
+    await resultPage.waitFor();
+    await resultPage.evaluate((img) => img.complete || new Promise((done) => (img.onload = done)));
+    const mark = page.locator(".paper-sheet .mark").first();
+    await mark.waitFor();
+    const [sheetBox, markBox] = [await page.locator(".paper-sheet").boundingBox(), await mark.boundingBox()];
+    check(
+      vp.name,
+      "the chunk is highlighted on its page",
+      markBox && sheetBox && markBox.width > 20 && markBox.x >= sheetBox.x && markBox.x + markBox.width <= sheetBox.x + sheetBox.width + 1,
+      markBox && `${Math.round(markBox.width)}x${Math.round(markBox.height)} at ${Math.round(markBox.x)},${Math.round(markBox.y)}`,
+    );
+    check(vp.name, "the highlight bar names it", /Dividende/.test(await page.getByRole("status").innerText()));
+    await shot("06-search-result");
+
+    // A link to a chunk with no page waits for the chunk: on a slow network the viewer must
+    // not show page 1 first.
+    const chunkUrl = new URL(page.url());
+    chunkUrl.searchParams.delete("page");
+    const fetched = [];
+    const onRequest = (r) => {
+      const n = r.url().match(/\/pages\/(\d+)\.png/);
+      if (n) fetched.push(Number(n[1]));
+    };
+    await page.route("**/api/chunks/**", async (route) => {
+      await new Promise((done) => setTimeout(done, 1500));
+      await route.continue();
+    });
+    page.on("request", onRequest);
+    await page.goto(chunkUrl.href);
+    await page.locator(".paper-sheet .mark").first().waitFor();
+    page.off("request", onRequest);
+    await page.unroute("**/api/chunks/**");
+    check(vp.name, "a chunk link opens on its page, never page 1 first", fetched.join() === "10", `pages fetched: ${fetched.join(", ")}`);
+
+    // A long table is split between rows; its parts say which part they are.
+    await page.goto(`${base}/search?q=${encodeURIComponent("compte de produits et charges")}`);
+    const part = page.locator(".result-kind", { hasText: /^TABLE · PART \d+ OF \d+$/ }).first();
+    await part.waitFor();
+    await part.scrollIntoViewIfNeeded();
+    check(vp.name, "a split table's result names its part", await part.isVisible(), await part.innerText());
+    await shot("07-search-table-part");
+
     // MAP, CHECKS and KPIs show their empty states.
     for (const [path, title] of [
       ["map", "The map arrives with entities and facts"],
@@ -101,7 +167,7 @@ try {
       const heading = page.getByRole("heading", { name: title });
       await heading.waitFor();
       check(vp.name, `${path.toUpperCase()} empty state`, await heading.isVisible());
-      await shot(`05-empty-${path}`);
+      await shot(`07-empty-${path}`);
     }
 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

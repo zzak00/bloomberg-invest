@@ -3,8 +3,9 @@
 from typing import Protocol
 
 from bloomberg_invest.domain.chunking import ChunkDraft
+from bloomberg_invest.domain.indexing import EmbedInput
 from bloomberg_invest.domain.model import DocumentMeta, ParsedDocument, RunInfo
-from bloomberg_invest.views import DocumentDetail, DocumentSummary
+from bloomberg_invest.views import Chunk, DocumentDetail, DocumentSummary
 
 
 class GraphStore(Protocol):
@@ -26,11 +27,33 @@ class GraphStore(Protocol):
         """
 
     def record_chunks(self, document_id: str, chunks: list[ChunkDraft], run: RunInfo) -> str:
-        """Store a chunk Run's Chunks and Paragraphs for the Document; return the Run id.
+        """Store a chunk Run's Chunks, with their index text, for the Document; return the Run id.
 
-        A succeeded Run supersedes the Chunks and Paragraphs of earlier chunk Runs. A failed Run
-        is recorded with no outputs and supersedes nothing.
+        A succeeded Run supersedes the Chunks of earlier chunk Runs. A failed Run is recorded
+        with no outputs and supersedes nothing.
         """
+
+    def embed_inputs(self, document_id: str) -> list[EmbedInput]:
+        """The Document's current Chunks in reading order, with the index text to embed."""
+
+    def record_embeddings(
+        self, document_id: str, vectors: dict[str, list[float]], run: RunInfo
+    ) -> str:
+        """Store an embed Run's vectors, by Chunk id, for the Document; return the Run id.
+
+        A succeeded Run gives a vector to every current Chunk of the Document, no more and
+        no fewer, replacing earlier embed Runs' vectors and superseding those Runs. A failed Run
+        is recorded with no vectors.
+        """
+
+    def current_chunk_run(self, document_id: str) -> str | None:
+        """The chunk Run that produced the Document's current Chunks, if any."""
+
+    def search_vector(self, vector: list[float], limit: int) -> list[str]:
+        """Current Chunk ids whose vectors are nearest the query's, best first."""
+
+    def chunks(self, chunk_ids: list[str]) -> list[Chunk]:
+        """The Chunks, in the order given, with their Document, section path, pages and boxes."""
 
     def list_documents(self) -> list[DocumentSummary]: ...
 

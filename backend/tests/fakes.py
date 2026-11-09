@@ -29,3 +29,33 @@ class BrokenParser:
 
     def read_blocks(self, output: Path):
         raise RuntimeError("the saved output is unreadable")
+
+
+class FakeEmbedder:
+    """Unit vectors from the words of a text: texts sharing words point the same way."""
+
+    name = "fake-embedder"
+    tool = "fake"
+    tool_version = "1.0"
+    max_tokens = 512
+    dims = 16
+
+    def __init__(self, broken: bool = False) -> None:
+        self.broken = broken
+        self.calls = 0
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        self.calls += 1
+        if self.broken:
+            raise RuntimeError("the model ran out of memory")
+        return [self._vector(t) for t in texts]
+
+    def embed_query(self, text: str) -> list[float]:
+        return self._vector(text)
+
+    def _vector(self, text: str) -> list[float]:
+        v = [0.0] * self.dims
+        for word in text.lower().split():
+            v[sum(map(ord, word)) % self.dims] += 1.0
+        norm = sum(x * x for x in v) ** 0.5 or 1.0
+        return [x / norm for x in v]

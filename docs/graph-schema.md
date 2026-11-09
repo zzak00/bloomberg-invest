@@ -1,6 +1,6 @@
 # Graph schema
 
-The nodes and relationships that `Neo4jStore.record_parse` and `record_chunks` (`backend/src/bloomberg_invest/adapters/store/neo4j_store.py`) write for one ingested filing. Update this file when the store writes a new label, property or relationship.
+The nodes and relationships that `Neo4jStore.record_parse`, `record_chunks` and `record_embeddings` (`backend/src/bloomberg_invest/adapters/store/neo4j_store/`) write for one ingested filing. Update this file when the store writes a new label, property or relationship.
 
 ```mermaid
 erDiagram
@@ -19,7 +19,7 @@ erDiagram
     }
     Run {
         String id UK "UUID"
-        String step "parse"
+        String step "parse | chunk | embed"
         String tool
         String tool_version
         String config "JSON string"
@@ -28,6 +28,7 @@ erDiagram
         String status "succeeded | failed"
         String error "optional: set when failed"
         String output "optional: the tool's full output file"
+        Boolean superseded "optional: embed Runs only"
     }
     Section {
         String id UK "UUID"
@@ -48,16 +49,15 @@ erDiagram
         String id UK "UUID"
         Integer index "reading order in the Document"
         String kind "text | table"
-        String text "paragraphs joined, or the table as Markdown"
+        String text "headings and paragraphs joined, or the table (or part) as Markdown with its header"
         Integer token_count
-        Boolean superseded "optional"
-    }
-    Paragraph {
-        String id UK "UUID"
-        Integer index "order in its Chunk"
-        String text
-        Integer page "first page"
-        Float[] boxes "groups of five: page, left, top, right, bottom"
+        String index_text "what is embedded: section path and pages, then the text"
+        Float[] boxes "its blocks' regions, in groups of five: page, left, top, right, bottom"
+        String[] section_path "the Section titles from the top down, as the index text's header has them"
+        String table "tables: shared by the parts of one table"
+        Integer part "tables: this part's number, from 1"
+        Integer parts "tables: how many parts the table has"
+        Float[] embedding "optional: set by an embed Run"
         Boolean superseded "optional"
     }
 
@@ -78,9 +78,9 @@ erDiagram
     Chunk }o--o{ Page : ON_PAGE
     Chunk |o--o| Chunk : NEXT_CHUNK
     Chunk }o--o{ Section : "REFERS_TO (a cited NOTE)"
-    Paragraph }|--|| Chunk : PART_OF
     Chunk }o--|| Run : "PRODUCED_BY (chunk Run)"
-    Paragraph }o--|| Run : "PRODUCED_BY (chunk Run)"
+    Chunk }o--o| Run : "SUPERSEDED_BY (re-chunk, re-ingest)"
+    Run |o--o| Run : "SUPERSEDED_BY (embed Run: re-embed, re-chunk, re-ingest)"
 ```
 
 Arrows in Cypher run from the first entity to the second, for example `(:Document)-[:ISSUED_BY]->(:Organisation)` and `(:Run)-[:PROCESSED]->(:Document)`.
@@ -97,7 +97,8 @@ Neo4j Community enforces uniqueness only. Required properties are enforced by th
 | Section | `id` | always created |
 | Page | none | always created, per Run |
 | Chunk | `id` | always created, per chunk Run |
-| Paragraph | `id` | always created, per chunk Run |
+
+The vector index `chunk_embedding` covers `Chunk.embedding`, cosine, at full precision: Neo4j quantizes vectors to bits by default, which would change the ranking the notebook measured.
 
 ## Superseded
 
@@ -108,19 +109,21 @@ A Page or Section with `superseded = true` came from an older parse of the same 
 3. In the same transaction, every current node Run A produced for this Document gets `superseded = true` and a `SUPERSEDED_BY` link to Run B.
 4. Run B writes fresh Pages and Sections. Every read filters with `coalesce(n.superseded, false) = false`, so only Run B's output shows.
 
-A chunk Run supersedes only the Chunks and Paragraphs of earlier chunk Runs, never the parse's Pages and Sections. A new parse supersedes everything earlier Runs produced for the Document, Chunks included; ingest then chunks the new parse.
+A chunk Run supersedes only the Chunks of earlier chunk Runs, never the parse's Pages and Sections. A new parse supersedes everything earlier Runs produced for the Document, Chunks included; ingest then chunks the new parse. A superseded Chunk loses its `index_text` and `embedding`, so it leaves the vector index and search never returns it.
 
-Old nodes are never deleted (ADR 0002): anything that cited them stays traceable, and two parses can be compared. The property is absent on current nodes. Organisation, Document and Run are shared across runs and never superseded; the Organisation and Document link by `PRODUCED_BY` to the Run that first created them, and a re-ingest only matches them.
+An embed Run sets the `embedding` of every current Chunk of its Document, never some of them, so its `PROCESSED` link to the Document says which Run made each vector: there is no link per Chunk. Its `config` names the model and the chunk Run it embedded. An embed Run vouches for the vectors of the current Chunks, so whatever replaces them ends it: a later embed Run, a re-chunk or a new parse marks it `superseded` with `SUPERSEDED_BY`, in the same transaction. A Document whose re-chunk stopped before its embed therefore has no current embed Run, rather than one naming Chunks that are gone.
 
-## Failed parses and chunk Runs
+Old nodes are never deleted (ADR 0002): anything that cited them stays traceable, and two parses can be compared. The property is absent on current nodes. Organisation and Document are shared across runs and never superseded, and of the Runs only embed Runs are; the Organisation and Document link by `PRODUCED_BY` to the Run that first created them, and a re-ingest only matches them.
 
-A parse that fails still leaves a Run, with `status = 'failed'` and `error` set (for example `RuntimeError: ...`). It writes no Pages or Sections and supersedes nothing, so the last good parse stays current. Reads use the latest succeeded parse Run only; a filing with no succeeded parse is not listed. A failed chunk Run works the same way: no Chunks, nothing superseded, the last good Chunks stay current.
+## Failed Runs
+
+A parse that fails still leaves a Run, with `status = 'failed'` and `error` set (for example `RuntimeError: ...`). It writes no Pages or Sections and supersedes nothing, so the last good parse stays current. Reads use the latest succeeded parse Run only; a filing with no succeeded parse is not listed. A failed chunk or embed Run works the same way: no Chunks or vectors written, nothing superseded, the last good ones stay current.
 
 ## Where section text lives
 
-In Paragraphs, grouped into Chunks. A Section holds only its heading: `title`, `page`, the heading's `bbox`, `level` (inferred from the heading's numbering, since Docling returns every heading at level 1) and `order` (document order, parents before children). A section runs from its heading to the next heading at the same or a higher level.
+In Chunks. A Section holds only its heading: `title`, `page`, the heading's `bbox`, `level` (inferred from the heading's numbering, since Docling returns every heading at level 1) and `order` (document order, parents before children). A section runs from its heading to the next heading at the same or a higher level.
 
-The body text is in the stored PDF (`data/documents/<sha256>.pdf`) and in Docling's full output, which every successful parse saves to `data/parses/<sha256>/<started_at>-docling.json` and names in `Run.output`. The chunk Run reads that file instead of parsing again (`bloomberg chunk <document id>` re-runs it). A section's paragraphs form one text Chunk under the `CHUNK_CAP` (2,000 cl100k tokens), split at numbered points, otherwise evenly between paragraphs; each table, joined across pages, is its own Chunk with one Paragraph holding its Markdown. A heading is a Paragraph at the start of the Chunk after it, so the Section's title is in its text and no text is lost when Docling takes a sentence for a heading; a heading with no content of its own joins the next Chunk. Paragraphs are the search unit; their embeddings arrive with #21's search.
+The body text is in the stored PDF (`data/documents/<sha256>.pdf`) and in Docling's full output, which every successful parse saves to `data/parses/<sha256>/<started_at>-docling.json` and names in `Run.output`. The chunk Run reads that file instead of parsing again (`bloomberg chunk <document id>` re-runs it). A section's paragraphs form one text Chunk under the `CHUNK_CAP` (2,000 cl100k tokens), split at numbered points, otherwise evenly between paragraphs; each table, joined across pages, is its own Chunk holding its Markdown. A table whose rows, read one line per row as search reads them, are over the `TABLE_CAP` (1,500 cl100k tokens) is cut evenly between rows; each part repeats the column header and the headings above the table, keeps the pages and boxes of its own rows, and shares a `table` id with the other parts (`part` of `parts`). A heading starts the Chunk after it, so the Section's title is in its text and no text is lost when Docling takes a sentence for a heading; a heading with no content of its own joins the next Chunk. Chunks are the search unit (ADR 0004).
 
 ## Why a Page has width and height
 

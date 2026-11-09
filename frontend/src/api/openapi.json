@@ -152,10 +152,219 @@
           }
         }
       }
+    },
+    "/api/search": {
+      "get": {
+        "summary": "Search Chunks",
+        "description": "The current Chunks nearest the query, best first.",
+        "operationId": "search_chunks_api_search_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "pattern": "\\S",
+              "title": "Q"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 10,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Chunk"
+                  },
+                  "title": "Response Search Chunks Api Search Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/chunks/{chunk_id}": {
+      "get": {
+        "summary": "Chunk",
+        "description": "One Chunk, current or not, so a search result's link keeps working after a re-chunk.",
+        "operationId": "chunk_api_chunks__chunk_id__get",
+        "parameters": [
+          {
+            "name": "chunk_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Chunk Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Chunk"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such chunk",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFound"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "Box": {
+        "properties": {
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "left": {
+            "type": "number",
+            "title": "Left"
+          },
+          "top": {
+            "type": "number",
+            "title": "Top"
+          },
+          "right": {
+            "type": "number",
+            "title": "Right"
+          },
+          "bottom": {
+            "type": "number",
+            "title": "Bottom"
+          }
+        },
+        "type": "object",
+        "required": [
+          "page",
+          "left",
+          "top",
+          "right",
+          "bottom"
+        ],
+        "title": "Box",
+        "description": "A region of a page in PDF points, top-left origin."
+      },
+      "Chunk": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "text",
+              "table"
+            ],
+            "title": "Kind"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "pages": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Pages"
+          },
+          "boxes": {
+            "items": {
+              "$ref": "#/components/schemas/Box"
+            },
+            "type": "array",
+            "title": "Boxes"
+          },
+          "section_path": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Section Path"
+          },
+          "table": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TablePart"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "document": {
+            "$ref": "#/components/schemas/DocumentRef"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "text",
+          "pages",
+          "boxes",
+          "section_path",
+          "document"
+        ],
+        "title": "Chunk",
+        "description": "A Chunk with where to find it: what search returns and the source viewer highlights."
+      },
       "DocType": {
         "type": "string",
         "enum": [
@@ -243,6 +452,32 @@
           "run"
         ],
         "title": "DocumentDetail"
+      },
+      "DocumentRef": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "issuer": {
+            "$ref": "#/components/schemas/Organisation"
+          },
+          "doc_type": {
+            "$ref": "#/components/schemas/DocType"
+          },
+          "fiscal_year": {
+            "type": "integer",
+            "title": "Fiscal Year"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "issuer",
+          "doc_type",
+          "fiscal_year"
+        ],
+        "title": "DocumentRef"
       },
       "DocumentSummary": {
         "properties": {
@@ -456,7 +691,8 @@
         "type": "string",
         "enum": [
           "parse",
-          "chunk"
+          "chunk",
+          "embed"
         ],
         "title": "RunStep",
         "description": "The processing steps a Run records (AGENTS.md); later steps add theirs."
@@ -524,6 +760,30 @@
           "bbox"
         ],
         "title": "Section"
+      },
+      "TablePart": {
+        "properties": {
+          "table_id": {
+            "type": "string",
+            "title": "Table Id"
+          },
+          "part": {
+            "type": "integer",
+            "title": "Part"
+          },
+          "parts": {
+            "type": "integer",
+            "title": "Parts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "table_id",
+          "part",
+          "parts"
+        ],
+        "title": "TablePart",
+        "description": "Which part of a split table a Chunk is: parts of one table share `table_id`."
       },
       "ValidationError": {
         "properties": {

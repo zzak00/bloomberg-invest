@@ -14,3 +14,11 @@ def test_an_unknown_parser_fails_naming_the_valid_choices():
     )
     with pytest.raises(ValueError, match="unknown parser 'nope', expected docling"):
         bootstrap.parser(settings)
+
+
+def test_an_unknown_embedder_fails_naming_the_valid_choices():
+    settings = Settings(
+        neo4j_uri="", neo4j_user="", neo4j_password="", data_dir=Path("."), embedder="nope"
+    )
+    with pytest.raises(ValueError, match="unknown embedder 'nope', expected qwen3-0.6b"):
+        bootstrap.embedder(settings)

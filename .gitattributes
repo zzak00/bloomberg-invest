@@ -1,4 +1,4 @@
 # Notebook outputs show pages of AMMC filings, which are not redistributed: strip them on commit.
-# Enable once per clone: cd backend && uv run --group notebook nbstripout --install --attributes ../.gitattributes
+# Enable once per clone: see "The pipeline notebook" in README.md (git config, uvx nbstripout).
 *.ipynb filter=nbstripout
 *.ipynb diff=ipynb

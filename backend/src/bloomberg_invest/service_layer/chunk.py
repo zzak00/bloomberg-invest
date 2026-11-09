@@ -8,7 +8,7 @@ from bloomberg_invest.adapters.files import DocumentFiles
 from bloomberg_invest.adapters.parsing import Parser
 from bloomberg_invest.adapters.store import GraphStore
 from bloomberg_invest.adapters.tokens import TokenCounter
-from bloomberg_invest.domain.chunking import SectionRef, chunk
+from bloomberg_invest.domain.chunking import Caps, SectionRef, chunk
 from bloomberg_invest.domain.model import RunInfo, RunStatus, RunStep
 from bloomberg_invest.views import Section
 
@@ -36,7 +36,7 @@ def chunk_document(
     files: DocumentFiles,
     parser: Parser,
     count: TokenCounter,
-    cap: int,
+    caps: Caps,
 ) -> Chunked:
     detail = store.get_document(document_id)
     if detail is None:
@@ -52,7 +52,8 @@ def chunk_document(
             tool=TOOL,
             tool_version=version("bloomberg-invest"),
             config={
-                "cap": str(cap),
+                "cap": str(caps.text),
+                "table_cap": str(caps.table),
                 "tokenizer": count.name,
                 "parse_run": detail.run.id,
                 "parser": f"{parser.tool} {parser.tool_version}",
@@ -65,15 +66,15 @@ def chunk_document(
 
     try:
         blocks = parser.read_blocks(files.data_dir / detail.run.output)
-        drafts = chunk(blocks, list(_section_refs(detail.sections)), cap, count)
+        drafts = chunk(blocks, list(_section_refs(detail.sections)), caps, count)
     except Exception as error:
         failed = run_info(RunStatus.failed, f"{type(error).__name__}: {error}")
         raise ChunkFailed(document_id, store.record_chunks(document_id, [], failed)) from error
     return Chunked(store.record_chunks(document_id, drafts, run_info()), len(drafts))
 
 
-def _section_refs(sections: list[Section]):
+def _section_refs(sections: list[Section], parent: str | None = None):
     """Sections in document order, parents before children."""
     for s in sections:
-        yield SectionRef(id=s.id, title=s.title, page=s.page)
-        yield from _section_refs(s.children)
+        yield SectionRef(id=s.id, title=s.title, page=s.page, parent=parent)
+        yield from _section_refs(s.children, s.id)

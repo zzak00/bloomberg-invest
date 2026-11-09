@@ -219,8 +219,14 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+embed = [
+    { name = "sentence-transformers" },
+    { name = "torch", version = "2.15.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'linux'" },
+    { name = "torch", version = "2.15.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform == 'linux'" },
+]
 ingest = [
     { name = "docling" },
+    { name = "sentence-transformers" },
     { name = "tiktoken" },
     { name = "torch", version = "2.15.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'linux'" },
     { name = "torch", version = "2.15.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform == 'linux'" },
@@ -242,26 +248,29 @@ notebook = [
     { name = "nbconvert" },
     { name = "nbstripout" },
     { name = "pandas" },
-    { name = "sentence-transformers" },
     { name = "transformers" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "bloomberg-invest", extras = ["embed"], marker = "extra == 'ingest'" },
     { name = "docling", marker = "extra == 'ingest'", specifier = "==2.145.0" },
     { name = "fastapi", specifier = ">=0.160" },
     { name = "neo4j", specifier = ">=6.3" },
     { name = "pillow", specifier = ">=11" },
     { name = "pydantic", specifier = ">=2.13" },
     { name = "pypdfium2", specifier = ">=5.14" },
+    { name = "sentence-transformers", marker = "extra == 'embed'", specifier = ">=5.1" },
     { name = "tiktoken", marker = "extra == 'ingest'", specifier = ">=0.12" },
+    { name = "torch", marker = "sys_platform == 'linux' and extra == 'embed'", index = "https://download.pytorch.org/whl/cpu" },
     { name = "torch", marker = "sys_platform == 'linux' and extra == 'ingest'", index = "https://download.pytorch.org/whl/cpu" },
+    { name = "torch", marker = "sys_platform != 'linux' and extra == 'embed'" },
     { name = "torch", marker = "sys_platform != 'linux' and extra == 'ingest'" },
     { name = "torchvision", marker = "sys_platform == 'linux' and extra == 'ingest'", index = "https://download.pytorch.org/whl/cpu" },
     { name = "torchvision", marker = "sys_platform != 'linux' and extra == 'ingest'" },
     { name = "uvicorn", specifier = ">=0.54" },
 ]
-provides-extras = ["ingest"]
+provides-extras = ["ingest", "embed"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -277,7 +286,6 @@ notebook = [
     { name = "nbconvert", specifier = ">=7.16" },
     { name = "nbstripout", specifier = ">=0.8" },
     { name = "pandas", specifier = ">=2.3" },
-    { name = "sentence-transformers", specifier = ">=5.1" },
     { name = "transformers", specifier = ">=4.51" },
 ]
 

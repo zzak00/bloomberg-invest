@@ -21,6 +21,9 @@
   --paper-secondary: #5e5b53;
   --paper-rule: #cfc8b8;
   --paper-control: #8c877b;
+  /* A highlighted chunk on paper: marker fill and its underline. */
+  --highlight: #ffe3a8;
+  --highlight-line: #9a5b00;
 
   --font-sans: "Hanken Grotesk", system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;

@@ -23,10 +23,13 @@ services:
     environment:
       NEO4J_URI: bolt://neo4j:7687
       NEO4J_PASSWORD: ${NEO4J_PASSWORD}
+      EMBEDDER: ${EMBEDDER:-qwen3-0.6b}
     volumes:
       # The API only reads stored PDFs; the only thing it writes is rendered page images.
       - ./data/documents:/data/documents:ro
       - ./data/pages:/data/pages
+      # The embedding model, shared with ingest: queries are embedded with the model Chunks were.
+      - models:/root/.cache
     depends_on:
       neo4j: { condition: service_healthy }
     healthcheck:
@@ -34,6 +37,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
+      # The first start downloads the embedding model (about 1.2 GB) before the API answers.
+      start_period: 10m
 
   web:
     build: frontend
@@ -46,23 +51,33 @@ services:
   ingest:
     profiles: ["tools"]
     build: { context: backend, target: ingest }
+    # One image for ingest, chunk and embed, so a rebuild can't leave one of them on old code.
+    image: bloomberg-invest-tools
     environment:
       NEO4J_URI: bolt://neo4j:7687
       NEO4J_PASSWORD: ${NEO4J_PASSWORD}
       PARSER: ${PARSER:-docling}
       CHUNK_CAP: ${CHUNK_CAP:-2000}
+      TABLE_CAP: ${TABLE_CAP:-1500}
+      EMBEDDER: ${EMBEDDER:-qwen3-0.6b}
       # tiktoken's encoding files, kept with Docling's models.
       TIKTOKEN_CACHE_DIR: /root/.cache/tiktoken
     volumes:
       - ./data:/data
-      - docling-models:/root/.cache
+      - models:/root/.cache
     depends_on:
       neo4j: { condition: service_healthy }
 
-  # Re-chunk an ingested filing from its saved parse: docker compose run --rm chunk <document id>
+  # Re-chunk an ingested filing from its saved parse, then embed the new Chunks:
+  # docker compose run --rm chunk <document id>
   chunk:
     extends: { service: ingest }
     entrypoint: ["bloomberg", "chunk"]
+
+  # Re-embed an ingested filing's Chunks: docker compose run --rm embed <document id>
+  embed:
+    extends: { service: ingest }
+    entrypoint: ["bloomberg", "embed"]
 
   # Throwaway database for the backend tests; its data lives in memory and goes with it.
   neo4j-test:
@@ -83,4 +98,4 @@ services:
 
 volumes:
   neo4j-data:
-  docling-models:
+  models:
