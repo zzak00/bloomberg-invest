@@ -2,7 +2,11 @@
 
 from neo4j import ManagedTransaction
 
-from bloomberg_invest.adapters.store.neo4j_store._cypher import EMBEDDABLE_CHUNKS, _create_run
+from bloomberg_invest.adapters.store.neo4j_store._cypher import (
+    CURRENT,
+    EMBEDDABLE_CHUNKS,
+    _create_run,
+)
 from bloomberg_invest.domain.model import (
     RunInfo,
     RunStatus,
@@ -51,12 +55,12 @@ def _supersede_embed_runs(tx: ManagedTransaction, run_id: str) -> None:
     re-parse or re-chunk supersedes the Chunks (removing their vectors), so each ends it.
     """
     tx.run(
-        """
-        MATCH (r:Run {id: $run_id})-[:PROCESSED]->(d)
-        MATCH (earlier:Run {step: $step, status: 'succeeded'})-[:PROCESSED]->(d)
-        WHERE earlier <> r AND coalesce(earlier.superseded, false) = false
-        SET earlier.superseded = true
-        CREATE (earlier)-[:SUPERSEDED_BY]->(r)
+        f"""
+        MATCH (r:Run {{id: $run_id}})-[:PROCESSED]->(d)
+        MATCH (n:Run {{step: $step, status: 'succeeded'}})-[:PROCESSED]->(d)
+        WHERE n <> r AND {CURRENT}
+        SET n.superseded = true
+        CREATE (n)-[:SUPERSEDED_BY]->(r)
         """,
         run_id=run_id,
         step=RunStep.embed.value,

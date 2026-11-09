@@ -23,7 +23,7 @@ from dataclasses import dataclass, replace
 from itertools import accumulate
 from typing import Literal
 
-from bloomberg_invest.domain import tables as table_text
+from bloomberg_invest.domain import tables
 
 # (page, left, top, right, bottom) in PDF points, top-left origin.
 Box = tuple[int, float, float, float, float]
@@ -100,9 +100,10 @@ def chunk(
 ) -> list[ChunkDraft]:
     """The document's Chunks in reading order."""
     groups: list[Group] = []
+    paths = _paths(sections)
     for section_id, items in _by_section(_join_tables(blocks), sections):
         texts: list[tuple[int, Block]] = []
-        tables: list[list[tuple[int, Block]]] = []
+        table_runs: list[list[tuple[int, Block]]] = []
         headings: list[tuple[int, Block]] = []
         for at, b in items:
             if b.kind == "heading":
@@ -111,15 +112,15 @@ def chunk(
                 texts += [*headings, (at, b)]
                 headings = []
             else:
-                tables.append([*headings, (at, b)])
+                table_runs.append([*headings, (at, b)])
                 headings = []
         texts += headings  # the document's last headings, with nothing after them
         for part in _split([b for _, b in texts], caps.text, count):
             first = next(at for at, b in texts if b is part[0])
             groups.append((first, "text", section_id, part, None))
-        for table in tables:
-            at, (*heads, block) = table[0][0], [b for _, b in table]
-            parts = _split_table(block, caps.table, count)
+        for run in table_runs:
+            at, (*heads, block) = run[0][0], [b for _, b in run]
+            parts = _split_table(block, heads, paths.get(section_id, ()), caps.table, count)
             for n, part in enumerate(parts, 1):
                 part = replace(part, text=_markdown(part))
                 # Later parts repeat the headings as context: their text, not their place.
@@ -127,7 +128,6 @@ def chunk(
                 groups.append((at, "table", section_id, [*context, part], (at, n, len(parts))))
 
     notes = _note_sections(sections)
-    paths = _paths(sections)
     chunks = []
     # Sorting is stable, so a table's parts keep their order.
     for index, (_, kind, section_id, part, of_table) in enumerate(
@@ -152,6 +152,13 @@ def chunk(
             )
         )
     return chunks
+
+
+def header_line(path: Sequence[str], pages: Sequence[int]) -> str:
+    """The index text's first line (indexing.py): the section path, then the pages."""
+    first, last = pages[0], pages[-1]
+    where = f"p. {first}" if first == last else f"pp. {first}-{last}"
+    return f"{' > '.join(path)} · {where}" if path else where
 
 
 def _paths(sections: Sequence[SectionRef]) -> dict[str | None, tuple[str, ...]]:
@@ -240,29 +247,30 @@ def _split(paragraphs: list[Block], cap: int, count: TokenCount) -> list[list[Bl
 def _even(paragraphs: list[Block], cap: int, count: TokenCount) -> list[list[Block]]:
     """The fewest parts under the cap, each cut where the running total is closest to an even
     share."""
-    cuts = _even_cuts(
-        [count(p.text) for p in paragraphs],
-        lambda a, b: b - a == 1 or _size(paragraphs[a:b], count) <= cap,
-        cap,
-    )
+    sizes = [count(p.text) for p in paragraphs]
+    cuts = _even_cuts(sizes, lambda a, b: _size(paragraphs[a:b], count), cap)
     return [paragraphs[a:b] for a, b in cuts]
 
 
-def _split_table(table: Block, cap: int, count: TokenCount) -> list[Block]:
-    """The table in the fewest parts whose lines fit the cap, cut between rows; a row over the
-    cap is a part of its own."""
-    head = table_text.corner(table.header)
-    lines = table_text.row_lines(table.header, table.rows)
+def _split_table(
+    table: Block, heads: list[Block], path: tuple[str, ...], cap: int, count: TokenCount
+) -> list[Block]:
+    """The table in the fewest parts whose embedded text fits the cap, cut between rows; a row
+    over the cap is a part of its own. A part is measured as indexing.py writes it: the header
+    line, the headings above the table, then the table one line per row."""
+    corner = tables.corner(table.header)
+    lines = tables.row_lines(table.header, table.rows)
+    pages = table.pages_of_rows
+    head_pages = {p for h in heads for p in h.pages}
 
     def size(a: int, b: int) -> int:
-        return count("\n".join([head, *lines[a:b]]))
+        rows = "\n".join(filter(None, [corner, *lines[a:b]]))
+        header = header_line(path, sorted(head_pages | set(pages[a:b])))
+        return count(f"{header}\n" + "\n\n".join([*(h.text for h in heads if h.text), rows]))
 
     if not lines or size(0, len(lines)) <= cap:
         return [table]
-    cuts = _even_cuts(
-        [count(line) for line in lines], lambda a, b: b - a == 1 or size(a, b) <= cap, cap
-    )
-    pages = table.pages_of_rows
+    cuts = _even_cuts([count(line) for line in lines], size, cap)
     parts = []
     for a, b in cuts:
         on = tuple(sorted(set(pages[a:b])))
@@ -280,10 +288,11 @@ def _split_table(table: Block, cap: int, count: TokenCount) -> list[Block]:
 
 
 def _even_cuts(
-    sizes: list[int], fits: Callable[[int, int], bool], cap: int
+    sizes: list[int], size: Callable[[int, int], int], cap: int
 ) -> list[tuple[int, int]]:
-    """Cut `sizes` into the fewest runs that fit, each cut where the running total is closest to
-    an even share; as a last resort, one item per run."""
+    """Cut `sizes` into the fewest runs whose `size(a, b)` fits the cap (a run of one always
+    fits), each cut where the running total is closest to an even share; as a last resort, one
+    item per run."""
     total, running = sum(sizes), list(accumulate(sizes))
     for n in range(max(1, math.ceil(total / cap)), len(sizes) + 1):
         cuts = [0]
@@ -291,8 +300,8 @@ def _even_cuts(
             # Leave at least one item for each run still to come.
             candidates = range(cuts[-1] + 1, len(sizes) - (n - k) + 1)
             cuts.append(min(candidates, key=lambda i: abs(running[i - 1] - total * k / n)))
-        runs = list(zip(cuts, [*cuts[1:], len(sizes)]))
-        if all(fits(a, b) for a, b in runs):
+        runs = list(zip(cuts, [*cuts[1:], len(sizes)], strict=True))
+        if all(b - a == 1 or size(a, b) <= cap for a, b in runs):
             return runs
     return [(i, i + 1) for i in range(len(sizes))]
 

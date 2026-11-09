@@ -1,6 +1,6 @@
 # Graph schema
 
-The nodes and relationships that `Neo4jStore.record_parse`, `record_chunks` and `record_embeddings` (`backend/src/bloomberg_invest/adapters/store/neo4j_store.py`) write for one ingested filing. Update this file when the store writes a new label, property or relationship.
+The nodes and relationships that `Neo4jStore.record_parse`, `record_chunks` and `record_embeddings` (`backend/src/bloomberg_invest/adapters/store/neo4j_store/`) write for one ingested filing. Update this file when the store writes a new label, property or relationship.
 
 ```mermaid
 erDiagram

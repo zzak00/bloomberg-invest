@@ -9,7 +9,7 @@ column name, so a single figure can match a question.
 from dataclasses import dataclass
 
 from bloomberg_invest.domain import tables
-from bloomberg_invest.domain.chunking import Block, ChunkDraft
+from bloomberg_invest.domain.chunking import Block, ChunkDraft, header_line
 
 
 @dataclass(frozen=True)
@@ -25,9 +25,7 @@ def index_text(chunk: ChunkDraft) -> str:
 
 
 def header(chunk: ChunkDraft) -> str:
-    first, last = chunk.pages[0], chunk.pages[-1]
-    pages = f"p. {first}" if first == last else f"pp. {first}-{last}"
-    return f"{' > '.join(chunk.path)} · {pages}" if chunk.path else pages
+    return header_line(chunk.path, chunk.pages)
 
 
 def block_text(block: Block) -> str:

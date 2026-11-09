@@ -85,8 +85,20 @@ def test_a_long_table_splits_between_rows_each_part_repeating_its_header():
             "| a | b | c |",
             "| --- | --- | --- |",
         ]
-        assert words(index_text(p)) <= 300 + 10, "the index text fits the cap, header aside"
+        assert words(index_text(p)) <= 300, "all the embedded text fits the cap"
     assert [r for p in parts for r in p.text.splitlines()[4:]] == rows, "every row, once, in order"
+
+
+def test_a_table_is_measured_as_embedded_with_its_header_and_headings():
+    rows = ["| 1 | 2 | 3 |"] * 4
+    # The rows read 1 + 4 x 6 = 25 words: under the cap alone, but the index text adds the
+    # header "1. RÉSULTATS · p. 1" and the heading "1. RÉSULTATS": 32 words in all.
+    parts = chunk(
+        [heading("1. RÉSULTATS"), table("| a | b | c |", rows)], SECTIONS, caps(50, 25), words
+    )
+
+    assert len(parts) == 2
+    assert all(words(index_text(p)) <= 25 for p in parts)
 
 
 def test_a_split_table_part_keeps_only_the_pages_and_boxes_of_its_rows():
@@ -97,8 +109,9 @@ def test_a_split_table_part_keeps_only_the_pages_and_boxes_of_its_rows():
         replace(table("| a | b | c |", page_1, page=1), boxes=((1, 0.0, 400.0, 500.0, 800.0),)),
         replace(table("| a | b | c |", page_2, page=2), boxes=((2, 0.0, 50.0, 500.0, 300.0),)),
     ]
-    # Each row reads "1: b 2 · c 3", six words, after the corner cell "a": three rows fit 19.
-    first, second = chunk(blocks, SECTIONS, caps(50, 19), words)
+    # A part's index text: the header "1. RÉSULTATS · p. 1" (5 words), the heading (2), the
+    # corner cell "a" (1), then rows of six words, "1: b 2 · c 3". Three rows fit 26.
+    first, second = chunk(blocks, SECTIONS, caps(50, 26), words)
 
     assert (first.pages, second.pages) == ((1,), (2,))
     assert [b.boxes for b in first.paragraphs if b.kind == "table"] == [

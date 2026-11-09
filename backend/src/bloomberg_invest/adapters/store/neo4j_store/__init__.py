@@ -110,6 +110,9 @@ class Neo4jStore(GraphStore):
             """,
             id=document_id,
         )
+        # A chunk Run supersedes every earlier one's Chunks in its own transaction.
+        if len(records) > 1:
+            raise RuntimeError(f"current Chunks of {document_id} come from {len(records)} Runs")
         return records[0]["id"] if records else None
 
     def search_vector(self, vector: list[float], limit: int) -> list[str]:
