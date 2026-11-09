@@ -5,7 +5,7 @@ import { HeaderSearch } from "./Search";
 /** Each tab, and the other paths that belong to it (a filing opened from the index). */
 const NAV = [
   { to: "/map", label: "Map", also: [] },
-  { to: "/index", label: "Index", also: ["/documents/"] },
+  { to: "/index", label: "Index", also: ["/documents/", "/companies/"] },
   { to: "/checks", label: "Checks", also: [] },
   { to: "/kpis", label: "KPIs", also: [] },
 ];

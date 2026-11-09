@@ -112,6 +112,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/companies/{isin}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Company Dossier
+         * @description The issuer's filings, and the statements its figures are grouped by.
+         */
+        get: operations["company_dossier_api_companies__isin__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/companies/{isin}/figures": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Company Figures
+         * @description The issuer's current financial figures, each with the Passage it was checked against.
+         */
+        get: operations["company_figures_api_companies__isin__figures_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/facts/{fact_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Fact
+         * @description One financial figure, current or not, so a link to it keeps working after a re-run.
+         */
+        get: operations["fact_api_facts__fact_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -154,6 +214,17 @@ export interface components {
             section_path: string[];
             table?: components["schemas"]["TablePart"] | null;
             document: components["schemas"]["DocumentRef"];
+        };
+        /**
+         * Company
+         * @description An issuer's dossier: its filings, and how its figures are grouped.
+         */
+        Company: {
+            issuer: components["schemas"]["Organisation"];
+            /** Documents */
+            documents: components["schemas"]["DocumentSummary"][];
+            /** Statements */
+            statements: components["schemas"]["Statement"][];
         };
         /**
          * DocType
@@ -216,6 +287,56 @@ export interface components {
              */
             ingested_at: string;
         };
+        /**
+         * Figure
+         * @description A financial figure Fact (#19 R5, R6): checked against its Passage before it was stored.
+         */
+        Figure: {
+            /** Id */
+            id: string;
+            /** Line Item */
+            line_item: string;
+            /** Line Item Title */
+            line_item_title: string;
+            /** Statement */
+            statement: string;
+            /** Label */
+            label: string;
+            /** Value */
+            value: string;
+            /** Value As Written */
+            value_as_written: string;
+            /** Unit */
+            unit: string;
+            /** Scale */
+            scale: number;
+            /** Currency */
+            currency: string | null;
+            /** Fiscal Year */
+            fiscal_year: number;
+            /** Period Start */
+            period_start: string | null;
+            /** Period End */
+            period_end: string | null;
+            /** As Of */
+            as_of: string | null;
+            /**
+             * Basis Scope
+             * @enum {string}
+             */
+            basis_scope: "consolidated" | "company-only";
+            /** Basis Standard */
+            basis_standard: string;
+            /** Breakdown */
+            breakdown: string;
+            /**
+             * Recorded At
+             * Format: date-time
+             */
+            recorded_at: string;
+            document: components["schemas"]["DocumentRef"];
+            passage: components["schemas"]["Passage"];
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -245,6 +366,25 @@ export interface components {
             width: number;
             /** Height */
             height: number;
+        };
+        /**
+         * Passage
+         * @description The exact span a Fact cites: a table cell, or a quoted range of a paragraph.
+         */
+        Passage: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "cell" | "span";
+            /** Page */
+            page: number;
+            /** Boxes */
+            boxes: components["schemas"]["Box"][];
+            /** Text */
+            text: string;
+            /** Quote */
+            quote?: string | null;
         };
         /** Run */
         Run: {
@@ -286,7 +426,7 @@ export interface components {
          * @description The processing steps a Run records (AGENTS.md); later steps add theirs.
          * @enum {string}
          */
-        RunStep: "parse" | "chunk" | "embed";
+        RunStep: "parse" | "chunk" | "embed" | "extract";
         /** Section */
         Section: {
             /** Id */
@@ -309,6 +449,15 @@ export interface components {
              * @default []
              */
             children: components["schemas"]["Section"][];
+        };
+        /** Statement */
+        Statement: {
+            /** Key */
+            key: string;
+            /** Title */
+            title: string;
+            /** Line Items */
+            line_items: string[];
         };
         /**
          * TablePart
@@ -520,6 +669,126 @@ export interface operations {
                 };
             };
             /** @description No such chunk */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotFound"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    company_dossier_api_companies__isin__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                isin: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Company"];
+                };
+            };
+            /** @description No filing from an issuer with this ISIN */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotFound"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    company_figures_api_companies__isin__figures_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                isin: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Figure"][];
+                };
+            };
+            /** @description No filing from an issuer with this ISIN */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotFound"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    fact_api_facts__fact_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                fact_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Figure"];
+                };
+            };
+            /** @description No such financial figure */
             404: {
                 headers: {
                     [name: string]: unknown;

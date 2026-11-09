@@ -11,6 +11,7 @@ import { createRoot } from "react-dom/client";
 import { createBrowserRouter, Navigate, RouterProvider } from "react-router";
 
 import { Shell } from "./Shell";
+import { CompanyPage } from "./pages/CompanyPage";
 import { DocumentPage } from "./pages/DocumentPage";
 import { EmptyPage } from "./pages/EmptyPage";
 import { IndexPage } from "./pages/IndexPage";
@@ -23,6 +24,7 @@ const router = createBrowserRouter([
       { index: true, element: <Navigate to="/index" replace /> },
       { path: "index", element: <IndexPage /> },
       { path: "documents/:documentId", element: <DocumentPage /> },
+      { path: "companies/:isin", element: <CompanyPage /> },
       { path: "search", element: <SearchPage /> },
       {
         path: "map",

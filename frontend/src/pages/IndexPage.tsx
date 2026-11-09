@@ -53,20 +53,27 @@ export function IndexPage() {
               [0, 1].map((i) => <li key={i} className="skeleton" aria-hidden="true" />)}
             {documents.state === "ready" &&
               documents.data.map((doc) => (
-                <li key={doc.id}>
-                  <Link className="table-row" to={`/documents/${doc.id}`}>
-                    <span>
-                      <span className="cell-name">{doc.issuer.name}</span>
-                      <span className="cell-sub">{doc.issuer.isin}</span>
-                    </span>
-                    <span className="col-type">
+                <li key={doc.id} className="table-row row-link">
+                  <span>
+                    <Link className="cell-name cell-link" to={`/companies/${doc.issuer.isin}`}>
+                      {doc.issuer.name}
+                    </Link>
+                    <span className="cell-sub">{doc.issuer.isin}</span>
+                  </span>
+                  <span className="col-type">
+                    {/* Covers the whole row: the row opens the filing, the name opens the dossier. */}
+                    <Link
+                      className="row-link-target"
+                      to={`/documents/${doc.id}`}
+                      aria-label={`${doc.issuer.name}, ${DOC_TYPE_LABELS[doc.doc_type]} FY${doc.fiscal_year}`}
+                    >
                       {DOC_TYPE_LABELS[doc.doc_type]}
-                      <span className="cell-sub">{doc.regulator}</span>
-                    </span>
-                    <span className="cell-mono num">FY{doc.fiscal_year}</span>
-                    <span className="cell-mono num">{doc.page_count} p.</span>
-                    <span className="cell-mono num col-ingested">{formatDateTime(doc.ingested_at)}</span>
-                  </Link>
+                    </Link>
+                    <span className="cell-sub">{doc.regulator}</span>
+                  </span>
+                  <span className="cell-mono num">FY{doc.fiscal_year}</span>
+                  <span className="cell-mono num">{doc.page_count} p.</span>
+                  <span className="cell-mono num col-ingested">{formatDateTime(doc.ingested_at)}</span>
                 </li>
               ))}
           </ul>
