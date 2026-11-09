@@ -51,9 +51,32 @@ class SectionNode(BaseModel):
     children: list["SectionNode"] = []
 
 
+class TableCell(BaseModel):
+    """One cell of a table as the parser read it: a Passage a figure can cite (#19 R1, R6)."""
+
+    row: int = Field(ge=0)
+    col: int = Field(ge=0)
+    row_span: int = Field(default=1, ge=1)
+    col_span: int = Field(default=1, ge=1)
+    text: str
+    page: int = Field(ge=1)
+    bbox: Bbox
+    column_header: bool = False
+    row_header: bool = False
+
+
+class ParsedTable(BaseModel):
+    """A table on one page, as the parser found it; the chunker joins continued tables."""
+
+    page: int = Field(ge=1)
+    bbox: Bbox | None = None
+    cells: list[TableCell]
+
+
 class ParsedDocument(BaseModel):
     pages: list[PageInfo] = Field(min_length=1)
     sections: list[SectionNode]
+    tables: list[ParsedTable] = []
 
     @model_validator(mode="after")
     def _sections_sit_on_parsed_pages(self) -> "ParsedDocument":
@@ -64,6 +87,10 @@ class ParsedDocument(BaseModel):
             if section.page not in numbers:
                 raise ValueError(section_not_on_parsed_page(section.title, section.page))
             stack.extend(section.children)
+        for table in self.tables:
+            for page in {table.page} | {c.page for c in table.cells}:
+                if page not in numbers:
+                    raise ValueError(f"a table cell is on page {page}, not parsed")
         return self
 
 
@@ -78,6 +105,7 @@ class RunStep(StrEnum):
     parse = "parse"
     chunk = "chunk"
     embed = "embed"
+    extract = "extract"
 
 
 class RunStatus(StrEnum):

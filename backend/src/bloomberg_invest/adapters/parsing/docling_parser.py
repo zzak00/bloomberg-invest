@@ -20,7 +20,7 @@ from bloomberg_invest.adapters.parsing import Parser
 from bloomberg_invest.adapters.parsing.furniture import Furniture
 from bloomberg_invest.adapters.parsing.outline import Heading, build_outline
 from bloomberg_invest.domain.chunking import Block
-from bloomberg_invest.domain.model import PageInfo, ParsedDocument
+from bloomberg_invest.domain.model import PageInfo, ParsedDocument, ParsedTable, TableCell
 
 HEADINGS = {DocItemLabel.TITLE, DocItemLabel.SECTION_HEADER}
 TEXTS = {
@@ -78,8 +78,11 @@ class DoclingParser(Parser):
                     bbox=(box.l, box.t, box.r, box.b),
                 )
             )
+        heights = {number: page.height for number, page in pages.items()}
         return ParsedDocument(
-            pages=[pages[n] for n in sorted(pages)], sections=build_outline(headings)
+            pages=[pages[n] for n in sorted(pages)],
+            sections=build_outline(headings),
+            tables=[_table(t, heights) for t in document.tables if t.prov],
         )
 
     def read_blocks(self, output: Path) -> list[Block]:
@@ -123,6 +126,40 @@ class DoclingParser(Parser):
                 )
                 blocks.append(Block(kind="text", text=item.text, numbered=numbered, **where))
         return blocks
+
+
+def _table(table: TableItem, heights: dict[int, float]) -> ParsedTable:
+    """A table and its cells, each cell on the page whose part of the table holds it."""
+    parts = [
+        (p.page_no, p.bbox.to_top_left_origin(page_height=heights[p.page_no])) for p in table.prov
+    ]
+
+    def page_of(box) -> int:
+        x, y = (box.l + box.r) / 2, (box.t + box.b) / 2
+        inside = (n for n, b in parts if b.l <= x <= b.r and b.t <= y <= b.b)
+        return next(inside, parts[0][0])
+
+    cells = []
+    for cell in table.data.table_cells:
+        if cell.bbox is None:
+            continue
+        page = parts[0][0] if len(parts) == 1 else page_of(cell.bbox)
+        box = cell.bbox.to_top_left_origin(page_height=heights[page])
+        cells.append(
+            TableCell(
+                row=cell.start_row_offset_idx,
+                col=cell.start_col_offset_idx,
+                row_span=cell.row_span,
+                col_span=cell.col_span,
+                text=cell.text,
+                page=page,
+                bbox=_ltrb(box),
+                column_header=cell.column_header,
+                row_header=cell.row_header,
+            )
+        )
+    page, box = parts[0]
+    return ParsedTable(page=page, bbox=_ltrb(box), cells=cells)
 
 
 def _ltrb(box) -> tuple[float, float, float, float]:

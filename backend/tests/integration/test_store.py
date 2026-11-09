@@ -20,6 +20,11 @@ def test_schema_creates_the_uniqueness_constraints(store, driver):
         ("Organisation", "isin"),
         ("Section", "id"),
         ("Chunk", "id"),
+        ("Table", "id"),
+        ("Cell", "id"),
+        ("Fact", "id"),
+        ("RejectedFigure", "id"),
+        ("Span", "id"),
     } <= found
 
 
@@ -151,7 +156,8 @@ def test_re_ingesting_the_same_pdf_supersedes_the_previous_run(store, meta, pars
         RETURN count(old) AS superseded, collect(DISTINCT r.started_at.minute) AS by
         """
     )
-    assert records[0]["superseded"] == 3 + 4
+    # The first parse's 3 Pages, 4 Sections, 1 Table and its 9 Cells.
+    assert records[0]["superseded"] == 3 + 4 + 1 + 9
     assert records[0]["by"] == [10]
 
 
@@ -202,3 +208,41 @@ def test_a_section_without_its_page_fails_the_whole_parse(store, meta, parsed):
     with pytest.raises(ValueError, match="1.1 En dirham.*page 2"):
         store.record_parse(meta, broken, make_run(), SHA)
     assert store.list_documents() == []
+
+
+def test_tables_keep_their_cells_with_page_and_box_as_passages(store, meta, parsed, driver):
+    document_id = store.record_parse(meta, parsed, make_run(), SHA)
+
+    cells = store.cells(document_id)
+    assert [(c.row, c.col, c.text) for c in cells[:4]] == [
+        (0, 0, "(En millions MAD)"),
+        (0, 1, "31-déc.-24"),
+        (0, 2, "31-déc.-25"),
+        (1, 0, "Chiffre d'affaires"),
+    ]
+    revenue = next(c for c in cells if c.text == "36 681")
+    assert (revenue.table, revenue.page, revenue.bbox) == (0, 2, (380.0, 140.0, 540.0, 156.0))
+    records, _, _ = driver.execute_query(
+        """
+        MATCH (d:Document {id: $id})-[:HAS_TABLE]->(t:Table)-[:HAS_CELL]->(c:Cell:Passage)
+        MATCH (c)-[:ON_PAGE]->(p:Page), (c)-[:PRODUCED_BY]->(r:Run {step: 'parse'})
+        MATCH (t)-[:PRODUCED_BY]->(r)
+        RETURN count(c) AS cells, collect(DISTINCT p.number) AS pages
+        """,
+        id=document_id,
+    )
+    assert (records[0]["cells"], records[0]["pages"]) == (9, [2])
+
+
+def test_re_parsing_supersedes_the_old_cells(store, meta, parsed, driver):
+    document_id = store.record_parse(meta, parsed, make_run(0), SHA)
+    old = {c.id for c in store.cells(document_id)}
+    store.record_parse(meta, parsed, make_run(10), SHA)
+
+    current = store.cells(document_id)
+    assert len(current) == 9
+    assert not old & {c.id for c in current}
+    records, _, _ = driver.execute_query(
+        "MATCH (c:Cell) WHERE c.id IN $old AND c.superseded RETURN count(c) AS n", old=list(old)
+    )
+    assert records[0]["n"] == 9

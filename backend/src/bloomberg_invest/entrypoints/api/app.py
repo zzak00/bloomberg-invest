@@ -8,13 +8,14 @@ from fastapi import FastAPI, HTTPException, Path, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from bloomberg_invest import bootstrap
+from bloomberg_invest import bootstrap, config
 from bloomberg_invest.adapters.embedding import Embedder
 from bloomberg_invest.adapters.files import DocumentFiles
 from bloomberg_invest.adapters.store import GraphStore
+from bloomberg_invest.service_layer.company import company
 from bloomberg_invest.service_layer.search import search
 from bloomberg_invest.settings import Settings
-from bloomberg_invest.views import Chunk, DocumentDetail, DocumentSummary
+from bloomberg_invest.views import Chunk, Company, DocumentDetail, DocumentSummary, Figure
 
 
 class NotFound(BaseModel):
@@ -23,6 +24,8 @@ class NotFound(BaseModel):
 
 NOT_FOUND = {404: {"model": NotFound, "description": "No such document, or no such page in it"}}
 NO_CHUNK = {404: {"model": NotFound, "description": "No such chunk"}}
+NO_COMPANY = {404: {"model": NotFound, "description": "No filing from an issuer with this ISIN"}}
+NO_FACT = {404: {"model": NotFound, "description": "No such financial figure"}}
 
 
 def create_app(
@@ -112,6 +115,31 @@ def create_app(
         if not found:
             raise HTTPException(404, "Chunk not found")
         return found[0]
+
+    def get_company(isin: str) -> Company:
+        found = company(isin, get_store(), config.label_map())
+        if found is None:
+            raise HTTPException(404, "Company not found")
+        return found
+
+    @app.get("/api/companies/{isin}", responses=NO_COMPANY)
+    def company_dossier(isin: str) -> Company:
+        """The issuer's filings, and the statements its figures are grouped by."""
+        return get_company(isin)
+
+    @app.get("/api/companies/{isin}/figures", responses=NO_COMPANY)
+    def company_figures(isin: str) -> list[Figure]:
+        """The issuer's current financial figures, each with the Passage it was checked against."""
+        get_company(isin)
+        return get_store().figures(isin)
+
+    @app.get("/api/facts/{fact_id}", responses=NO_FACT)
+    def fact(fact_id: str) -> Figure:
+        """One financial figure, current or not, so a link to it keeps working after a re-run."""
+        found = get_store().fact(fact_id)
+        if found is None:
+            raise HTTPException(404, "Fact not found")
+        return found
 
     return app
 

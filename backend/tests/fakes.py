@@ -1,6 +1,11 @@
 """Fakes for service tests: plain classes that pass the same contracts as the real adapters."""
 
+import html
+import re
 from pathlib import Path
+
+from bloomberg_invest import config
+from bloomberg_invest.service_layer.extract import Extraction
 
 
 class WordCounter:
@@ -59,3 +64,50 @@ class FakeEmbedder:
             v[sum(map(ord, word)) % self.dims] += 1.0
         norm = sum(x * x for x in v) ** 0.5 or 1.0
         return [x / norm for x in v]
+
+
+class PageReadingLLM:
+    """Answers extraction prompts the way the real model does, from the page it is shown.
+
+    `figures` maps a value as written to the fields the model would return for it; each value
+    found in a table cell or a paragraph of the page comes back citing that cell or paragraph.
+    """
+
+    tool = "fake-llm"
+    tool_version = "1.0"
+    model = "fake-model"
+
+    def __init__(self, figures: dict[str, dict], broken: bool = False) -> None:
+        self.config = {"deployment": "fake-model"}
+        self.figures = figures
+        self.broken = broken
+        self.pages: list[str] = []
+
+    def complete_json(self, system: str, user: str, schema_name: str, schema: dict) -> dict:
+        if self.broken:
+            raise RuntimeError("the deployment answered 429 Too Many Requests")
+        self.pages.append(user.splitlines()[0])
+        found = []
+        for value, fields in self.figures.items():
+            cell = rf'<td id="([^"]+)"[^>]*>{re.escape(html.escape(value))}</td>'
+            paragraphs = re.findall(r"^\[(p[\d.]+)\] (.*)$", user, re.MULTILINE)
+            cited = re.findall(cell, user) + [p for p, text in paragraphs if value in text]
+            for source_id in cited:
+                found.append(
+                    {
+                        "line_item": "revenue",
+                        "fiscal_year": 2025,
+                        "basis_scope": "consolidated",
+                        "breakdown": "",
+                        "unit_scale": "MAD millions",
+                        **fields,
+                        "source_id": source_id,
+                        "value_as_written": fields.get("value_as_written", value),
+                    }
+                )
+        return {"figures": found}
+
+
+def fake_extraction(figures: dict[str, dict] | None = None) -> Extraction:
+    """Extraction by `PageReadingLLM`, with the real label map and prompt."""
+    return Extraction(PageReadingLLM(figures or {}), config.label_map(), config.extract_prompt())

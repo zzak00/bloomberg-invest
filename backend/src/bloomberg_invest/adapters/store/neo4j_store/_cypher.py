@@ -10,7 +10,13 @@ from bloomberg_invest.domain.model import (
     RunInfo,
 )
 
-CURRENT = "coalesce(n.superseded, false) = false"
+
+def current(var: str = "n") -> str:
+    """The node bound to `var` is not Superseded (ADR 0002)."""
+    return f"coalesce({var}.superseded, false) = false"
+
+
+CURRENT = current()
 
 
 # The Document's Chunks an embed Run must cover, bound to `n`; `d` is the Document.
@@ -68,3 +74,21 @@ def _create_run(tx: ManagedTransaction, document_id: str, run: RunInfo) -> str:
     if created is None:
         raise LookupError(f"no document {document_id}")
     return run_id
+
+
+def _supersede_step(tx: ManagedTransaction, run_id: str, step: str) -> None:
+    """Supersede what earlier Runs of the same step produced for the Document, by `run_id`.
+
+    Only that step's outputs: a chunk Run leaves the parse's Pages and Sections current.
+    """
+    tx.run(
+        f"""
+        MATCH (r:Run {{id: $run_id}})-[:PROCESSED]->(d)
+        MATCH (n)-[:PRODUCED_BY]->(earlier:Run {{step: $step}})-[:PROCESSED]->(d)
+        WHERE earlier <> r AND {CURRENT}
+        {SUPERSEDE}
+        CREATE (n)-[:SUPERSEDED_BY]->(r)
+        """,
+        run_id=run_id,
+        step=step,
+    )
