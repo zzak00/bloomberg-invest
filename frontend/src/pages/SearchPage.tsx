@@ -4,17 +4,16 @@ import { ApiError } from "../ApiError";
 import { api, type Chunk } from "../api/client";
 import { useApi } from "../api/useApi";
 import { DOC_TYPE_LABELS, pagesLabel, snippet } from "../format";
-import { SearchField, useQuery } from "../Search";
+import { SearchField, useSearchQuery } from "../Search";
 
 const LIMIT = 20;
 
 /** Search results: the passages of every filing closest to the query in meaning. */
 export function SearchPage() {
-  const query = useQuery().trim();
-  const results = useApi(`search:${query}`, () =>
-    query
-      ? api.GET("/api/search", { params: { query: { q: query, limit: LIMIT } } })
-      : Promise.resolve({ data: [] as Chunk[], response: new Response() }),
+  const query = useSearchQuery().trim();
+  const results = useApi(
+    `search:${query}`,
+    query ? () => api.GET("/api/search", { params: { query: { q: query, limit: LIMIT } } }) : null,
   );
   const count = results.state === "ready" ? results.data.length : 0;
 
@@ -84,7 +83,7 @@ function Result({ chunk }: { chunk: Chunk }) {
         <span className="result-meta">
           <span>{where}</span>
           <span className="num nowrap">{pagesLabel(chunk.pages)}</span>
-          <span className="result-kind">{chunk.kind === "table" ? "TABLE" : "TEXT"}</span>
+          <span className="result-kind">{kindLabel(chunk)}</span>
         </span>
         <span className="result-path" title={path.join(" › ")}>
           <span className="result-path-parent">{parent}</span>
@@ -94,4 +93,11 @@ function Result({ chunk }: { chunk: Chunk }) {
       </Link>
     </li>
   );
+}
+
+/** "TEXT", "TABLE", or for a part of a long table "TABLE · PART 2 OF 3". */
+function kindLabel(chunk: Chunk): string {
+  if (chunk.kind === "text") return "TEXT";
+  const t = chunk.table;
+  return t && t.parts > 1 ? `TABLE · PART ${t.part} OF ${t.parts}` : "TABLE";
 }

@@ -18,10 +18,11 @@ export function DocumentPage() {
   );
   // The passage a search result opened, highlighted on its pages.
   const chunkId = params.get("chunk");
-  const chunk = useApi(`chunk:${chunkId}`, () =>
+  const chunk = useApi(
+    `chunk:${chunkId}`,
     chunkId
-      ? api.GET("/api/chunks/{chunk_id}", { params: { path: { chunk_id: chunkId } } })
-      : Promise.resolve({ data: undefined, response: new Response(null, { status: 204 }) }),
+      ? () => api.GET("/api/chunks/{chunk_id}", { params: { path: { chunk_id: chunkId } } })
+      : null,
   );
   const firstMark = useRef<HTMLSpanElement>(null);
   // Bring the highlight into view once it is drawn: the page's size is known before its image
@@ -31,7 +32,10 @@ export function DocumentPage() {
     if (drawn) firstMark.current?.scrollIntoView({ block: "center" });
   }, [drawn]);
 
-  if (document.state === "loading") {
+  // A link to a passage with no page: its page comes with the chunk, so wait for it rather than
+  // show page 1 first.
+  const pageFromChunk = chunkId !== null && !params.has("page") && chunk.state === "loading";
+  if (document.state === "loading" || pageFromChunk) {
     return (
       <div className="state" aria-busy="true">
         <div className="micro">LOADING THE FILING…</div>

@@ -129,6 +129,34 @@ try {
     check(vp.name, "the passage bar names it", /Dividende/.test(await page.getByRole("status").innerText()));
     await shot("06-search-result");
 
+    // A link to a passage with no page waits for the passage: on a slow network the viewer must
+    // not show page 1 first.
+    const passageUrl = new URL(page.url());
+    passageUrl.searchParams.delete("page");
+    const fetched = [];
+    const onRequest = (r) => {
+      const n = r.url().match(/\/pages\/(\d+)\.png/);
+      if (n) fetched.push(Number(n[1]));
+    };
+    await page.route("**/api/chunks/**", async (route) => {
+      await new Promise((done) => setTimeout(done, 1500));
+      await route.continue();
+    });
+    page.on("request", onRequest);
+    await page.goto(passageUrl.href);
+    await page.locator(".paper-sheet .mark").first().waitFor();
+    page.off("request", onRequest);
+    await page.unroute("**/api/chunks/**");
+    check(vp.name, "a passage link opens on its page, never page 1 first", fetched.join() === "10", `pages fetched: ${fetched.join(", ")}`);
+
+    // A long table is split between rows; its parts say which part they are.
+    await page.goto(`${base}/search?q=${encodeURIComponent("compte de produits et charges")}`);
+    const part = page.locator(".result-kind", { hasText: /^TABLE · PART \d+ OF \d+$/ }).first();
+    await part.waitFor();
+    await part.scrollIntoViewIfNeeded();
+    check(vp.name, "a split table's result names its part", await part.isVisible(), await part.innerText());
+    await shot("07-search-table-part");
+
     // MAP, CHECKS and KPIs show their empty states.
     for (const [path, title] of [
       ["map", "The map arrives with entities and facts"],

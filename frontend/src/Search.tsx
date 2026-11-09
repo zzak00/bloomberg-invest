@@ -9,7 +9,7 @@ const ICON = (
 );
 
 /** The query in the address bar when the results page is open. */
-export function useQuery(): string {
+export function useSearchQuery(): string {
   const { pathname, search } = useLocation();
   return pathname === "/search" ? (new URLSearchParams(search).get("q") ?? "") : "";
 }
@@ -17,12 +17,13 @@ export function useQuery(): string {
 /** The search field: Enter opens the results page; "/" focuses it from anywhere. */
 export function SearchField({ id, autoFocus = false }: { id: string; autoFocus?: boolean }) {
   const navigate = useNavigate();
-  const query = useQuery();
+  const query = useSearchQuery();
   const [draft, setDraft] = useState(query);
-  const [shown, setShown] = useState(query);
-  // Back and forward change the query in the address bar: show it.
-  if (shown !== query) {
-    setShown(query);
+  // Back and forward change the query in the address bar: the field shows the new one. The draft
+  // follows the address bar whenever the query there changes, not on every keystroke.
+  const [draftFor, setDraftFor] = useState(query);
+  if (draftFor !== query) {
+    setDraftFor(query);
     setDraft(query);
   }
   const submit = (event: FormEvent) => {

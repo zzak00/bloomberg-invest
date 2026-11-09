@@ -152,6 +152,7 @@ export interface components {
             boxes: components["schemas"]["Box"][];
             /** Section Path */
             section_path: string[];
+            table?: components["schemas"]["TablePart"] | null;
             document: components["schemas"]["DocumentRef"];
         };
         /**
@@ -308,6 +309,18 @@ export interface components {
              * @default []
              */
             children: components["schemas"]["Section"][];
+        };
+        /**
+         * TablePart
+         * @description Which part of a split table a Chunk is: parts of one table share `table_id`.
+         */
+        TablePart: {
+            /** Table Id */
+            table_id: string;
+            /** Part */
+            part: number;
+            /** Parts */
+            parts: number;
         };
         /** ValidationError */
         ValidationError: {

@@ -338,6 +338,16 @@
             "type": "array",
             "title": "Section Path"
           },
+          "table": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TablePart"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "document": {
             "$ref": "#/components/schemas/DocumentRef"
           }
@@ -750,6 +760,30 @@
           "bbox"
         ],
         "title": "Section"
+      },
+      "TablePart": {
+        "properties": {
+          "table_id": {
+            "type": "string",
+            "title": "Table Id"
+          },
+          "part": {
+            "type": "integer",
+            "title": "Part"
+          },
+          "parts": {
+            "type": "integer",
+            "title": "Parts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "table_id",
+          "part",
+          "parts"
+        ],
+        "title": "TablePart",
+        "description": "Which part of a split table a Chunk is: parts of one table share `table_id`."
       },
       "ValidationError": {
         "properties": {

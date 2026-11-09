@@ -28,10 +28,18 @@ export function pagesLabel(pages: number[]): string {
 /** A chunk's text as one plain passage: its own heading dropped, table rows as "a · b". */
 export function snippet(chunk: Chunk): string {
   const heading = chunk.section_path[chunk.section_path.length - 1];
+  // A later part of a split table repeats the header row: start at its own rows instead.
+  const header =
+    (chunk.table?.part ?? 1) > 1
+      ? chunk.text.split("\n").find((line) => line.startsWith("|"))
+      : undefined;
   const lines = chunk.text
     .split("\n")
     .map((line) => line.trim())
-    .filter((line) => line && line !== heading && !/^\|?[\s:|-]+\|?$/.test(line))
+    .filter(
+      (line) =>
+        line && line !== heading && line !== header && !/^\|?[\s:|-]+\|?$/.test(line),
+    )
     .map((line) =>
       line.startsWith("|")
         ? line
