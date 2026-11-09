@@ -16,7 +16,7 @@ export function DocumentPage() {
   const document = useApi(`document:${documentId}`, () =>
     api.GET("/api/documents/{document_id}", { params: { path: { document_id: documentId } } }),
   );
-  // The passage a search result opened, highlighted on its pages.
+  // The chunk a search result opened, highlighted on its pages.
   const chunkId = params.get("chunk");
   const chunk = useApi(
     `chunk:${chunkId}`,
@@ -32,7 +32,7 @@ export function DocumentPage() {
     if (drawn) firstMark.current?.scrollIntoView({ block: "center" });
   }, [drawn]);
 
-  // A link to a passage with no page: its page comes with the chunk, so wait for it rather than
+  // A link to a chunk with no page: its page comes with the chunk, so wait for it rather than
   // show page 1 first.
   const pageFromChunk = chunkId !== null && !params.has("page") && chunk.state === "loading";
   if (document.state === "loading" || pageFromChunk) {
@@ -58,17 +58,17 @@ export function DocumentPage() {
   }
 
   const doc = document.data;
-  const passage = chunk.state === "ready" && chunk.data.document.id === doc.id ? chunk.data : null;
-  const requested = Number(params.get("page") ?? passage?.pages[0] ?? "1");
+  const highlighted = chunk.state === "ready" && chunk.data.document.id === doc.id ? chunk.data : null;
+  const requested = Number(params.get("page") ?? highlighted?.pages[0] ?? "1");
   const page = Number.isInteger(requested) ? clamp(requested, 1, doc.page_count) : 1;
-  // Paging keeps the highlighted passage; picking a section leaves it.
+  // Paging keeps the highlighted chunk; picking a section leaves it.
   const goTo = (target: number) => {
     const next = String(clamp(target, 1, doc.page_count));
     setParams(chunkId ? { page: next, chunk: chunkId } : { page: next });
   };
   const pick = (section: Section) => setParams({ page: String(section.page), section: section.id });
   const size = doc.pages[page - 1];
-  const marks = passage && size ? passage.boxes.filter((box) => box.page === page) : [];
+  const marks = highlighted && size ? highlighted.boxes.filter((box) => box.page === page) : [];
   const current = currentSection(doc.sections, page, params.get("section"));
   const title = `${doc.issuer.name} · ${DOC_TYPE_LABELS[doc.doc_type]} ${doc.fiscal_year}`;
 
@@ -81,11 +81,11 @@ export function DocumentPage() {
           <span className="paper-title">{title}</span>
           <Pager key={page} page={page} total={doc.page_count} onGo={goTo} />
         </div>
-        {passage && (
-          <Passage
-            passage={passage}
+        {highlighted && (
+          <HighlightBar
+            highlighted={highlighted}
             onPage={marks.length > 0}
-            onGo={() => goTo(passage.pages[0] ?? page)}
+            onGo={() => goTo(highlighted.pages[0] ?? page)}
             onClear={() => setParams({ page: String(page) })}
           />
         )}
@@ -125,30 +125,30 @@ export function DocumentPage() {
   );
 }
 
-/** The highlighted passage: where it is, a way back to it, and a way to clear it. */
-function Passage({
-  passage,
+/** The highlighted chunk: where it is, a way back to it, and a way to clear it. */
+function HighlightBar({
+  highlighted,
   onPage,
   onGo,
   onClear,
 }: {
-  passage: Chunk;
+  highlighted: Chunk;
   onPage: boolean;
   onGo: () => void;
   onClear: () => void;
 }) {
-  const path = passage.section_path;
+  const path = highlighted.section_path;
   return (
-    <div className="passage" role="status">
-      <span className="passage-swatch" aria-hidden="true" />
-      <span className="passage-where">
+    <div className="highlight-bar" role="status">
+      <span className="highlight-bar-swatch" aria-hidden="true" />
+      <span className="highlight-bar-where">
         <span className="paper-label">HIGHLIGHTED</span>{" "}
-        <span title={path.join(" › ")}>{path[path.length - 1] ?? "Passage"}</span>{" "}
-        <span className="num nowrap passage-pages">{pagesLabel(passage.pages)}</span>
+        <span title={path.join(" › ")}>{path[path.length - 1] ?? "Before the first section"}</span>{" "}
+        <span className="num nowrap highlight-bar-pages">{pagesLabel(highlighted.pages)}</span>
       </span>
       {!onPage && (
         <button type="button" className="button" onClick={onGo}>
-          GO TO {pagesLabel(passage.pages).toUpperCase()} →
+          GO TO {pagesLabel(highlighted.pages).toUpperCase()} →
         </button>
       )}
       <button type="button" className="button" onClick={onClear}>

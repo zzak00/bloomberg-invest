@@ -25,7 +25,7 @@ export function pagesLabel(pages: number[]): string {
   return first === last ? `p. ${first}` : `pp. ${first}-${last}`;
 }
 
-/** A chunk's text as one plain passage: its own heading dropped, table rows as "a · b". */
+/** A chunk's text as one plain line: its own heading dropped, table rows as "a · b". */
 export function snippet(chunk: Chunk): string {
   const heading = chunk.section_path[chunk.section_path.length - 1];
   // A later part of a split table repeats the header row: start at its own rows instead.

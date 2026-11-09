@@ -104,15 +104,15 @@ try {
       await page.keyboard.type(QUERY);
     }
     await page.keyboard.press("Enter");
-    const results = page.getByRole("list", { name: "Passages" }).getByRole("link");
+    const results = page.getByRole("list", { name: "Results" }).getByRole("link");
     await results.first().waitFor();
     const first = (await results.first().innerText()).replace(/\s+/g, " ");
-    check(vp.name, "search lists passages", (await results.count()) >= 1, `${await results.count()} result(s)`);
+    check(vp.name, "search lists results", (await results.count()) >= 1, `${await results.count()} result(s)`);
     check(vp.name, "AC3: the p. 10 dividend comes first", /Dividende/.test(first) && /p\. 10\b/.test(first), first.slice(0, 120));
     await page.mouse.move(0, vp.height - 1);
     await shot("05-search");
 
-    // A result opens the source viewer on its page with the passage highlighted.
+    // A result opens the source viewer on its page with the chunk highlighted.
     await results.first().click();
     const resultPage = page.getByRole("img", { name: /^Page 10 of/ });
     await resultPage.waitFor();
@@ -122,17 +122,17 @@ try {
     const [sheetBox, markBox] = [await page.locator(".paper-sheet").boundingBox(), await mark.boundingBox()];
     check(
       vp.name,
-      "the passage is highlighted on its page",
+      "the chunk is highlighted on its page",
       markBox && sheetBox && markBox.width > 20 && markBox.x >= sheetBox.x && markBox.x + markBox.width <= sheetBox.x + sheetBox.width + 1,
       markBox && `${Math.round(markBox.width)}x${Math.round(markBox.height)} at ${Math.round(markBox.x)},${Math.round(markBox.y)}`,
     );
-    check(vp.name, "the passage bar names it", /Dividende/.test(await page.getByRole("status").innerText()));
+    check(vp.name, "the highlight bar names it", /Dividende/.test(await page.getByRole("status").innerText()));
     await shot("06-search-result");
 
-    // A link to a passage with no page waits for the passage: on a slow network the viewer must
+    // A link to a chunk with no page waits for the chunk: on a slow network the viewer must
     // not show page 1 first.
-    const passageUrl = new URL(page.url());
-    passageUrl.searchParams.delete("page");
+    const chunkUrl = new URL(page.url());
+    chunkUrl.searchParams.delete("page");
     const fetched = [];
     const onRequest = (r) => {
       const n = r.url().match(/\/pages\/(\d+)\.png/);
@@ -143,11 +143,11 @@ try {
       await route.continue();
     });
     page.on("request", onRequest);
-    await page.goto(passageUrl.href);
+    await page.goto(chunkUrl.href);
     await page.locator(".paper-sheet .mark").first().waitFor();
     page.off("request", onRequest);
     await page.unroute("**/api/chunks/**");
-    check(vp.name, "a passage link opens on its page, never page 1 first", fetched.join() === "10", `pages fetched: ${fetched.join(", ")}`);
+    check(vp.name, "a chunk link opens on its page, never page 1 first", fetched.join() === "10", `pages fetched: ${fetched.join(", ")}`);
 
     // A long table is split between rows; its parts say which part they are.
     await page.goto(`${base}/search?q=${encodeURIComponent("compte de produits et charges")}`);

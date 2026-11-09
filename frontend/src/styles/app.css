@@ -650,7 +650,7 @@ a {
   height: auto;
 }
 
-/* A marker stroke over the passage: the page's ink shows through. */
+/* A marker stroke over the chunk: the page's ink shows through. */
 .mark {
   position: absolute;
   background: var(--highlight);
@@ -659,7 +659,7 @@ a {
   pointer-events: none;
 }
 
-.passage {
+.highlight-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -670,19 +670,19 @@ a {
   font-size: 13px;
 }
 
-.passage-swatch {
+.highlight-bar-swatch {
   width: 14px;
   height: 14px;
   background: var(--highlight);
   box-shadow: inset 0 -2px 0 var(--highlight-line);
 }
 
-.passage-where {
+.highlight-bar-where {
   flex: 1 1 200px;
   min-width: 0;
 }
 
-.passage-pages {
+.highlight-bar-pages {
   font-family: var(--font-mono);
   font-size: 12px;
   color: var(--paper-secondary);
@@ -729,7 +729,7 @@ a {
   }
 
   .paper-bar,
-  .passage {
+  .highlight-bar {
     padding: 10px var(--space-4);
   }
 

@@ -21,7 +21,7 @@
   --paper-secondary: #5e5b53;
   --paper-rule: #cfc8b8;
   --paper-control: #8c877b;
-  /* A highlighted passage on paper: marker fill and its underline. */
+  /* A highlighted chunk on paper: marker fill and its underline. */
   --highlight: #ffe3a8;
   --highlight-line: #9a5b00;
 

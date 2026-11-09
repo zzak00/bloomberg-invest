@@ -8,7 +8,7 @@ import { SearchField, useSearchQuery } from "../Search";
 
 const LIMIT = 20;
 
-/** Search results: the passages of every filing closest to the query in meaning. */
+/** Search results: the Chunks of every filing closest to the query in meaning. */
 export function SearchPage() {
   const query = useSearchQuery().trim();
   const results = useApi(
@@ -21,7 +21,7 @@ export function SearchPage() {
     <section className="page" aria-labelledby="search-title">
       <div className="micro">
         SEARCH
-        {query && results.state === "ready" && ` · ${count} ${count === 1 ? "PASSAGE" : "PASSAGES"}`}
+        {query && results.state === "ready" && ` · ${count} ${count === 1 ? "RESULT" : "RESULTS"}`}
       </div>
       <h1 id="search-title" className="page-title">
         {query ? `“${query}”` : "Search the filings"}
@@ -33,7 +33,7 @@ export function SearchPage() {
       {!query && (
         <div className="state">
           <p>
-            Ask in English or French: the passages closest in meaning come first, from every filing
+            Ask in English or French: the text closest in meaning comes first, from every filing
             in the graph.
           </p>
         </div>
@@ -59,7 +59,7 @@ export function SearchPage() {
       )}
 
       {query && results.state !== "error" && count + (results.state === "loading" ? 1 : 0) > 0 && (
-        <ol className="results" aria-label="Passages" aria-busy={results.state === "loading"}>
+        <ol className="results" aria-label="Results" aria-busy={results.state === "loading"}>
           {results.state === "loading" &&
             [0, 1, 2].map((i) => <li key={i} className="skeleton result-skeleton" aria-hidden="true" />)}
           {results.state === "ready" && results.data.map((chunk) => <Result key={chunk.id} chunk={chunk} />)}
