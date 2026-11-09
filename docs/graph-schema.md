@@ -85,15 +85,14 @@ erDiagram
         Integer page
         String quote "the value as quoted"
         String text "the paragraph holding it"
-        Float[] boxes "the paragraph's regions, in groups of five"
+        Float[] boxes "the quote's regions, else the paragraph's; in groups of five"
+        String boxes_from "quote | paragraph"
         Boolean superseded "optional"
     }
     Fact {
         String id UK "UUID"
         String kind "financial_figure"
-        String line_item "from the label map"
-        String line_item_title "the label map's name for it"
-        String statement "the label map's statement: income_statement, balance_sheet..."
+        String line_item "from the label map, which gives its title and statement"
         String label "the filing's own wording: the row label, or the sentence"
         String value "exact decimal in the base unit: 36681000000"
         String value_as_written "36 681"
@@ -108,14 +107,15 @@ erDiagram
         String basis_scope "consolidated | company-only"
         String basis_standard "IFRS | CGNC"
         String breakdown "empty for the line item itself"
-        Integer page "the page it was extracted from"
-        String source_id "the id the LLM cited on that page"
+        String source_id "the id the LLM cited on its page, to trace an answer back"
         DateTime recorded_at
         Boolean superseded "optional"
     }
     RejectedFigure {
         String id UK "UUID"
-        String reason "why the check rejected it; every other property is a Fact's"
+        String reason "why the check rejected it"
+        Integer page "the page the LLM read; it may cite no Passage"
+        String other "every property of a Fact"
     }
 
     Document }o--|| Organisation : ISSUED_BY
@@ -149,7 +149,10 @@ erDiagram
     Fact }o--|| Organisation : ABOUT
     Fact }o--|| Document : FROM_DOCUMENT
     Fact }o--|| Run : "PRODUCED_BY (extract Run)"
-    RejectedFigure }o--o| Cell : CITES
+    RejectedFigure }o--o| Cell : "CITES (a cell figure)"
+    RejectedFigure }o--o| Span : "CITES (a quoted figure)"
+    RejectedFigure }o--|| Organisation : ABOUT
+    RejectedFigure }o--|| Document : FROM_DOCUMENT
     RejectedFigure }o--|| Run : "PRODUCED_BY (extract Run)"
     Span }o--|| Page : ON_PAGE
     Span }o--|| Run : "PRODUCED_BY (extract Run)"
@@ -203,7 +206,9 @@ The body text is in the stored PDF (`data/documents/<sha256>.pdf`) and in Doclin
 
 A financial figure is a Fact (ADR 0001) of kind `financial_figure`, extracted page by page by an LLM and checked in Python before it is stored (#19 R6). It `CITES` its Passage: the table Cell holding its number, or a Span, the quoted value in its paragraph. Every Table and Cell comes from the parse, with its page and box, so the source viewer can highlight the exact cell.
 
-A figure whose value does not equal its Cell's number, or that its paragraph does not contain, is stored as a `RejectedFigure` with its `reason`, never with the `Fact` label: a query on `:Fact` cannot show one. A RejectedFigure still `CITES` the Cell it named, when that Cell exists, for the review queue (#23).
+A figure whose value does not equal its Cell's number, or that its paragraph does not contain, is stored as a `RejectedFigure` with its `reason`, never with the `Fact` label: a query on `:Fact` cannot show one. A RejectedFigure still `CITES` the Cell or Span it named, for the review queue (#23), and is `ABOUT` its Organisation and `FROM_DOCUMENT` its Document like a Fact. One whose source id is not on the page (`unknown_source`) has no Passage to cite, so it alone keeps the `page` the LLM read; a Fact's page is its Passage's.
+
+A Fact keeps the label map's `line_item` key only; its title and statement are read from the label map in force. A Span's boxes are the quote's, found in the PDF's text layer inside its paragraph, so the viewer highlights the value; when the text layer does not hold the quote there, they are the paragraph's (`boxes_from`).
 
 `value` is a string because Neo4j has no decimal type and a float would make `4,01` unequal to `4.01`. The extract Run's `config` names the deployment, the prompt and label map versions with their SHA-256, and the parse Run it read.
 
