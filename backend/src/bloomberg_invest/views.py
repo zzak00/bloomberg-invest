@@ -49,6 +49,14 @@ class Box(BaseModel):
     bottom: float
 
 
+class TablePart(BaseModel):
+    """Which part of a split table a Chunk is: parts of one table share `table_id`."""
+
+    table_id: str
+    part: int
+    parts: int
+
+
 class Chunk(BaseModel):
     """A Chunk with where to find it: what search returns and the source viewer highlights."""
 
@@ -58,6 +66,7 @@ class Chunk(BaseModel):
     pages: list[int]
     boxes: list[Box]  # the regions of its blocks, which the source viewer highlights
     section_path: list[str]
+    table: TablePart | None = None  # tables only
     document: DocumentRef
 
 

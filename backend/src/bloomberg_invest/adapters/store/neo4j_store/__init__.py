@@ -16,7 +16,13 @@ from bloomberg_invest.adapters.store.neo4j_store._cypher import (
 )
 from bloomberg_invest.adapters.store.neo4j_store._embed import _record_embeddings
 from bloomberg_invest.adapters.store.neo4j_store._parse import _record_parse, _record_run
-from bloomberg_invest.adapters.store.neo4j_store._reads import _boxes, _run, _summary, _tree
+from bloomberg_invest.adapters.store.neo4j_store._reads import (
+    _boxes,
+    _run,
+    _summary,
+    _table_part,
+    _tree,
+)
 from bloomberg_invest.domain.chunking import ChunkDraft
 from bloomberg_invest.domain.indexing import EmbedInput
 from bloomberg_invest.domain.model import (
@@ -143,6 +149,7 @@ class Neo4jStore(GraphStore):
                 pages=r["pages"],
                 boxes=_boxes(r["n"]["boxes"]),
                 section_path=r["n"]["section_path"],
+                table=_table_part(r["n"]),
                 document=DocumentRef(
                     id=r["d"]["id"],
                     issuer={"isin": r["o"]["isin"], "name": r["o"]["name"]},

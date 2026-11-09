@@ -58,6 +58,7 @@ services:
       NEO4J_PASSWORD: ${NEO4J_PASSWORD}
       PARSER: ${PARSER:-docling}
       CHUNK_CAP: ${CHUNK_CAP:-2000}
+      TABLE_CAP: ${TABLE_CAP:-1500}
       EMBEDDER: ${EMBEDDER:-qwen3-0.6b}
       # tiktoken's encoding files, kept with Docling's models.
       TIKTOKEN_CACHE_DIR: /root/.cache/tiktoken

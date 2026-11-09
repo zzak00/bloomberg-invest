@@ -8,6 +8,7 @@ column name, so a single figure can match a question.
 
 from dataclasses import dataclass
 
+from bloomberg_invest.domain import tables
 from bloomberg_invest.domain.chunking import Block, ChunkDraft
 
 
@@ -34,23 +35,5 @@ def block_text(block: Block) -> str:
 
 
 def _rows(table: Block) -> str:
-    # The top-left cell names the label column or gives the unit, "(En millions de MAD)".
-    corner, *columns = _cells(table.header)
-    lines = [corner] if corner else []
-    for row in table.rows:
-        label, *values = _cells(row)
-        pairs = [
-            f"{column} {value}" if column else value
-            for column, value in zip(columns, values)
-            if value
-        ]
-        line = " · ".join(pairs)
-        if label:
-            line = f"{label}: {line}" if line else label
-        if line:
-            lines.append(line)
-    return "\n".join(lines)
-
-
-def _cells(line: str) -> list[str]:
-    return [cell.strip() for cell in line.strip().strip("|").split("|")]
+    lines = [tables.corner(table.header), *tables.row_lines(table.header, table.rows)]
+    return "\n".join(filter(None, lines))

@@ -1,5 +1,6 @@
 """Contract tests for indexing and searching Chunks (#21 AC2, AC3, AC5) against a real Neo4j."""
 
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
@@ -68,6 +69,9 @@ def drafts(ids: dict[str, str]) -> list[ChunkDraft]:
             pages=(3,),
             refers_to=(),
             path=("1. RÉSULTATS", "1.2 En euro"),
+            table=3,
+            part=1,
+            parts=1,
         ),
     ]
 
@@ -256,3 +260,16 @@ def test_chunks_carry_kind_document_section_path_pages_and_boxes_in_the_order_as
     assert second.document.issuer.name == "Maroc Telecom"
     assert first.section_path == ["1. RÉSULTATS", "1.2 En euro"]
     assert (first.kind, second.kind) == ("table", "text")
+    assert (first.table.part, first.table.parts) == (1, 1)
+    assert second.table is None
+
+
+def test_the_parts_of_a_split_table_share_one_table_id(store, document):
+    document_id, ids = document
+    _, revenue = drafts(ids)
+    parts = [replace(revenue, index=1 + n, part=1 + n, parts=2) for n in range(2)]
+    store.record_chunks(document_id, parts, chunk_run())
+
+    first, second = store.chunks(list(embed_texts(store, document_id)))
+    assert first.table.table_id == second.table.table_id
+    assert [(c.table.part, c.table.parts) for c in (first, second)] == [(1, 2), (2, 2)]

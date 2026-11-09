@@ -13,10 +13,12 @@ pytest.importorskip("docling", reason="needs the ingest extra")
 from bloomberg_invest.adapters.files import DocumentFiles
 from bloomberg_invest.adapters.parsing.docling_parser import DoclingParser
 from bloomberg_invest.adapters.tokens import TiktokenCounter
+from bloomberg_invest.domain.chunking import Caps
 from bloomberg_invest.service_layer.chunk import ChunkFailed, chunk_document
 from bloomberg_invest.service_layer.ingest import ingest
 
 CAP = 200
+CAPS = Caps(text=CAP, table=1500)
 # The openings of the six paragraphs `make_chunking_fixture.py` writes twice under "2. VUE".
 OVERVIEW = [
     "Le Groupe opère au Maroc et dans dix pays",
@@ -37,7 +39,14 @@ def counter():
 def ingested(store, meta, tmp_path, counter):
     files = DocumentFiles(tmp_path)
     result = ingest(
-        FIXTURES / "chunking.pdf", meta, store, files, DoclingParser(), counter, CAP, FakeEmbedder()
+        FIXTURES / "chunking.pdf",
+        meta,
+        store,
+        files,
+        DoclingParser(),
+        counter,
+        CAPS,
+        FakeEmbedder(),
     )
     return result, files
 
@@ -87,7 +96,7 @@ def test_ingest_chunks_the_filing_by_its_structure(ingested, driver, counter):
 
 def test_re_chunking_supersedes_the_earlier_chunks(ingested, store, driver, counter):
     result, files = ingested
-    again = chunk_document(result.document_id, store, files, DoclingParser(), counter, CAP)
+    again = chunk_document(result.document_id, store, files, DoclingParser(), counter, CAPS)
 
     assert again.chunks == result.chunked.chunks
     assert {c["run"] for c in chunks(driver, result.document_id)} == {again.run_id}
@@ -103,7 +112,7 @@ def test_a_chunking_failure_is_recorded_and_keeps_the_last_good_chunks(
             raise RuntimeError("the saved output is unreadable")
 
     with pytest.raises(ChunkFailed) as failure:
-        chunk_document(result.document_id, store, files, Unreadable(), counter, CAP)
+        chunk_document(result.document_id, store, files, Unreadable(), counter, CAPS)
 
     assert isinstance(failure.value.__cause__, RuntimeError)
     assert {c["run"] for c in chunks(driver, result.document_id)} == {result.chunked.run_id}

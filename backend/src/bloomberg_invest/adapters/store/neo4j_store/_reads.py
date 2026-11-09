@@ -8,6 +8,7 @@ from bloomberg_invest.views import (
     DocumentSummary,
     Run,
     Section,
+    TablePart,
 )
 
 
@@ -59,3 +60,9 @@ def _summary(d: Any, o: Any, run: Any, pages: int) -> DocumentSummary:
         page_count=pages,
         ingested_at=run["finished_at"].to_native(),
     )
+
+
+def _table_part(node: Any) -> TablePart | None:
+    if node.get("table") is None:
+        return None
+    return TablePart(table_id=node["table"], part=node["part"], parts=node["parts"])

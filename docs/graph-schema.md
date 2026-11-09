@@ -49,11 +49,14 @@ erDiagram
         String id UK "UUID"
         Integer index "reading order in the Document"
         String kind "text | table"
-        String text "headings and paragraphs joined, or the table as Markdown"
+        String text "headings and paragraphs joined, or the table (or part) as Markdown with its header"
         Integer token_count
         String index_text "what is embedded: section path and pages, then the text"
         Float[] boxes "its blocks' regions, in groups of five: page, left, top, right, bottom"
         String[] section_path "the Section titles from the top down, as the index text's header has them"
+        String table "tables: shared by the parts of one table"
+        Integer part "tables: this part's number, from 1"
+        Integer parts "tables: how many parts the table has"
         Float[] embedding "optional: set by an embed Run"
         Boolean superseded "optional"
     }
@@ -120,7 +123,7 @@ A parse that fails still leaves a Run, with `status = 'failed'` and `error` set 
 
 In Chunks. A Section holds only its heading: `title`, `page`, the heading's `bbox`, `level` (inferred from the heading's numbering, since Docling returns every heading at level 1) and `order` (document order, parents before children). A section runs from its heading to the next heading at the same or a higher level.
 
-The body text is in the stored PDF (`data/documents/<sha256>.pdf`) and in Docling's full output, which every successful parse saves to `data/parses/<sha256>/<started_at>-docling.json` and names in `Run.output`. The chunk Run reads that file instead of parsing again (`bloomberg chunk <document id>` re-runs it). A section's paragraphs form one text Chunk under the `CHUNK_CAP` (2,000 cl100k tokens), split at numbered points, otherwise evenly between paragraphs; each table, joined across pages, is its own Chunk holding its Markdown. A heading starts the Chunk after it, so the Section's title is in its text and no text is lost when Docling takes a sentence for a heading; a heading with no content of its own joins the next Chunk. Chunks are the search unit (ADR 0004).
+The body text is in the stored PDF (`data/documents/<sha256>.pdf`) and in Docling's full output, which every successful parse saves to `data/parses/<sha256>/<started_at>-docling.json` and names in `Run.output`. The chunk Run reads that file instead of parsing again (`bloomberg chunk <document id>` re-runs it). A section's paragraphs form one text Chunk under the `CHUNK_CAP` (2,000 cl100k tokens), split at numbered points, otherwise evenly between paragraphs; each table, joined across pages, is its own Chunk holding its Markdown. A table whose rows, read one line per row as search reads them, are over the `TABLE_CAP` (1,500 cl100k tokens) is cut evenly between rows; each part repeats the column header and the headings above the table, keeps the pages and boxes of its own rows, and shares a `table` id with the other parts (`part` of `parts`). A heading starts the Chunk after it, so the Section's title is in its text and no text is lost when Docling takes a sentence for a heading; a heading with no content of its own joins the next Chunk. Chunks are the search unit (ADR 0004).
 
 ## Why a Page has width and height
 

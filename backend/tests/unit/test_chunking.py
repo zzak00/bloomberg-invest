@@ -1,11 +1,18 @@
-"""The chunker's boundary rules (#19 R2): tables whole, paragraphs whole, long sections split,
-no heading lost."""
+"""The chunker's boundary rules (#19 R2): rows and paragraphs whole, long tables and sections
+split, no heading lost."""
 
-from bloomberg_invest.domain.chunking import Block, SectionRef, chunk
+from dataclasses import replace
+
+from bloomberg_invest.domain.chunking import Block, Caps, SectionRef, chunk
+from bloomberg_invest.domain.indexing import index_text
 
 
 def words(text: str) -> int:
     return len(text.split())
+
+
+def caps(text: int, table: int = 10_000) -> Caps:
+    return Caps(text=text, table=table)
 
 
 def heading(title: str, page: int = 1) -> Block:
@@ -35,7 +42,7 @@ def test_a_section_s_paragraphs_form_one_chunk_and_a_table_its_own():
         heading("NOTE 2. DIVIDENDES", page=2),
         para("Le dividende proposé est de 5 dirhams.", page=2),
     ]
-    chunks = chunk(blocks, SECTIONS, cap=100, count=words)
+    chunks = chunk(blocks, SECTIONS, caps(100), words)
 
     assert [(c.kind, c.section_id) for c in chunks] == [
         ("text", "s1"),
@@ -50,15 +57,57 @@ def test_a_section_s_paragraphs_form_one_chunk_and_a_table_its_own():
     assert [c.index for c in chunks] == [0, 1, 2]
 
 
-def test_a_table_is_one_chunk_however_long():
-    rows = [f"| {i} | x | y |" for i in range(500)]
-    chunks = chunk([heading("1. RÉSULTATS"), table("| a | b | c |", rows)], SECTIONS, 50, words)
+def test_a_short_table_is_one_chunk_one_part_of_one():
+    [only] = chunk(
+        [heading("1. RÉSULTATS"), table("| a | b | c |", ["| 1 | 2 | 3 |"])],
+        SECTIONS,
+        caps(50),
+        words,
+    )
 
-    [only] = chunks
-    assert only.kind == "table"
-    assert only.text.splitlines()[:2] == ["1. RÉSULTATS", ""]
-    assert only.text.splitlines()[4:] == rows
-    assert only.token_count > 50
+    assert (only.kind, only.part, only.parts) == ("table", 1, 1)
+    assert only.table is not None
+
+
+def test_a_long_table_splits_between_rows_each_part_repeating_its_header():
+    rows = [f"| {i} | x | y |" for i in range(500)]
+    parts = chunk(
+        [heading("1. RÉSULTATS"), table("| a | b | c |", rows)], SECTIONS, caps(50, 300), words
+    )
+
+    assert len(parts) > 1
+    assert {(p.kind, p.table, p.parts) for p in parts} == {("table", parts[0].table, len(parts))}
+    assert [p.part for p in parts] == list(range(1, len(parts) + 1))
+    for p in parts:
+        assert p.text.splitlines()[:4] == [
+            "1. RÉSULTATS",
+            "",
+            "| a | b | c |",
+            "| --- | --- | --- |",
+        ]
+        assert words(index_text(p)) <= 300 + 10, "the index text fits the cap, header aside"
+    assert [r for p in parts for r in p.text.splitlines()[4:]] == rows, "every row, once, in order"
+
+
+def test_a_split_table_part_keeps_only_the_pages_and_boxes_of_its_rows():
+    page_1 = ["| 1 | 2 | 3 |"] * 3
+    page_2 = ["| 4 | 5 | 6 |"] * 3
+    blocks = [
+        heading("1. RÉSULTATS"),
+        replace(table("| a | b | c |", page_1, page=1), boxes=((1, 0.0, 400.0, 500.0, 800.0),)),
+        replace(table("| a | b | c |", page_2, page=2), boxes=((2, 0.0, 50.0, 500.0, 300.0),)),
+    ]
+    # Each row reads "1: b 2 · c 3", six words, after the corner cell "a": three rows fit 19.
+    first, second = chunk(blocks, SECTIONS, caps(50, 19), words)
+
+    assert (first.pages, second.pages) == ((1,), (2,))
+    assert [b.boxes for b in first.paragraphs if b.kind == "table"] == [
+        ((1, 0.0, 400.0, 500.0, 800.0),)
+    ]
+    assert [b.boxes for b in second.paragraphs if b.kind == "table"] == [
+        ((2, 0.0, 50.0, 500.0, 300.0),)
+    ]
+    assert first.table == second.table
 
 
 def test_a_table_continued_on_the_next_page_is_joined_into_one_chunk():
@@ -67,7 +116,7 @@ def test_a_table_continued_on_the_next_page_is_joined_into_one_chunk():
         table("| a | b | c |", ["| 1 | 2 | 3 |"], page=1),
         table("| a | b | c |", ["| 4 | 5 | 6 |"], page=2),
     ]
-    [only] = chunk(blocks, SECTIONS, cap=100, count=words)
+    [only] = chunk(blocks, SECTIONS, caps(100), words)
 
     assert only.text.splitlines() == [
         "1. RÉSULTATS",
@@ -87,7 +136,7 @@ def test_tables_with_other_columns_or_on_the_same_page_stay_apart():
         table("| a | b |", ["| 4 | 5 |"], page=2, columns=2),
         table("| c | d |", ["| 6 | 7 |"], page=2, columns=2),
     ]
-    assert len(chunk(blocks, SECTIONS, cap=100, count=words)) == 3
+    assert len(chunk(blocks, SECTIONS, caps(100), words)) == 3
 
 
 def test_a_long_section_splits_at_its_numbered_points_first():
@@ -98,7 +147,7 @@ def test_a_long_section_splits_at_its_numbered_points_first():
         para("suite du premier point " + "mot " * 5),
         para("2) second point " + "mot " * 20, numbered=True),
     ]
-    chunks = chunk(blocks, SECTIONS, cap=50, count=words)
+    chunks = chunk(blocks, SECTIONS, caps(50), words)
 
     assert [[p.text.split()[0] for p in c.paragraphs] for c in chunks] == [
         ["1.", "intro", "1)", "suite"],
@@ -108,7 +157,7 @@ def test_a_long_section_splits_at_its_numbered_points_first():
 
 def test_otherwise_a_long_section_splits_evenly_between_paragraphs():
     blocks = [heading("1. RÉSULTATS")] + [para(f"p{i} " + "mot " * 9) for i in range(6)]
-    chunks = chunk(blocks, SECTIONS, cap=40, count=words)
+    chunks = chunk(blocks, SECTIONS, caps(40), words)
 
     assert [len(c.paragraphs) for c in chunks] == [4, 3]
     assert all(c.token_count <= 40 for c in chunks)
@@ -116,7 +165,7 @@ def test_otherwise_a_long_section_splits_evenly_between_paragraphs():
 
 def test_a_paragraph_is_never_split_even_over_the_cap():
     blocks = [heading("1. RÉSULTATS"), para("court"), para("long " * 80), para("court")]
-    chunks = chunk(blocks, SECTIONS, cap=50, count=words)
+    chunks = chunk(blocks, SECTIONS, caps(50), words)
 
     assert [len(p.text.split()) for c in chunks for p in c.paragraphs] == [2, 1, 80, 1]
     assert any(c.token_count > 50 and len(c.paragraphs) == 1 for c in chunks)
@@ -130,7 +179,7 @@ def test_a_repeated_heading_keeps_its_section_and_text_before_any_heading_joins_
         heading("1. RÉSULTATS", page=2),
         para("Après le saut de page.", page=2),
     ]
-    [only] = chunk(blocks, SECTIONS, cap=100, count=words)
+    [only] = chunk(blocks, SECTIONS, caps(100), words)
 
     assert only.section_id == "s1"
     assert [p.text for p in only.paragraphs] == [
@@ -148,7 +197,7 @@ def test_a_chunk_refers_to_the_notes_it_cites_but_not_its_own():
         heading("NOTE 2. DIVIDENDES", page=2),
         para("Comme indiqué en note 2.", page=2),
     ]
-    first, second = chunk(blocks, SECTIONS, cap=100, count=words)
+    first, second = chunk(blocks, SECTIONS, caps(100), words)
 
     assert first.refers_to == ("s2",)
     assert second.refers_to == ()
@@ -158,7 +207,7 @@ def test_an_even_split_leaves_no_small_leftover():
     # Token counts of the fixture's "2. VUE D'ENSEMBLE" paragraphs: 610 in all, cap 200.
     sizes = [67, 60, 46, 43, 46, 43, 67, 60, 46, 43, 46, 43]
     blocks = [heading("1. RÉSULTATS")] + [para(" ".join(["mot"] * n)) for n in sizes]
-    chunks = chunk(blocks, SECTIONS, cap=200, count=words)
+    chunks = chunk(blocks, SECTIONS, caps(200), words)
 
     assert len(chunks) == 4
     assert all(130 <= c.token_count <= 200 for c in chunks), [c.token_count for c in chunks]
@@ -173,7 +222,7 @@ def test_a_sentence_taken_for_a_heading_stays_in_its_chunk():
         heading("Le résultat net atteint 6 969"),
         para("millions de dirhams."),
     ]
-    _, second = chunk(blocks, sections, cap=100, count=words)
+    _, second = chunk(blocks, sections, caps(100), words)
 
     assert second.section_id == "s3"
     assert second.text == "Le résultat net atteint 6 969\n\nmillions de dirhams."
@@ -187,7 +236,7 @@ def test_a_heading_with_no_content_of_its_own_joins_the_next_chunk():
         table("| a | b | c |", ["| 1 | 2 | 3 |"], page=2),
         heading("Sous-titre", page=2),
     ]
-    first, last = chunk(blocks, sections, cap=100, count=words)
+    first, last = chunk(blocks, sections, caps(100), words)
 
     assert (first.kind, first.section_id) == ("table", "s21")
     assert first.text.startswith("NOTE 2. DIVIDENDES\n\n2.1 Distribution\n\n| a | b | c |")
@@ -203,7 +252,7 @@ def test_a_chunk_knows_its_section_path_outermost_first():
         heading("2.1 Distribution", page=2),
         para("Il est versé en juin.", page=2),
     ]
-    first, second = chunk(blocks, sections, cap=100, count=words)
+    first, second = chunk(blocks, sections, caps(100), words)
 
     assert first.path == ("NOTE 2. DIVIDENDES",)
     assert second.path == ("NOTE 2. DIVIDENDES", "2.1 Distribution")

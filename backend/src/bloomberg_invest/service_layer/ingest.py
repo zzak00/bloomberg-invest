@@ -11,6 +11,7 @@ from bloomberg_invest.adapters.files import DocumentFiles
 from bloomberg_invest.adapters.parsing import Parser
 from bloomberg_invest.adapters.store import GraphStore
 from bloomberg_invest.adapters.tokens import TokenCounter
+from bloomberg_invest.domain.chunking import Caps
 from bloomberg_invest.domain.model import DocumentMeta, RunInfo, RunStatus, RunStep
 from bloomberg_invest.service_layer.chunk import Chunked, chunk_document
 from bloomberg_invest.service_layer.embed import Embedded, embed_document
@@ -38,12 +39,12 @@ def ingest(
     files: DocumentFiles,
     parser: Parser,
     count: TokenCounter,
-    cap: int,
+    caps: Caps,
     embedder: Embedder,
 ) -> Ingested:
     """Parse the filing, then chunk and embed it (#21): each step records its own Run."""
     document_id = _parse(pdf, meta, store, files, parser)
-    chunked = chunk_document(document_id, store, files, parser, count, cap)
+    chunked = chunk_document(document_id, store, files, parser, count, caps)
     return Ingested(document_id, chunked, embed_document(document_id, store, embedder))
 
 

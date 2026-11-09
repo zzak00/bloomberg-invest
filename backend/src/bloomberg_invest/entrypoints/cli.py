@@ -55,7 +55,7 @@ def main(argv: list[str] | None = None) -> int:
                 deps.files,
                 parser,
                 bootstrap.token_counter(),
-                settings.chunk_cap,
+                settings.caps,
                 embedder,
             )
         except (IngestFailed, ChunkFailed, EmbedFailed) as failure:
@@ -84,7 +84,7 @@ def _chunk(document_id: str) -> int:
                 deps.files,
                 parser,
                 bootstrap.token_counter(),
-                settings.chunk_cap,
+                settings.caps,
             )
             embedded = embed_document(document_id, deps.store, embedder)
         except (LookupError, ValueError, ChunkFailed, EmbedFailed) as failure:

@@ -22,7 +22,7 @@ docker compose run --rm ingest /data/inbox/Maroc_Telecom_RFA_2025.pdf \
 
 The first ingest downloads Docling's models (kept in a volume). A 90-page report takes about 10 minutes in the container. On the host it takes about 4: `cd backend && NEO4J_PASSWORD=... DATA_DIR=../data uv run --extra ingest bloomberg ingest ...`.
 
-Ingest also chunks the filing and embeds each Chunk for search (#21), with `Qwen3-Embedding-0.6B` (downloaded on first use, about 1.2 GB). To re-chunk an ingested filing from its saved parse, for example after changing `CHUNK_CAP`: `docker compose run --rm chunk <document id>`, which embeds the new Chunks too. To re-embed only: `docker compose run --rm embed <document id>`.
+Ingest also chunks the filing and embeds each Chunk for search (#21), with `Qwen3-Embedding-0.6B` (downloaded on first use, about 1.2 GB). To re-chunk an ingested filing from its saved parse, for example after changing `CHUNK_CAP` or `TABLE_CAP`: `docker compose run --rm chunk <document id>`, which embeds the new Chunks too. To re-embed only: `docker compose run --rm embed <document id>`.
 
 `docker compose up --build` does not rebuild these three tools, which share one image. After changing backend code, rebuild it before running them: `docker compose --profile tools build ingest`.
 
