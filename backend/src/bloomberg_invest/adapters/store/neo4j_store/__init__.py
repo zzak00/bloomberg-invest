@@ -15,10 +15,7 @@ from bloomberg_invest.adapters.store.neo4j_store._cypher import (
     VECTOR_INDEX,
 )
 from bloomberg_invest.adapters.store.neo4j_store._embed import _record_embeddings
-from bloomberg_invest.adapters.store.neo4j_store._extract import (
-    FINANCIAL_FIGURE,
-    _record_extraction,
-)
+from bloomberg_invest.adapters.store.neo4j_store._extract import _record_extraction
 from bloomberg_invest.adapters.store.neo4j_store._parse import _record_parse, _record_run
 from bloomberg_invest.adapters.store.neo4j_store._reads import (
     _boxes,
@@ -31,10 +28,11 @@ from bloomberg_invest.adapters.store.neo4j_store._reads import (
 )
 from bloomberg_invest.domain.chunking import ChunkDraft
 from bloomberg_invest.domain.extraction import FigureDraft, SourceCell
+from bloomberg_invest.domain.figures import FINANCIAL_FIGURE
 from bloomberg_invest.domain.indexing import EmbedInput
-from bloomberg_invest.domain.label_map import LabelMap
 from bloomberg_invest.domain.model import (
     DocumentMeta,
+    Organisation,
     PageInfo,
     ParsedDocument,
     RunInfo,
@@ -151,11 +149,9 @@ class Neo4jStore(GraphStore):
             for r in records
         ]
 
-    def record_extraction(
-        self, document_id: str, figures: list[FigureDraft], label_map: LabelMap, run: RunInfo
-    ) -> str:
+    def record_extraction(self, document_id: str, figures: list[FigureDraft], run: RunInfo) -> str:
         with self._driver.session() as session:
-            return session.execute_write(_record_extraction, document_id, figures, label_map, run)
+            return session.execute_write(_record_extraction, document_id, figures, run)
 
     def figures(self, isin: str) -> list[Figure]:
         records, _, _ = self._driver.execute_query(
@@ -164,7 +160,7 @@ class Neo4jStore(GraphStore):
             WHERE {CURRENT}
             MATCH (n)-[:FROM_DOCUMENT]->(d:Document), (n)-[:CITES]->(passage:Passage)
             RETURN n, d, o, passage
-            ORDER BY n.fiscal_year DESC, n.page, n.line_item, n.breakdown
+            ORDER BY n.fiscal_year DESC, passage.page, n.line_item, n.breakdown
             """,
             kind=FINANCIAL_FIGURE,
             isin=isin,
@@ -244,6 +240,20 @@ class Neo4jStore(GraphStore):
             isin=isin,
         )
         return [_summary(r["d"], r["o"], r["run"], r["pages"]) for r in records]
+
+    def issuer(self, isin: str) -> Organisation | None:
+        records, _, _ = self._driver.execute_query(
+            """
+            MATCH (:Document)-[:ISSUED_BY]->(o:Organisation {isin: $isin})
+            RETURN o LIMIT 1
+            """,
+            isin=isin,
+        )
+        return (
+            Organisation(isin=records[0]["o"]["isin"], name=records[0]["o"]["name"])
+            if records
+            else None
+        )
 
     def get_document(self, document_id: str) -> DocumentDetail | None:
         records, _, _ = self._driver.execute_query(

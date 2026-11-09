@@ -82,10 +82,20 @@ def test_scaled_values_are_exact_decimal_strings():
 def test_the_cell_check_compares_numbers_not_spacing_or_sign_notation():
     assert number("(988)") == number("-988") == "-988"
     assert matches_cell("36 681", "36 681")
+    assert matches_cell("36 681", "36681")
+    assert matches_cell("1 284,6", "1284,6")
     assert matches_cell("-988", "(988)")
+    assert matches_cell("12,5", "12,5 %")
     assert not matches_cell("36 681", "36 699")
     assert not matches_cell("36 681", "-36 681")
     assert not matches_cell("", "")
+
+
+def test_the_cell_check_reads_decimals_instead_of_dropping_the_dot():
+    assert not matches_cell("1.5", "15")
+    assert not matches_cell("3.5", "35")
+    assert matches_cell("36.681", "36 681")  # a dot followed by three digits groups thousands
+    assert not matches_cell("36 681", "36 681 et 12")  # not one number
 
 
 def test_the_span_check_finds_the_value_as_written_in_the_paragraph():

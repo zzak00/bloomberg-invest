@@ -2,7 +2,7 @@
 its cell or paragraph in Python, recorded as one extract Run (#19 R5, R6; the #10 design)."""
 
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 
 from bloomberg_invest.adapters.files import DocumentFiles
@@ -13,6 +13,7 @@ from bloomberg_invest.config import Prompt
 from bloomberg_invest.domain.extraction import (
     FigureDraft,
     SourceParagraph,
+    SpanPassage,
     drafts,
     instructions,
     page_sources,
@@ -57,7 +58,6 @@ def extract_document(
     parser: Parser,
     extraction: Extraction,
 ) -> Extracted:
-    llm, label_map, prompt = extraction.llm, extraction.label_map, extraction.prompt
     detail = store.get_document(document_id)
     if detail is None:
         raise LookupError(f"no document {document_id}")
@@ -68,6 +68,7 @@ def extract_document(
     pages: list[int] = []
 
     def run_info(status: RunStatus = RunStatus.succeeded, error: str | None = None) -> RunInfo:
+        llm, prompt = extraction.llm, extraction.prompt
         return RunInfo(
             step=RunStep.extract,
             tool=llm.tool,
@@ -76,8 +77,8 @@ def extract_document(
             | {
                 "prompt": f"{prompt.name} {prompt.version}",
                 "prompt_sha256": prompt.sha256,
-                "label_map": label_map.version,
-                "label_map_sha256": label_map.sha256,
+                "label_map": extraction.label_map.version,
+                "label_map_sha256": extraction.label_map.sha256,
                 "parse_run": detail.run.id,
                 "pages": str(len(pages)),
             },
@@ -96,19 +97,38 @@ def extract_document(
         ]
         cells = store.cells(document_id)
         pages = pages_to_extract(paragraphs, cells)
-        system, answer = instructions(prompt.text, label_map), schema(label_map)
+        label_map = extraction.label_map
+        system = instructions(extraction.prompt.text, label_map)
+        answer = schema(label_map)
 
         def extract_page(page: int) -> list[FigureDraft]:
             sources = page_sources(page, paragraphs, cells)
-            response = llm.complete_json(system, sources.prompt, "figures", answer)
+            response = extraction.llm.complete_json(system, sources.prompt, "figures", answer)
             return drafts(response, sources, label_map)
 
         with ThreadPoolExecutor(max_workers=extraction.concurrency) as pool:
             found = [f for page in pool.map(extract_page, pages) for f in page]
+        found = _quoted(found, files, detail.sha256)
     except Exception as error:
         failed = run_info(RunStatus.failed, f"{type(error).__name__}: {error}")
-        run_id = store.record_extraction(document_id, [], label_map, failed)
+        run_id = store.record_extraction(document_id, [], failed)
         raise ExtractFailed(document_id, run_id) from error
-    run_id = store.record_extraction(document_id, found, label_map, run_info())
+    run_id = store.record_extraction(document_id, found, run_info())
     rejected = sum(f.rejected is not None for f in found)
     return Extracted(run_id, len(pages), len(found) - rejected, rejected)
+
+
+def _quoted(found: list[FigureDraft], files: DocumentFiles, sha256: str) -> list[FigureDraft]:
+    """Spans boxed by their quote in the PDF's text layer where it is there, so the viewer
+    highlights the value and not its paragraph (#19 R19)."""
+    spans = [f.passage for f in found if isinstance(f.passage, SpanPassage)]
+    if not spans:
+        return found
+    located = iter(files.quote_boxes(sha256, [(s.page, s.quote, s.boxes) for s in spans]))
+    quoted = []
+    for figure in found:
+        if isinstance(figure.passage, SpanPassage) and (boxes := next(located)) is not None:
+            passage = replace(figure.passage, boxes=boxes, boxes_from="quote")
+            figure = replace(figure, passage=passage)
+        quoted.append(figure)
+    return quoted

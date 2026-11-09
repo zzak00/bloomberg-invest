@@ -12,7 +12,7 @@ from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, replace
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from bloomberg_invest.domain.chunking import Box
 from bloomberg_invest.domain.figures import (
@@ -83,12 +83,14 @@ class CellPassage:
 
 @dataclass(frozen=True)
 class SpanPassage:
-    """A range of a paragraph: the quoted value, in the paragraph's text and boxes."""
+    """A range of a paragraph: the quoted value, in the paragraph's text. Its boxes are the
+    quote's own once it is found in the PDF's text layer, else the paragraph's."""
 
     page: int
     quote: str
     text: str
     boxes: tuple[Box, ...]
+    boxes_from: Literal["quote", "paragraph"] = "paragraph"
 
 
 @dataclass(frozen=True)
@@ -98,7 +100,7 @@ class FigureDraft:
     page: int
     line_item: str
     fiscal_year: int
-    basis_scope: str
+    basis_scope: Scope | None  # None only when the LLM named neither scope: rejected
     breakdown: str
     source_id: str  # the id the LLM cited on the page
     value_as_written: str
@@ -206,6 +208,7 @@ def drafts(
 
 def _draft(item: dict[str, Any], sources: PageSources, label_map: LabelMap) -> FigureDraft:
     written, source_id = item["value_as_written"], item["source_id"]
+    scope = Scope(item["basis_scope"]) if item["basis_scope"] in set(Scope) else None
     cell = sources.cells.get(source_id)
     paragraph = sources.paragraphs.get(source_id)
     passage: CellPassage | SpanPassage | None = None
@@ -219,7 +222,7 @@ def _draft(item: dict[str, Any], sources: PageSources, label_map: LabelMap) -> F
         page=sources.page,
         line_item=item["line_item"],
         fiscal_year=item["fiscal_year"],
-        basis_scope=item["basis_scope"],
+        basis_scope=scope,
         breakdown=item["breakdown"],
         source_id=source_id,
         value_as_written=written,
@@ -241,12 +244,12 @@ def _draft(item: dict[str, Any], sources: PageSources, label_map: LabelMap) -> F
         reason = Rejection.unknown_unit
     elif line_item is None:
         reason = Rejection.unknown_line_item
-    elif item["basis_scope"] not in {s.value for s in Scope}:
+    elif scope is None:
         reason = Rejection.unknown_scope
     else:
         return replace(
             draft,
-            basis_standard=STANDARD[Scope(item["basis_scope"])],
+            basis_standard=STANDARD[scope],
             value=scaled(value, unit),
             unit=unit.unit,
             scale=unit.scale,

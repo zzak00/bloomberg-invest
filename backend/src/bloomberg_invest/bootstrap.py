@@ -19,6 +19,7 @@ from bloomberg_invest.adapters.parsing import Parser
 from bloomberg_invest.adapters.store import GraphStore
 from bloomberg_invest.adapters.store.neo4j_store import Neo4jStore
 from bloomberg_invest.adapters.tokens import TiktokenCounter, TokenCounter
+from bloomberg_invest.domain.label_map import LabelMap
 from bloomberg_invest.service_layer.extract import Extraction
 from bloomberg_invest.settings import Settings
 
@@ -110,10 +111,15 @@ def llm(settings: Settings) -> LLM:
     return RecordingLLM(chosen, settings.llm_record) if settings.llm_record else chosen
 
 
+def label_map() -> LabelMap:
+    """The label map in force: extraction asks for its line items, the dossier groups by them."""
+    return config.label_map()
+
+
 def extraction(settings: Settings) -> Extraction:
     """The LLM with the current label map and prompt; fails now if its secrets are missing."""
     return Extraction(
-        llm(settings), config.label_map(), config.extract_prompt(), settings.extract_concurrency
+        llm(settings), label_map(), config.extract_prompt(), settings.extract_concurrency
     )
 
 

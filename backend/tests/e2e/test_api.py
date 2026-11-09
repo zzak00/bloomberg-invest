@@ -64,7 +64,9 @@ def embedder() -> FakeEmbedder:
 
 @pytest.fixture
 def client(store, files, embedder) -> TestClient:
-    return ContractClient(create_app(store=store, files=files, embedder=embedder))
+    return ContractClient(
+        create_app(store=store, files=files, embedder=embedder, label_map=config.label_map())
+    )
 
 
 @pytest.fixture
@@ -141,12 +143,15 @@ def test_openapi_declares_the_contract(client):
         "Chunk",
         "Company",
         "Figure",
+        "FigureDetail",
+        "FigureGrid",
         "Passage",
+        "Scope",
     } <= set(schemas)
 
 
 def test_the_app_takes_all_its_dependencies_or_none(files):
-    with pytest.raises(TypeError, match="store, files and embedder, or none"):
+    with pytest.raises(TypeError, match="store, files, embedder and label_map, or none"):
         create_app(files=files)
 
 
@@ -252,22 +257,14 @@ def extracted(store, document_id) -> dict[str, str]:
         ]
     }
     run = make_run().model_copy(update={"step": RunStep.extract, "output": None})
-    store.record_extraction(document_id, drafts(answer, sources, label_map), label_map, run)
+    store.record_extraction(document_id, drafts(answer, sources, label_map), run)
     return {f.value_as_written: f.id for f in store.figures("MA0000011488")}
 
 
-def test_a_company_lists_its_filings_and_statements(client, document_id):
+def test_a_company_lists_its_filings(client, document_id):
     company = client.get("/api/companies/MA0000011488").json()
     assert company["issuer"] == {"isin": "MA0000011488", "name": "Maroc Telecom"}
     assert [d["id"] for d in company["documents"]] == [document_id]
-    assert [s["key"] for s in company["statements"]] == [
-        "income_statement",
-        "balance_sheet",
-        "cash_flow",
-        "per_share",
-        "reported",
-    ]
-    assert company["statements"][0]["line_items"][:2] == ["revenue", "operating_income_ebit"]
 
 
 def test_an_unknown_company_is_404(client):
@@ -275,14 +272,23 @@ def test_an_unknown_company_is_404(client):
     assert client.get("/api/companies/MA0000000000/figures").status_code == 404
 
 
-def test_a_company_s_figures_are_its_checked_facts_only(client, extracted):
-    figures = client.get("/api/companies/MA0000011488/figures").json()
-    assert [(f["line_item"], f["fiscal_year"], f["value"]) for f in figures] == [
-        ("revenue", 2025, "36681000000"),
-        ("revenue", 2024, "36699000000"),
+def test_a_company_s_figures_are_its_checked_facts_only_by_statement_and_year(client, extracted):
+    grid = client.get("/api/companies/MA0000011488/figures").json()
+    assert grid["count"] == 2
+    [consolidated, company_only] = grid["scopes"]
+    assert (consolidated["scope"], consolidated["years"]) == ("consolidated", [2025, 2024])
+    assert company_only == {"scope": "company-only", "years": [], "statements": []}
+    [income] = consolidated["statements"]
+    assert (income["key"], income["title"]) == ("income_statement", "Income statement")
+    [row] = income["rows"]
+    assert (row["title"], row["unit"], row["scale"]) == ("Revenue", "MAD", 1_000_000)
+    assert [
+        (y["fiscal_year"], [v["shown"]["value"] for v in y["values"]]) for y in row["years"]
+    ] == [
+        (2025, ["36681000000"]),
+        (2024, ["36699000000"]),
     ]
-    revenue = figures[0]
-    assert (revenue["line_item_title"], revenue["statement"]) == ("Revenue", "income_statement")
+    revenue = row["years"][0]["values"][0]["shown"]
     assert (revenue["period_start"], revenue["period_end"]) == ("2025-01-01", "2025-12-31")
     assert (revenue["basis_scope"], revenue["basis_standard"], revenue["currency"]) == (
         "consolidated",
@@ -301,6 +307,7 @@ def test_a_company_s_figures_are_its_checked_facts_only(client, extracted):
 def test_a_fact_opens_by_its_id_for_the_source_viewer(client, extracted, document_id):
     fact = client.get(f"/api/facts/{extracted['36 681']}").json()
     assert (fact["value_as_written"], fact["label"]) == ("36 681", "Chiffre d'affaires")
+    assert fact["line_item_title"] == "Revenue"
     assert fact["document"]["id"] == document_id
 
 

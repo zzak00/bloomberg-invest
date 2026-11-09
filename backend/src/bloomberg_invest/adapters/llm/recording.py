@@ -1,7 +1,8 @@
 """Record a model's answers once, then replay them, so tests never call a live model (#19).
 
-A recording is a JSON file holding the model's identity and its answers keyed by a SHA-256 of the
-request (model, messages and schema). It holds no request text: the key is enough to replay.
+A recording is a JSON Lines file: a first line naming the model, then one line per answer keyed
+by a SHA-256 of the request (model, messages and schema). It holds no request text: the key is
+enough to replay. Recording appends a line per answer, so a long run never rewrites the file.
 """
 
 import hashlib
@@ -19,35 +20,35 @@ def request_key(model: str, system: str, user: str, schema_name: str, schema: di
 
 
 class RecordingLLM(LLM):
-    """Calls `inner` and adds each answer to the recording at `path`, kept across runs."""
+    """Calls `inner` and appends each answer to the recording at `path`, kept across runs."""
 
     def __init__(self, inner: LLM, path: Path) -> None:
         self._inner, self._path = inner, path
         self.tool, self.tool_version = inner.tool, inner.tool_version
         self.model, self.config = inner.model, inner.config
-        self._responses = _read(path)["responses"] if path.exists() else {}
         self._lock = threading.Lock()
+        if path.exists():
+            recorded = _read(path)["model"]
+            if recorded != self.model:
+                raise ValueError(f"{path} records {recorded}, not {self.model}; record anew")
+        else:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            header = {
+                "tool": self.tool,
+                "tool_version": self.tool_version,
+                "model": self.model,
+                "config": self.config,
+            }
+            path.write_text(_line(header))
 
     def complete_json(
         self, system: str, user: str, schema_name: str, schema: dict[str, Any]
     ) -> dict[str, Any]:
         answer = self._inner.complete_json(system, user, schema_name, schema)
         key = request_key(self.model, system, user, schema_name, schema)
-        with self._lock:
-            self._responses[key] = answer
-            self._write()
+        with self._lock, self._path.open("a") as handle:
+            handle.write(_line({"key": key, "answer": answer}))
         return answer
-
-    def _write(self) -> None:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        recording = {
-            "tool": self.tool,
-            "tool_version": self.tool_version,
-            "model": self.model,
-            "config": self.config,
-            "responses": self._responses,
-        }
-        self._path.write_text(json.dumps(recording, ensure_ascii=False, indent=1, sort_keys=True))
 
 
 class ReplayLLM(LLM):
@@ -73,5 +74,11 @@ class ReplayLLM(LLM):
         return self._responses[key]
 
 
+def _line(record: dict[str, Any]) -> str:
+    return json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n"
+
+
 def _read(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text())
+    """The header with every answer under `responses`; a request answered twice keeps the last."""
+    header, *answers = (json.loads(line) for line in path.read_text().splitlines() if line)
+    return header | {"responses": {a["key"]: a["answer"] for a in answers}}

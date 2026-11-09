@@ -6,6 +6,7 @@ shown, so the real page rendering, check and store run without a live model.
 
 import hashlib
 import json
+import shutil
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -43,6 +44,9 @@ def parse(parser, tmp_path_factory):
     """The fixture parsed once: its ParsedDocument and the data dir holding Docling's output."""
     data = tmp_path_factory.mktemp("data")
     (data / OUTPUT).parent.mkdir(parents=True)
+    files = DocumentFiles(data)
+    files.pdf_path(SHA).parent.mkdir(parents=True)
+    shutil.copy(FIXTURES / "filing.pdf", files.pdf_path(SHA))
     return parser.parse(FIXTURES / "filing.pdf", data / OUTPUT), data
 
 
@@ -80,7 +84,6 @@ def test_each_figure_is_a_fact_with_its_period_basis_currency_and_cell(
     revenue = figures[("revenue", 2025)]
     assert (revenue.value, revenue.value_as_written) == ("36681000000", "36 681")
     assert (revenue.unit, revenue.scale, revenue.currency) == ("MAD", 1_000_000, "MAD")
-    assert (revenue.line_item_title, revenue.statement) == ("Revenue", "income_statement")
     assert revenue.label == "Chiffre d'affaires"
     assert (revenue.period_start, revenue.period_end) == (date(2025, 1, 1), date(2025, 12, 31))
     assert revenue.as_of is None
@@ -108,6 +111,17 @@ def test_each_figure_is_a_fact_with_its_period_basis_currency_and_cell(
     assert [r["cell"] for r in records] == ["36 681"]
 
 
+def test_a_fact_stores_nothing_it_can_read_from_the_label_map_or_its_passage(
+    store, filing, parser, driver
+):
+    extract(store, filing, parser, PageReadingLLM(FIGURES))
+
+    records, _, _ = driver.execute_query("MATCH (n:Fact) RETURN DISTINCT keys(n) AS keys")
+    stored = {key for r in records for key in r["keys"]}
+    assert not stored & {"line_item_title", "statement", "page", "reason"}
+    assert {"source_id", "unit_as_written"} <= stored
+
+
 def test_a_figure_quoted_from_a_paragraph_cites_the_span(store, filing, parser):
     extract(store, filing, parser, PageReadingLLM(FIGURES))
 
@@ -117,7 +131,10 @@ def test_a_figure_quoted_from_a_paragraph_cites_the_span(store, filing, parser):
     assert dividend.passage.quote == "4,01"
     assert dividend.passage.page == 2
     assert "dividende de 4,01 dirhams par action" in dividend.label
-    assert dividend.passage.boxes and all(b.page == 2 for b in dividend.passage.boxes)
+    # The quote's own box from the text layer, not its paragraph's (#19 R19).
+    [box] = dividend.passage.boxes
+    assert box.page == 2
+    assert box.right - box.left < 25 and box.bottom - box.top < 12
 
 
 def test_a_figure_that_does_not_match_its_cell_is_rejected_and_never_a_fact(

@@ -10,8 +10,12 @@ from datetime import date
 from decimal import Decimal
 from enum import StrEnum
 
+from bloomberg_invest.domain.label_map import Kind
+
 SPACES = re.compile(r"[\s  ]+")
 MINUS = ("-", "−", "–")
+# The kind of Fact a financial figure is (#19 R5); other kinds of Fact come with later slices.
+FINANCIAL_FIGURE = "financial_figure"
 
 
 class Scope(StrEnum):
@@ -30,14 +34,19 @@ def number(text: str) -> str:
     `(988)` and `-988` are the same number; `36 681` and `36681` too.
     """
     text = text.strip()
-    negative = text.startswith(MINUS) or (text.startswith("(") and text.endswith(")"))
     digits = re.sub(r"[^\d,]", "", text)
-    return ("-" if negative and digits else "") + digits
+    return ("-" if _negative(text) and digits else "") + digits
+
+
+def _negative(text: str) -> bool:
+    """`-988`, `−988` and `(988)` are negative."""
+    return text.startswith(MINUS) or (text.startswith("(") and text.endswith(")"))
 
 
 def matches_cell(value: str, cell: str) -> bool:
-    """A cell figure counts when its number equals the cell's number."""
-    return bool(number(value)) and number(value) == number(cell)
+    """A cell figure counts when its value is the cell's number: `1.5` is not `15`."""
+    number = parse_value(value)
+    return number is not None and number == parse_value(cell)
 
 
 def matches_span(value: str, paragraph: str) -> bool:
@@ -54,7 +63,7 @@ def parse_value(text: str) -> Decimal | None:
     A sign, parentheses and a trailing `%` are allowed.
     """
     text = SPACES.sub("", text.strip())
-    negative = text.startswith(MINUS) or (text.startswith("(") and text.endswith(")"))
+    negative = _negative(text)
     text = text.strip("()").lstrip("".join(MINUS) + "+").removesuffix("%")
     if "," in text and "." in text:
         decimal = "," if text.rindex(",") > text.rindex(".") else "."
@@ -145,7 +154,7 @@ class Period:
     as_of: date | None
 
 
-def period(fiscal_year: int, kind: str) -> Period:
+def period(fiscal_year: int, kind: Kind) -> Period:
     """Fiscal years end on 31 December, as for every filing ingested so far; a filing with
     another year end needs its own rule here."""
     if kind == "stock":

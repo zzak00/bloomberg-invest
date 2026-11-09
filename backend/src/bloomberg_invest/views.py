@@ -5,6 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from bloomberg_invest.domain.figures import Scope
 from bloomberg_invest.domain.model import Bbox, DocType, Organisation, PageInfo, RunInfo
 
 
@@ -82,7 +83,7 @@ class Passage(BaseModel):
 
     kind: Literal["cell", "span"]
     page: int
-    boxes: list[Box]  # what the source viewer highlights: the cell, or the quote's paragraph
+    boxes: list[Box]  # what the source viewer highlights: the cell, or the quote
     text: str  # the cell's text, or the paragraph's
     quote: str | None = None  # spans: the value as quoted
 
@@ -91,9 +92,7 @@ class Figure(BaseModel):
     """A financial figure Fact (#19 R5, R6): checked against its Passage before it was stored."""
 
     id: str
-    line_item: str
-    line_item_title: str
-    statement: str  # a key of `Company.statements`
+    line_item: str  # a line item of the label map
     label: str  # the filing's own wording
     value: str  # exact decimal in the base unit: "36681000000"
     value_as_written: str  # "36 681"
@@ -104,7 +103,7 @@ class Figure(BaseModel):
     period_start: date | None  # flows
     period_end: date | None
     as_of: date | None  # stocks
-    basis_scope: Literal["consolidated", "company-only"]
+    basis_scope: Scope
     basis_standard: str
     breakdown: str  # empty for the line item itself, else which part of it
     recorded_at: datetime
@@ -112,15 +111,57 @@ class Figure(BaseModel):
     passage: Passage
 
 
-class Statement(BaseModel):
-    key: str
-    title: str
-    line_items: list[str]  # in the label map's order, which the dossier lists them in
+class FigureDetail(Figure):
+    """A figure with its line item's title in the current label map, as the viewer names it."""
+
+    line_item_title: str
 
 
 class Company(BaseModel):
-    """An issuer's dossier: its filings, and how its figures are grouped."""
+    """An issuer's dossier: its filings."""
 
     issuer: Organisation
     documents: list[DocumentSummary]
-    statements: list[Statement]  # in the order the dossier lists them
+
+
+class FigureValue(BaseModel):
+    """One value a line item takes in a year, and every figure stating it, rounded or not."""
+
+    shown: Figure  # the one a click opens: in the row's unit, from the earliest page
+    sources: list[Figure]
+
+
+class FigureYear(BaseModel):
+    fiscal_year: int
+    values: list[FigureValue]  # more than one: the filing disagrees with itself
+
+
+class FigureRow(BaseModel):
+    """A line item, or one breakdown of it, in one currency, by fiscal year."""
+
+    line_item: str
+    title: str  # the line item's title in the label map
+    breakdown: str  # empty for the line item itself
+    currency: str  # the currency, or the unit for a percentage or a share count
+    unit: str  # the unit and scale most of its figures are written in
+    scale: int
+    years: list[FigureYear]  # newest first, only years with a value
+
+
+class StatementFigures(BaseModel):
+    key: str
+    title: str
+    rows: list[FigureRow]  # in the label map's order, the filing's main currency first
+
+
+class ScopeFigures(BaseModel):
+    scope: Scope
+    years: list[int]  # every fiscal year with a figure on this basis, newest first
+    statements: list[StatementFigures]  # in the label map's order, only those with rows
+
+
+class FigureGrid(BaseModel):
+    """An issuer's current figures as the dossier lists them, on each basis."""
+
+    count: int  # every current figure, on both bases
+    scopes: list[ScopeFigures]

@@ -5,8 +5,7 @@ from typing import Protocol
 from bloomberg_invest.domain.chunking import ChunkDraft
 from bloomberg_invest.domain.extraction import FigureDraft, SourceCell
 from bloomberg_invest.domain.indexing import EmbedInput
-from bloomberg_invest.domain.label_map import LabelMap
-from bloomberg_invest.domain.model import DocumentMeta, ParsedDocument, RunInfo
+from bloomberg_invest.domain.model import DocumentMeta, Organisation, ParsedDocument, RunInfo
 from bloomberg_invest.views import Chunk, DocumentDetail, DocumentSummary, Figure
 
 
@@ -54,9 +53,7 @@ class GraphStore(Protocol):
     def cells(self, document_id: str) -> list[SourceCell]:
         """The Document's current table Cells, by table, row and column."""
 
-    def record_extraction(
-        self, document_id: str, figures: list[FigureDraft], label_map: LabelMap, run: RunInfo
-    ) -> str:
+    def record_extraction(self, document_id: str, figures: list[FigureDraft], run: RunInfo) -> str:
         """Store an extract Run's figures for the Document; return the Run id.
 
         A figure that passed its check becomes a Fact citing its Passage, one that failed a
@@ -78,5 +75,8 @@ class GraphStore(Protocol):
 
     def list_documents(self, isin: str | None = None) -> list[DocumentSummary]:
         """Every ingested filing, or one issuer's."""
+
+    def issuer(self, isin: str) -> Organisation | None:
+        """The Organisation with this ISIN, if a filing of it was ingested."""
 
     def get_document(self, document_id: str) -> DocumentDetail | None: ...

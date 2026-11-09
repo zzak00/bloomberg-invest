@@ -6,7 +6,7 @@
 # - statement: where the dossier lists it;
 # - kind: "flow" covers a period (a fiscal year), "stock" holds on a date (its last day).
 #
-# Never edit a released version: add v2 and point `CURRENT` in `domain/label_map.py` at it. Runs
+# Never edit a released version: add v2 and point `LABEL_MAP` in `config/__init__.py` at it. Runs
 # record the version and this file's SHA-256.
 
 version = "v1"

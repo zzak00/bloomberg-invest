@@ -13,17 +13,14 @@ from bloomberg_invest.adapters.store.neo4j_store._cypher import (
     current,
 )
 from bloomberg_invest.domain.extraction import CellPassage, FigureDraft, SpanPassage
-from bloomberg_invest.domain.label_map import LabelMap
+from bloomberg_invest.domain.figures import FINANCIAL_FIGURE
 from bloomberg_invest.domain.model import RunInfo, RunStatus, RunStep
-
-FINANCIAL_FIGURE = "financial_figure"
 
 
 def _record_extraction(
     tx: ManagedTransaction,
     document_id: str,
     figures: list[FigureDraft],
-    label_map: LabelMap,
     run: RunInfo,
 ) -> str:
     run_id = _create_run(tx, document_id, run)
@@ -31,7 +28,7 @@ def _record_extraction(
         return run_id
 
     _supersede_step(tx, run_id, RunStep.extract.value)
-    rows = [_row(f, label_map, run.finished_at) for f in figures]
+    rows = [_row(f, run.finished_at) for f in figures]
     tx.run(
         f"""
         MATCH (d:Document {{id: $document_id}})-[:ISSUED_BY]->(o:Organisation)
@@ -49,7 +46,8 @@ def _record_extraction(
             WITH * WHERE f.span IS NOT NULL
             MATCH (d)-[:HAS_PAGE]->(p:Page {{number: f.span.page}}) WHERE {current("p")}
             CREATE (s:Span:Passage {{id: f.span.id, page: f.span.page, quote: f.span.quote,
-                                     text: f.span.text, boxes: f.span.boxes}})
+                                     text: f.span.text, boxes: f.span.boxes,
+                                     boxes_from: f.span.boxes_from}})
             CREATE (n)-[:CITES]->(s), (s)-[:PRODUCED_BY]->(r), (s)-[:ON_PAGE]->(p)
         }}
         """,
@@ -72,15 +70,11 @@ def _record_extraction(
     return run_id
 
 
-def _row(figure: FigureDraft, label_map: LabelMap, recorded_at: datetime) -> dict[str, Any]:
-    line_item = label_map.items.get(figure.line_item)
+def _row(figure: FigureDraft, recorded_at: datetime) -> dict[str, Any]:
     period = figure.period
     properties = {
         "kind": FINANCIAL_FIGURE,
         "line_item": figure.line_item,
-        # How label map `version` names and files the line item, as the dossier shows it.
-        "line_item_title": line_item.title if line_item else None,
-        "statement": line_item.statement if line_item else None,
         "label": figure.label,
         "value": figure.value,
         "value_as_written": figure.value_as_written,
@@ -92,14 +86,15 @@ def _row(figure: FigureDraft, label_map: LabelMap, recorded_at: datetime) -> dic
         "period_start": period.start if period else None,
         "period_end": period.end if period else None,
         "as_of": period.as_of if period else None,
-        "basis_scope": figure.basis_scope,
+        "basis_scope": figure.basis_scope.value if figure.basis_scope else None,
         "basis_standard": figure.basis_standard,
         "breakdown": figure.breakdown,
-        "page": figure.page,
-        "source_id": figure.source_id,
+        "source_id": figure.source_id,  # the id the LLM cited, for tracing an answer back
         "recorded_at": recorded_at,
-        "reason": figure.rejected.value if figure.rejected else None,
     }
+    if figure.rejected:
+        # A Fact's page is its Passage's; a rejected figure may have no Passage to ask.
+        properties |= {"page": figure.page, "reason": figure.rejected.value}
     passage = figure.passage
     return {
         "id": str(uuid.uuid4()),
@@ -112,6 +107,7 @@ def _row(figure: FigureDraft, label_map: LabelMap, recorded_at: datetime) -> dic
             "quote": passage.quote,
             "text": passage.text,
             "boxes": [float(v) for box in passage.boxes for v in box],
+            "boxes_from": passage.boxes_from,
         }
         if isinstance(passage, SpanPassage)
         else None,

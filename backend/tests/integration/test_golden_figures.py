@@ -33,7 +33,7 @@ from bloomberg_invest.service_layer.extract import Extraction
 from bloomberg_invest.service_layer.ingest import ingest
 
 # Named like the notebook's recording, so both replay the same answers.
-RECORDING = GOLDEN_PDF.parents[1] / "recordings" / f"{GOLDEN_SHA[:12]}-extract-figures-v1.json"
+RECORDING = GOLDEN_PDF.parents[1] / "recordings" / f"{GOLDEN_SHA[:12]}-extract-figures-v1.jsonl"
 # No text layer (p. 26) or unreadable (p. 58) in golden v0, as in #10.
 EXCLUDED_PAGES = {26, 58}
 TARGET = 148
@@ -107,10 +107,11 @@ def test_golden_figures_are_extracted_as_well_as_in_the_bake_off(store, meta, tm
     facts = store.figures("MA0000011488")
     records, _, _ = driver.execute_query(
         """
-        MATCH (n:RejectedFigure)
+        MATCH (n:RejectedFigure)-[:PRODUCED_BY]->(:Run {id: $run})
         RETURN n.page AS page, n.fiscal_year AS fiscal_year, n.value_as_written AS value,
                n.line_item AS line_item, n.basis_scope AS scope, n.reason AS reason
-        """
+        """,
+        run=ingested.extracted.run_id,
     )
     rejected = [dict(r) for r in records]
     golden = golden_figures()

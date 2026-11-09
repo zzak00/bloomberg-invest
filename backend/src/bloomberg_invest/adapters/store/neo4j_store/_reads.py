@@ -89,8 +89,6 @@ def _figure(n: Any, d: Any, o: Any, passage: Any) -> Figure:
     return Figure(
         id=n["id"],
         line_item=n["line_item"],
-        line_item_title=n["line_item_title"],
-        statement=n["statement"],
         label=n["label"],
         value=n["value"],
         value_as_written=n["value_as_written"],

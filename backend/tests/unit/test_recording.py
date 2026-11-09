@@ -12,7 +12,7 @@ PAGE = 'Page 24\n\nParagraphs:\n\nTables:\n<table id="t24.0">\n<tr><td id="t24.0
 
 
 def test_a_recorded_answer_replays_without_the_model(tmp_path):
-    path = tmp_path / "recording.json"
+    path = tmp_path / "recording.jsonl"
     live = PageReadingLLM({"36 681": {}})
     recorded = RecordingLLM(live, path).complete_json("system", PAGE, "figures", SCHEMA)
 
@@ -24,21 +24,41 @@ def test_a_recorded_answer_replays_without_the_model(tmp_path):
 
 
 def test_the_recording_keeps_answers_not_the_filing_s_text(tmp_path):
-    path = tmp_path / "recording.json"
+    path = tmp_path / "recording.jsonl"
     RecordingLLM(PageReadingLLM({}), path).complete_json("system", PAGE, "figures", SCHEMA)
     assert "Page 24" not in path.read_text()
-    assert len(json.loads(path.read_text())["responses"]) == 1
+    header, answer = (json.loads(line) for line in path.read_text().splitlines())
+    assert header["model"] == "fake-model"
+    assert set(answer) == {"key", "answer"}
 
 
 def test_recording_again_adds_to_the_same_file(tmp_path):
-    path = tmp_path / "recording.json"
+    path = tmp_path / "recording.jsonl"
     RecordingLLM(PageReadingLLM({}), path).complete_json("system", "page 1", "figures", SCHEMA)
     RecordingLLM(PageReadingLLM({}), path).complete_json("system", "page 2", "figures", SCHEMA)
-    assert len(json.loads(path.read_text())["responses"]) == 2
+    assert len(path.read_text().splitlines()) == 3  # the model, then one line per answer
+
+
+def test_each_answer_is_appended_not_the_file_rewritten(tmp_path):
+    path = tmp_path / "recording.jsonl"
+    recording = RecordingLLM(PageReadingLLM({}), path)
+    recording.complete_json("system", "page 1", "figures", SCHEMA)
+    first = path.read_text()
+    recording.complete_json("system", "page 2", "figures", SCHEMA)
+    assert path.read_text().startswith(first)
+
+
+def test_a_recording_holds_one_model_s_answers(tmp_path):
+    path = tmp_path / "recording.jsonl"
+    RecordingLLM(PageReadingLLM({}), path).complete_json("system", "page 1", "figures", SCHEMA)
+    other = PageReadingLLM({})
+    other.model = "other-model"
+    with pytest.raises(ValueError, match="records fake-model, not other-model"):
+        RecordingLLM(other, path)
 
 
 def test_a_request_never_recorded_fails_instead_of_calling_out(tmp_path):
-    path = tmp_path / "recording.json"
+    path = tmp_path / "recording.jsonl"
     RecordingLLM(PageReadingLLM({}), path).complete_json("system", PAGE, "figures", SCHEMA)
     with pytest.raises(LookupError, match="record it again with LLM_RECORD"):
         ReplayLLM(path).complete_json("system", PAGE + " changed", "figures", SCHEMA)
