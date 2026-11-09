@@ -422,15 +422,19 @@ a {
   outline-offset: -2px;
 }
 
+/* The company name opens its dossier: underlined like every link to a source, so it reads as a
+   target of its own inside the row. */
 .cell-link {
   position: relative;
   z-index: 1;
-  text-decoration: none;
+  text-decoration: underline;
+  text-decoration-color: var(--rule-strong);
+  text-underline-offset: 3px;
 }
 
 .cell-link:hover {
-  text-decoration: underline;
-  text-underline-offset: 3px;
+  color: var(--signal);
+  text-decoration-color: currentColor;
 }
 
 /* ---------- Company dossier ---------- */
