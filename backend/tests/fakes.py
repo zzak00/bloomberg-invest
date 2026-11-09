@@ -37,6 +37,7 @@ class FakeEmbedder:
     name = "fake-embedder"
     tool = "fake"
     tool_version = "1.0"
+    max_tokens = 512
     dims = 16
 
     def __init__(self, broken: bool = False) -> None:

@@ -38,7 +38,11 @@ def embed_document(document_id: str, store: GraphStore, embedder: Embedder) -> E
             step=RunStep.embed,
             tool=embedder.tool,
             tool_version=embedder.tool_version,
-            config={"model": embedder.name, "chunk_run": chunk_run},
+            config={
+                "model": embedder.name,
+                "max_tokens": str(embedder.max_tokens),
+                "chunk_run": chunk_run,
+            },
             started_at=started_at,
             finished_at=datetime.now(UTC),
             status=status,

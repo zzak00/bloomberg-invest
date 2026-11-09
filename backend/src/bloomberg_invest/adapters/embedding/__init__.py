@@ -7,6 +7,7 @@ class Embedder(Protocol):
     name: str  # the model, as recorded on the embed Run
     tool: str
     tool_version: str
+    max_tokens: int  # the window: a text's tokens past it are not embedded
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         """One unit vector per text, in order."""

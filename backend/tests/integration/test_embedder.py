@@ -67,3 +67,10 @@ def test_an_english_query_is_nearest_the_french_passage_that_answers_it(model):
     query = model.embed_query("What dividend per share is proposed?")
 
     assert dot(query, dividend) > dot(query, revenue)
+
+
+def test_a_text_past_the_window_is_cut_not_refused(embedder):
+    long = " ".join(["dividende"] * (4 * embedder.max_tokens))
+
+    [vector] = embedder.embed_documents([long])
+    assert math.isclose(dot(vector, vector), 1.0, abs_tol=1e-2)

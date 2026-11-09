@@ -39,6 +39,7 @@ def test_embedding_records_a_run_with_the_model_and_the_chunk_run_it_embedded(
     assert (run["id"], run["status"], run["tool"]) == (embedded.run_id, "succeeded", "fake")
     assert json.loads(run["config"]) == {
         "model": "fake-embedder",
+        "max_tokens": "512",
         "chunk_run": store.current_chunk_run(chunked),
     }
 
