@@ -26,12 +26,14 @@ Ingest also chunks the filing and embeds each Chunk for search (#21), with `Qwen
 
 Embedding runs on the CPU in the container, about 5 seconds per long Chunk, so a 90-page filing takes over 10 minutes there. On a Mac it uses the GPU and takes about 3 minutes: `cd backend && DATA_DIR=../data uv run --extra ingest --env-file ../.env bloomberg chunk <document id>` (or `ingest`, or `embed`).
 
-`docker compose up --build` does not rebuild these three tools, which share one image. After changing backend code, rebuild it before running them: `docker compose --profile tools build ingest`.
+Ingest then extracts the filing's financial figures (#22): each page with a table or a number goes to Azure OpenAI (`gpt-5.6-sol`), and Python keeps a figure only when its value equals the table cell or quoted text it cites. Set `AZURE_OPENAI_ENDPOINT` and `AZURE_OPENAI_API_KEY` in `.env` first; ingest stops before parsing without them. To re-extract an ingested filing: `docker compose run --rm extract <document id>`. Its figures show on the company's dossier, opened from its name on INDEX.
+
+`docker compose up --build` does not rebuild these tools, which share one image. After changing backend code, rebuild it before running them: `docker compose --profile tools build ingest`.
 
 | Part | Where | Notes |
 | --- | --- | --- |
 | API | `backend/` (FastAPI, Python 3.12, uv) | `/api/docs` for the OpenAPI UI |
-| Ingest | `backend/` with the `ingest` extra (Docling) | Kept out of the API image |
+| Ingest | `backend/` with the `ingest` extra (Docling, the OpenAI client) | Kept out of the API image |
 | Web app | `frontend/` (React, TypeScript, Vite) | `npm run dev` proxies `/api` to `localhost:8000` |
 | Graph | Neo4j Community | Browser on http://localhost:7474 |
 
@@ -45,6 +47,7 @@ uv sync --locked                         # API only, like the API image
 uv run pytest -m "not ingest"            # store, API and outline tests
 uv run --extra ingest pytest -m ingest   # Docling parser, ingest and chunk tests
 uv run --extra embed pytest -m embed     # the embedding model
+uv run --extra ingest --env-file <secrets> pytest -m live   # the live Azure OpenAI model
 uv run ruff check . && uv run ruff format --check .
 
 cd ../frontend
@@ -73,6 +76,6 @@ The first run on a filing parses it (a few minutes); the parse and the vectors a
 
 Outputs are stripped on commit, and CI rejects a notebook with outputs: they show pages of the AMMC report.
 
-The `golden` test ingests the real report when it is at `data/inbox/Maroc_Telecom_RFA_2025.pdf`, and is skipped otherwise.
+The `golden` tests ingest the real report when it is at `data/inbox/Maroc_Telecom_RFA_2025.pdf`, and are skipped otherwise. The figures one (#22 AC5) replays the model's answers from `data/recordings/`, never committed; record them once, live, with `LLM_RECORD=1 uv run --extra ingest --env-file <secrets> pytest -m golden -s tests/integration/test_golden_figures.py`. No test calls a live model otherwise: the tests use a fake or a recording, and a recording holds the model's answers only.
 
 To check a change in the browser at 1440, 1024 and 390, see `.claude/skills/verify-bloomberg-invest/SKILL.md`.
