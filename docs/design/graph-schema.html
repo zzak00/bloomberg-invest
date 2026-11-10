@@ -1,0 +1,160 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Bloomberg Invest Graph Schema</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a reference sheet. Summary first (three rules, one worked figure, the relationship list), then every node's attributes grouped by area. Amber signal on paper / near-black, as in the app. */
+:root {
+  --bg: #F6F4EE; --fg: #17150F; --muted: #6B665A; --line: #D8D3C6;
+  --panel: #FFFFFF; --head: #ECE7DA; --signal: #9A5B00;
+  --sans: "Hanken Grotesk", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0B0B0A; --fg: #EDEAE2; --muted: #9A9485; --line: #34312A;
+  --panel: #141412; --head: #1E1C18; --signal: #FFB224; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0B0B0A; --fg: #EDEAE2; --muted: #9A9485; --line: #34312A;
+  --panel: #141412; --head: #1E1C18; --signal: #FFB224; color-scheme: dark }
+body { background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 15px; line-height: 1.55;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 32px 64px; }
+main { max-width: 1120px; margin: 0 auto; display: grid; gap: 40px; }
+main > *, section > * { min-width: 0; }
+header { display: grid; gap: 8px; }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--signal); }
+h1 { font-size: clamp(26px, 4vw, 36px); line-height: 1.15; margin: 0; font-weight: 700; text-wrap: balance; }
+h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; margin: 0; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+h3 { font-size: 17px; margin: 0; font-weight: 600; }
+h3 code { font-size: 16px; color: var(--fg); }
+p { margin: 0; max-width: 72ch; }
+.lede { color: var(--muted); }
+code { font-family: var(--mono); font-size: 0.86em; overflow-wrap: anywhere; }
+a { color: var(--signal); }
+a:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+.rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.rule { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 16px 18px; display: grid; gap: 6px; align-content: start; }
+.rule b { font-size: 15px; }
+.rule p { color: var(--muted); font-size: 14px; }
+pre { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 14px 16px; overflow-x: auto; font-family: var(--mono); font-size: 13px; line-height: 1.7; }
+.cap { font-size: 13px; color: var(--muted); margin-top: 8px; }
+.toc { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 14px; }
+.toc .g { display: inline-block; min-width: 92px; font-family: var(--mono); font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.toc a { margin-right: 10px; }
+.group { display: grid; gap: 28px; }
+.node { display: grid; gap: 8px; scroll-margin-top: 16px; }
+.node > p { color: var(--muted); font-size: 14px; }
+.tbl { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th, td { text-align: left; padding: 7px 12px 7px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+td:first-child { white-space: nowrap; }
+td.t { font-family: var(--mono); font-size: 12px; color: var(--muted); white-space: nowrap; }
+code.ex { color: var(--signal); }
+.node table th:nth-child(4), .node table td:nth-child(4) { width: 34%; }
+.split { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 32px; }
+ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; max-width: 72ch; font-size: 14px; }
+</style>
+
+<main>
+  <header>
+    <div class="eyebrow">Neo4j · as merged in #40</div>
+    <h1>Graph schema</h1>
+    <p class="lede">Every node the pipeline writes for one filing, with each attribute's meaning and a real example from the Maroc Telecom 2025 report. The source of truth is <code>docs/graph-schema.md</code> in the repo.</p>
+  </header>
+
+  <section class="rules" aria-label="Three rules">
+    <div class="rule"><b>Passage is a label, not a node</b><p>Every Cell is <code>:Cell:Passage</code> and every Span is <code>:Span:Passage</code>. A Passage is what a Fact cites, so reads match <code>(:Fact)-[:CITES]-&gt;(:Passage)</code> without asking which kind. No node is a Passage alone.</p></div>
+    <div class="rule"><b>Relationships have no attributes</b><p>Only a type and a direction. When something was made, by which tool and with which settings, lives on the Run that <code>PRODUCED_BY</code> points to. The local graph holds 54,942 relationships, none with a property.</p></div>
+    <div class="rule"><b>Absent means no value</b><p>Neo4j stores no nulls, so an optional attribute (marked <code>?</code>) is missing from the node rather than empty. <code>superseded</code> appears only once a newer Run replaces the node.</p></div>
+  </section>
+
+  <section style="display:grid; gap:10px">
+    <h2>One figure, as stored</h2>
+<pre>(:Organisation {isin: "MA0000011488"})&lt;-[:ABOUT]-(f:Fact {line_item: "revenue", value_as_written: "36 681"})
+(f)-[:CITES]-&gt;(:Cell:Passage {text: "36 681", row: 1, col: 3})-[:ON_PAGE]-&gt;(:Page {number: 4})
+(f)-[:FROM_DOCUMENT]-&gt;(:Document {doc_type: "annual_report", fiscal_year: 2025})
+(f)-[:PRODUCED_BY]-&gt;(:Run {step: "extract", tool: "azure-openai"})
+(:Table {page: 4})-[:HAS_CELL]-&gt;(the Cell)</pre>
+    <p class="cap">Consolidated revenue for 2025: 36 681 in MAD millions, read from row 1, column 3 of the first table on page 4.</p>
+  </section>
+
+  <div class="split">
+    <section style="display:grid; gap:10px">
+      <h2>Every relationship</h2>
+      <div class="tbl"><table><thead><tr><th>From</th><th>Type</th><th>To</th></tr></thead><tbody><tr><td>Document</td><td><code>ISSUED_BY</code></td><td>Organisation</td></tr><tr><td>Run</td><td><code>PROCESSED</code></td><td>Document</td></tr><tr><td>Document</td><td><code>HAS_PAGE</code></td><td>Page</td></tr><tr><td>Document</td><td><code>HAS_SECTION</code></td><td>Section</td></tr><tr><td>Section</td><td><code>HAS_SECTION</code></td><td>Section (child)</td></tr><tr><td>Section</td><td><code>ON_PAGE</code></td><td>Page</td></tr><tr><td>Document</td><td><code>HAS_TABLE</code></td><td>Table</td></tr><tr><td>Table</td><td><code>HAS_CELL</code></td><td>Cell</td></tr><tr><td>Table · Cell</td><td><code>ON_PAGE</code></td><td>Page</td></tr><tr><td>Chunk</td><td><code>FROM_DOCUMENT</code></td><td>Document</td></tr><tr><td>Chunk</td><td><code>IN_SECTION</code></td><td>Section</td></tr><tr><td>Chunk</td><td><code>ON_PAGE</code></td><td>Page (one or more)</td></tr><tr><td>Chunk</td><td><code>NEXT_CHUNK</code></td><td>Chunk</td></tr><tr><td>Chunk</td><td><code>REFERS_TO</code></td><td>Section (a cited note)</td></tr><tr><td>Fact</td><td><code>CITES</code></td><td>Cell or Span (:Passage)</td></tr><tr><td>Fact</td><td><code>ABOUT</code></td><td>Organisation</td></tr><tr><td>Fact</td><td><code>FROM_DOCUMENT</code></td><td>Document</td></tr><tr><td>RejectedFigure</td><td><code>CITES</code></td><td>Cell or Span, if it named one</td></tr><tr><td>RejectedFigure</td><td><code>ABOUT · FROM_DOCUMENT</code></td><td>Organisation · Document</td></tr><tr><td>Span</td><td><code>ON_PAGE</code></td><td>Page</td></tr><tr><td>Every node</td><td><code>PRODUCED_BY</code></td><td>the Run that made it</td></tr><tr><td>Replaced node, embed Run</td><td><code>SUPERSEDED_BY</code></td><td>the newer Run</td></tr></tbody></table></div>
+    </section>
+    <section style="display:grid; gap:16px; align-content:start">
+      <h2>Nodes</h2>
+      <ul class="toc"><li><span class="g">Filing</span> <a href="#organisation">Organisation</a> <a href="#document">Document</a> <a href="#page">Page</a> <a href="#section">Section</a> <a href="#table">Table</a> <a href="#cell">Cell</a></li><li><span class="g">Search</span> <a href="#chunk">Chunk</a></li><li><span class="g">Figures</span> <a href="#fact">Fact</a> <a href="#span">Span</a> <a href="#rejectedfigure">RejectedFigure</a></li><li><span class="g">Provenance</span> <a href="#run">Run</a></li></ul>
+      <h2>Unique keys</h2>
+      <p style="font-size:14px">Neo4j Community enforces uniqueness only (marked <code>UQ</code>); required attributes and types are checked by the Pydantic models every write goes through. Page has no key. The vector index <code>chunk_embedding</code> covers <code>Chunk.embedding</code>, cosine, full precision.</p>
+      <h2>Superseded, never deleted</h2>
+      <p style="font-size:14px">A re-run marks the earlier Run's nodes <code>superseded = true</code> with <code>SUPERSEDED_BY</code> the new Run, in the same transaction. Reads skip them, except reads by id, so a link to an old Fact or Chunk keeps working.</p>
+    </section>
+  </div>
+
+  <section class="group"><h2>Filing</h2><section class="node" id="organisation">
+<h3><code>:Organisation</code></h3><p>A company that files. Matched on its ISIN.</p>
+<div class="tbl"><table><thead><tr><th>Attribute</th><th>Type</th><th>Meaning</th><th>Example</th></tr></thead><tbody><tr><td><code>isin</code></td><td class="t">String · UQ</td><td>the ISIN given on the CLI</td><td><code class="ex">MA0000011488</code></td></tr><tr><td><code>name</code></td><td class="t">String</td><td>as given on the CLI</td><td><code class="ex">Maroc Telecom</code></td></tr><tr><td><code>kind</code></td><td class="t">String</td><td>company, for now</td><td><code class="ex">company</code></td></tr></tbody></table></div>
+</section><section class="node" id="document">
+<h3><code>:Document</code></h3><p>One filing, one PDF. A re-ingest matches it by sha256.</p>
+<div class="tbl"><table><thead><tr><th>Attribute</th><th>Type</th><th>Meaning</th><th>Example</th></tr></thead><tbody><tr><td><code>id</code></td><td class="t">String · UQ</td><td>UUID</td><td><code class="ex">c5709e7d-f060-41a4-8764-f76960b98aba</code></td></tr><tr><td><code>sha256</code></td><td class="t">String · UQ</td><td>of the PDF</td><td><code class="ex">90e8b73c7f11…</code></td></tr><tr><td><code>doc_type</code></td><td class="t">String</td><td>annual_report, half_year_report or issuer_page</td><td><code class="ex">annual_report</code></td></tr><tr><td><code>fiscal_year</code></td><td class="t">Integer</td><td>the year it reports on</td><td><code class="ex">2025</code></td></tr><tr><td><code>regulator</code></td><td class="t">String</td><td>always AMMC</td><td><code class="ex">AMMC</code></td></tr><tr><td><code>source_url</code></td><td class="t">String?</td><td>where the PDF came from</td><td><code class="ex">https://www.ammc.ma/…/Maroc_Telecom_RFA_2025.pdf</code></td></tr></tbody></table></div>
+</section><section class="node" id="page">
+<h3><code>:Page</code></h3><p>One page of the PDF, with its size for placing highlights.</p>
+<div class="tbl"><table><thead><tr><th>Attribute</th><th>Type</th><th>Meaning</th><th>Example</th></tr></thead><tbody><tr><td><code>number</code></td><td class="t">Integer</td><td>from 1</td><td><code class="ex">4</code></td></tr><tr><td><code>width · height</code></td><td class="t">Float</td><td>PDF points</td><td><code class="ex">595.32 · 841.92 (A4 portrait)</code></td></tr><tr><td><code>superseded</code></td><td class="t">Boolean?</td><td>set by a newer Run; absent while current</td><td><code class="ex">true</code></td></tr></tbody></table></div>
+</section><section class="node" id="section">
+<h3><code>:Section</code></h3><p>A heading. Its text lives in Chunks.</p>
+<div class="tbl"><table><thead><tr><th>Attribute</th><th>Type</th><th>Meaning</th><th>Example</th></tr></thead><tbody><tr><td><code>id</code></td><td class="t">String · UQ</td><td>UUID</td><td><code class="ex">1a4e2219-…</code></td></tr><tr><td><code>title</code></td><td class="t">String</td><td>the heading as printed</td><td><code class="ex">1.1 Chiffres consolidés en dirham</code></td></tr><tr><td><code>level</code></td><td class="t">Integer</td><td>from its numbering, 1 at the top</td><td><code class="ex">2</code></td></tr><tr><td><code>order</code></td><td class="t">Integer</td><td>document order, parents first</td><td><code class="ex">3</code></td></tr><tr><td><code>page</code></td><td class="t">Integer</td><td>the heading&#x27;s page</td><td><code class="ex">4</code></td></tr><tr><td><code>bbox</code></td><td class="t">Float[4]?</td><td>left, top, right, bottom</td><td><code class="ex">[82.0, 142.5, 272.0, 153.2]</code></td></tr><tr><td><code>superseded</code></td><td class="t">Boolean?</td><td>set by a newer Run; absent while current</td><td><code class="ex">true</code></td></tr></tbody></table></div>
+</section><section class="node" id="table">
+<h3><code>:Table</code></h3><p>A table the parser found.</p>
+<div class="tbl"><table><thead><tr><th>Attribute</th><th>Type</th><th>Meaning</th><th>Example</th></tr></thead><tbody><tr><td><code>id</code></td><td class="t">String · UQ</td><td>UUID</td><td><code class="ex">b66e5c20-…</code></td></tr><tr><td><code>index</code></td><td class="t">Integer</td><td>position in the Document</td><td><code class="ex">1</code></td></tr><tr><td><code>page</code></td><td class="t">Integer</td><td></td><td><code class="ex">4</code></td></tr><tr><td><code>bbox</code></td><td class="t">Float[4]</td><td>left, top, right, bottom</td><td><code class="ex">[52.8, 193.8, 520.1, 335.2]</code></td></tr><tr><td><code>superseded</code></td><td class="t">Boolean?</td><td>set by a newer Run; absent while current</td><td><code class="ex">true</code></td></tr></tbody></table></div>
+</section><section class="node" id="cell">
+<h3><code>:Cell:Passage</code></h3><p>One table cell. Also labelled :Passage, so a Fact can cite it.</p>
+<div class="tbl"><table><thead><tr><th>Attribute</th><th>Type</th><th>Meaning</th><th>Example</th></tr></thead><tbody><tr><td><code>id</code></td><td class="t">String · UQ</td><td>UUID</td><td><code class="ex">c0556947-…</code></td></tr><tr><td><code>row · col</code></td><td class="t">Integer</td><td>from 0</td><td><code class="ex">1 · 3</code></td></tr><tr><td><code>row_span · col_span</code></td><td class="t">Integer</td><td>more than 1 for merged cells</td><td><code class="ex">1 · 1</code></td></tr><tr><td><code>text</code></td><td class="t">String</td><td>as the parser read it</td><td><code class="ex">36 681</code></td></tr><tr><td><code>page</code></td><td class="t">Integer</td><td></td><td><code class="ex">4</code></td></tr><tr><td><code>bbox</code></td><td class="t">Float[4]</td><td>left, top, right, bottom</td><td><code class="ex">[488.1, 221.2, 515.7, 229.3]</code></td></tr><tr><td><code>column_header · row_header</code></td><td class="t">Boolean</td><td></td><td><code class="ex">false · false</code></td></tr><tr><td><code>superseded</code></td><td class="t">Boolean?</td><td>set by a newer Run; absent while current</td><td><code class="ex">true</code></td></tr></tbody></table></div>
+</section></section><section class="group"><h2>Search</h2><section class="node" id="chunk">
+<h3><code>:Chunk</code></h3><p>The search unit: a run of one section&#x27;s text, or a table (part). Found by vector.</p>
+<div class="tbl"><table><thead><tr><th>Attribute</th><th>Type</th><th>Meaning</th><th>Example</th></tr></thead><tbody><tr><td><code>id</code></td><td class="t">String · UQ</td><td>UUID</td><td><code class="ex">4a23a048-…</code></td></tr><tr><td><code>index</code></td><td class="t">Integer</td><td>reading order in the Document</td><td><code class="ex">75</code></td></tr><tr><td><code>kind</code></td><td class="t">String</td><td>text or table</td><td><code class="ex">table</code></td></tr><tr><td><code>text</code></td><td class="t">String</td><td>paragraphs joined, or the table as Markdown</td><td><code class="ex">TABLEAU DES FLUX DE TRÉSORERIE CONSOLIDÉS | (En millions MAD) | …</code></td></tr><tr><td><code>token_count</code></td><td class="t">Integer</td><td>cl100k tokens in text</td><td><code class="ex">622</code></td></tr><tr><td><code>index_text</code></td><td class="t">String</td><td>what is embedded: section path, pages, text</td><td><code class="ex">3. COMPTES CONSOLIDÉS … &gt; TABLEAU DES FLUX … </code></td></tr><tr><td><code>boxes</code></td><td class="t">Float[]</td><td>five numbers per region: page, left, top, right, bottom</td><td><code class="ex">[25, 48.6, 59.4, 377.8, 71.1, …]</code></td></tr><tr><td><code>section_path</code></td><td class="t">String[]</td><td>Section titles, top down</td><td><code class="ex">[&quot;3. COMPTES CONSOLIDÉS …&quot;, &quot;TABLEAU DES FLUX …&quot;]</code></td></tr><tr><td><code>table</code></td><td class="t">String?</td><td>tables: shared by the parts of one table</td><td><code class="ex">7feb1ce9-…</code></td></tr><tr><td><code>part · parts</code></td><td class="t">Integer?</td><td>tables: this part, from 1, of how many</td><td><code class="ex">1 · 2</code></td></tr><tr><td><code>embedding</code></td><td class="t">Float[1024]?</td><td>set by an embed Run</td><td><code class="ex">1,024 floats</code></td></tr><tr><td><code>superseded</code></td><td class="t">Boolean?</td><td>a superseded Chunk loses index_text and embedding</td><td><code class="ex">true</code></td></tr></tbody></table></div>
+</section></section><section class="group"><h2>Figures</h2><section class="node" id="fact">
+<h3><code>:Fact</code></h3><p>A financial figure that passed the check. Example: consolidated revenue, FY2025.</p>
+<div class="tbl"><table><thead><tr><th>Attribute</th><th>Type</th><th>Meaning</th><th>Example</th></tr></thead><tbody><tr><td><code>id</code></td><td class="t">String · UQ</td><td>UUID</td><td><code class="ex">06bb8020-…</code></td></tr><tr><td><code>kind</code></td><td class="t">String</td><td>financial_figure; other kinds come later</td><td><code class="ex">financial_figure</code></td></tr><tr><td><code>line_item</code></td><td class="t">String</td><td>label map key; gives title and statement</td><td><code class="ex">revenue</code></td></tr><tr><td><code>label</code></td><td class="t">String</td><td>the filing&#x27;s wording: row label or sentence</td><td><code class="ex">Chiffre d&#x27;affaires</code></td></tr><tr><td><code>value_as_written</code></td><td class="t">String</td><td>exactly as printed</td><td><code class="ex">36 681</code></td></tr><tr><td><code>unit_as_written</code></td><td class="t">String</td><td>the unit as the LLM read it</td><td><code class="ex">MAD millions</code></td></tr><tr><td><code>value</code></td><td class="t">String</td><td>exact decimal in base units</td><td><code class="ex">36681000000</code></td></tr><tr><td><code>unit</code></td><td class="t">String</td><td>MAD, %, shares or MAD/share</td><td><code class="ex">MAD</code></td></tr><tr><td><code>scale</code></td><td class="t">Integer</td><td>1, 1000, 1000000 or 1000000000</td><td><code class="ex">1000000</code></td></tr><tr><td><code>currency</code></td><td class="t">String?</td><td>absent for % and shares</td><td><code class="ex">MAD</code></td></tr><tr><td><code>fiscal_year</code></td><td class="t">Integer</td><td></td><td><code class="ex">2025</code></td></tr><tr><td><code>period_start · period_end</code></td><td class="t">Date?</td><td>flows: the period covered</td><td><code class="ex">2025-01-01 · 2025-12-31</code></td></tr><tr><td><code>as_of</code></td><td class="t">Date?</td><td>stocks: the day a balance holds on</td><td><code class="ex">2023-12-31 (current assets, FY2023)</code></td></tr><tr><td><code>basis_scope</code></td><td class="t">String</td><td>consolidated or company-only</td><td><code class="ex">consolidated</code></td></tr><tr><td><code>basis_standard</code></td><td class="t">String</td><td>IFRS or CGNC, from the scope</td><td><code class="ex">IFRS</code></td></tr><tr><td><code>breakdown</code></td><td class="t">String</td><td>empty for the line item itself</td><td><code class="ex">&quot;&quot; · basic for basic EPS</code></td></tr><tr><td><code>source_id</code></td><td class="t">String</td><td>the id the LLM cited: t‹page›.‹table›.r‹row›.c‹col› or p‹page›.‹paragraph›</td><td><code class="ex">t4.0.r1.c3</code></td></tr><tr><td><code>recorded_at</code></td><td class="t">DateTime</td><td>when the extract Run stored it</td><td><code class="ex">2026-11-09T22:12:43Z</code></td></tr><tr><td><code>superseded</code></td><td class="t">Boolean?</td><td>set by a newer Run; absent while current</td><td><code class="ex">true</code></td></tr></tbody></table></div>
+</section><section class="node" id="span">
+<h3><code>:Span:Passage</code></h3><p>A figure quoted in a paragraph. Also labelled :Passage.</p>
+<div class="tbl"><table><thead><tr><th>Attribute</th><th>Type</th><th>Meaning</th><th>Example</th></tr></thead><tbody><tr><td><code>id</code></td><td class="t">String · UQ</td><td>UUID</td><td><code class="ex">85a8f122-…</code></td></tr><tr><td><code>page</code></td><td class="t">Integer</td><td></td><td><code class="ex">10</code></td></tr><tr><td><code>quote</code></td><td class="t">String</td><td>the value as quoted</td><td><code class="ex">4,00</code></td></tr><tr><td><code>text</code></td><td class="t">String</td><td>the whole paragraph</td><td><code class="ex">Le Conseil d&#x27;Administration de Maroc Telecom proposera …</code></td></tr><tr><td><code>boxes</code></td><td class="t">Float[]</td><td>five numbers per region: page, left, top, right, bottom</td><td><code class="ex">[10, 173.0, 464.5, 190.1, 472.3]</code></td></tr><tr><td><code>boxes_from</code></td><td class="t">String</td><td>quote if found in the PDF text layer, else paragraph</td><td><code class="ex">quote</code></td></tr><tr><td><code>superseded</code></td><td class="t">Boolean?</td><td>set by a newer Run; absent while current</td><td><code class="ex">true</code></td></tr></tbody></table></div>
+</section><section class="node" id="rejectedfigure">
+<h3><code>:RejectedFigure</code></h3><p>What the LLM proposed, with why the check refused it. Never labelled :Fact. It keeps the Fact attributes the LLM gave (line_item, label, value_as_written, unit_as_written, fiscal_year, basis_scope, breakdown, source_id, recorded_at) but never a parsed value, unit, scale, currency, period or standard.</p>
+<div class="tbl"><table><thead><tr><th>Attribute</th><th>Type</th><th>Meaning</th><th>Example</th></tr></thead><tbody><tr><td><code>reason</code></td><td class="t">String</td><td>why the check refused it, see below</td><td><code class="ex">its value differs from its cell</code></td></tr><tr><td><code>page</code></td><td class="t">Integer</td><td>the page the LLM read</td><td><code class="ex">26</code></td></tr><tr><td><code>value_as_written</code></td><td class="t">String</td><td>what the LLM proposed</td><td><code class="ex">18 002 (the cited cell reads “propres 18 002”)</code></td></tr><tr><td><code>superseded</code></td><td class="t">Boolean?</td><td>set by a newer Run; absent while current</td><td><code class="ex">true</code></td></tr></tbody></table></div>
+</section></section><section class="group"><h2>Provenance</h2><section class="node" id="run">
+<h3><code>:Run</code></h3><p>One execution of a step. Every other node links PRODUCED_BY to one.</p>
+<div class="tbl"><table><thead><tr><th>Attribute</th><th>Type</th><th>Meaning</th><th>Example</th></tr></thead><tbody><tr><td><code>id</code></td><td class="t">String · UQ</td><td>UUID</td><td><code class="ex">0d43fb28-…</code></td></tr><tr><td><code>step</code></td><td class="t">String</td><td>parse, chunk, embed or extract</td><td><code class="ex">parse</code></td></tr><tr><td><code>tool</code></td><td class="t">String</td><td>docling, bloomberg-chunker, sentence-transformers, azure-openai</td><td><code class="ex">docling</code></td></tr><tr><td><code>tool_version</code></td><td class="t">String</td><td></td><td><code class="ex">2.145.0</code></td></tr><tr><td><code>config</code></td><td class="t">String (JSON)</td><td>the settings the output depends on, see below</td><td><code class="ex">{&quot;mode&quot;: &quot;accurate&quot;, …}</code></td></tr><tr><td><code>started_at · finished_at</code></td><td class="t">DateTime</td><td>UTC</td><td><code class="ex">2026-11-09T13:36:59Z</code></td></tr><tr><td><code>status</code></td><td class="t">String</td><td>succeeded or failed</td><td><code class="ex">succeeded</code></td></tr><tr><td><code>error</code></td><td class="t">String?</td><td>set when failed</td><td><code class="ex">RuntimeError: …</code></td></tr><tr><td><code>output</code></td><td class="t">String?</td><td>the tool&#x27;s full output, under data/</td><td><code class="ex">parses/90e8b73c…/20261109T133659Z-docling.json</code></td></tr><tr><td><code>superseded</code></td><td class="t">Boolean?</td><td>embed Runs only</td><td><code class="ex">true</code></td></tr></tbody></table></div>
+</section></section>
+
+  <div class="split">
+    <section style="display:grid; gap:10px; align-content:start">
+      <h2>Why a figure is rejected</h2>
+      <p style="font-size:14px">Checked in this order; the first that fails is the <code>reason</code>.</p>
+      <ul>
+        <li><code>its source id is not on the page</code>: e.g. the LLM cited <code>t46.0.r8.c2+t46.0.r8.c3</code>, two cells joined. It cites nothing.</li>
+        <li><code>its value differs from its cell</code>: e.g. <code>18 002</code> against a cell reading <code>propres 18 002</code>.</li>
+        <li><code>its value is not in its paragraph</code></li>
+        <li><code>its value is not one number</code></li>
+        <li><code>its unit names no currency, percentage or share count</code></li>
+        <li><code>its line item is not in the label map</code></li>
+        <li><code>its scope is neither consolidated nor company-only</code></li>
+      </ul>
+    </section>
+    <section style="display:grid; gap:10px; align-content:start">
+      <h2>Run.config by step</h2>
+      <div class="tbl"><table><thead><tr><th>Step</th><th>Example</th></tr></thead><tbody>
+        <tr><td><code>parse</code></td><td><code class="ex">{"mode": "accurate", "table_structure": "TableFormer v1", "do_cell_matching": "true"}</code></td></tr>
+        <tr><td><code>chunk</code></td><td><code class="ex">{"cap": "2000", "table_cap": "1500", "tokenizer": "cl100k_base", "parse_run": "0d43fb28-…"}</code></td></tr>
+        <tr><td><code>embed</code></td><td><code class="ex">{"model": "Qwen/Qwen3-Embedding-0.6B", "max_tokens": "2048", "chunk_run": "59e09a42-…"}</code></td></tr>
+        <tr><td><code>extract</code></td><td><code class="ex">{"deployment": "gpt-5.6-sol", "prompt": "extract-figures v1", "label_map": "v1", "parse_run": "0d43fb28-…", "replayed": "true"}</code></td></tr>
+      </tbody></table></div>
+      <h2 style="margin-top:12px">Boxes and pages</h2>
+      <p style="font-size:14px">Boxes are in PDF points with a top-left origin. The viewer places a highlight as fractions of its Page's width and height, which is why every Page stores its size.</p>
+    </section>
+  </div>
+</main>
+
+</body></html>

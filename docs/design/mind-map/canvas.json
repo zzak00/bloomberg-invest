@@ -1,0 +1,59 @@
+{
+  "v": 3,
+  "attachments": {},
+  "boards": {
+    "Architecture.dc.html": {
+      "h": 1180,
+      "title": "5. Code architecture",
+      "w": 1600,
+      "x": 4816,
+      "y": 1820
+    },
+    "Flow.dc.html": {
+      "h": 1120,
+      "title": "2. Data flow",
+      "w": 2552,
+      "x": 2080,
+      "y": 0
+    },
+    "Interfaces.dc.html": {
+      "h": 1700,
+      "title": "4. Endpoints and interfaces",
+      "w": 1600,
+      "x": 4816,
+      "y": 0
+    },
+    "Main.dc.html": {
+      "h": 1840,
+      "title": "1. Solution map",
+      "w": 2000,
+      "x": 0,
+      "y": 0
+    },
+    "Schema.dc.html": {
+      "h": 2160,
+      "title": "3. Graph schema (Neo4j)",
+      "w": 2656,
+      "x": 2080,
+      "y": 1240
+    }
+  },
+  "createdOnFiles": {
+    "at": "2026-11-10T12:00:00Z",
+    "v": 1
+  },
+  "designSystems": [],
+  "launch": {
+    "view": "canvas"
+  },
+  "notes": {},
+  "order": [
+    "Main.dc.html",
+    "Flow.dc.html",
+    "Schema.dc.html",
+    "Interfaces.dc.html",
+    "Architecture.dc.html"
+  ],
+  "pages": [],
+  "title": "Bloomberg Invest Mind Map"
+}
