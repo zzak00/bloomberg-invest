@@ -50,11 +50,9 @@ export function ChecksPage() {
   const [params, setParams] = useSearchParams();
   const isin = params.get("company");
   const filter = FILTERS.find((f) => f.id === params.get("status")) ?? OPEN;
-  // Bumped after every check, so the queue and its counts reload.
-  const [version, setVersion] = useState(0);
   // Rows checked on this visit stay where they were until the filter changes.
   const [touched, setTouched] = useState<Set<string>>(new Set());
-  const queue = useApi(`checks:${isin}:${version}`, () =>
+  const queue = useApi(`checks:${isin}`, () =>
     api.GET("/api/checks", {
       params: { query: isin ? { isin } : {} },
     }),
@@ -125,7 +123,8 @@ export function ChecksPage() {
             shows={(row) => filter.shows.includes(row.status) || touched.has(rowKey(row))}
             onChecked={(row) => {
               setTouched((previous) => new Set(previous).add(rowKey(row)));
-              setVersion((v) => v + 1);
+              // In place: the list stays on screen while its counts and statuses refresh.
+              return queue.reload();
             }}
           />
         </>
@@ -175,7 +174,7 @@ function Groups({
 }: {
   queue: CheckQueue;
   shows: (row: CheckRow) => boolean;
-  onChecked: (row: CheckRow) => void;
+  onChecked: (row: CheckRow) => Promise<void>;
 }) {
   const groups = queue.groups
     .map((group) => ({ ...group, shown: group.rows.filter(shows) }))
@@ -217,7 +216,7 @@ function Group({
   group: CheckGroup;
   rows: CheckRow[];
   canCheck: boolean;
-  onChecked: (row: CheckRow) => void;
+  onChecked: (row: CheckRow) => Promise<void>;
 }) {
   const { document } = group;
   const detail = useApi(`document:${document.id}`, () =>
@@ -259,7 +258,7 @@ function Row({
   row: CheckRow;
   page: PageInfo | undefined;
   canCheck: boolean;
-  onChecked: () => void;
+  onChecked: () => Promise<void>;
 }) {
   const [fixing, setFixing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -282,14 +281,15 @@ function Row({
     const { error: refused, response } = await api.POST("/api/reviews", {
       body: { figure_ids: row.figure_ids, ...fields },
     });
-    setBusy(false);
     if (response.ok) {
+      // Busy until the row shows its new status, so it never flickers back.
+      await onChecked();
       setFixing(false);
-      onChecked();
     } else {
       const detail = (refused as { detail?: unknown } | undefined)?.detail;
       setError(typeof detail === "string" ? detail : `${response.status} ${response.statusText}`);
     }
+    setBusy(false);
   };
 
   return (
