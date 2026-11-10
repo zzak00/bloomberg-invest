@@ -116,13 +116,13 @@ class Checked(Protocol):
     def correction(self) -> Correction | None: ...
 
 
-def correction_in_force(check: Checked | None) -> Correction | None:
-    """The right value a figure's check gives it: a correction's, never an acceptance's. A
-    figure with one shows that value, not what was read (#19 R8), and a rejected figure counts
-    in the dossier only with one."""
-    if check is None or check.verdict != Verdict.corrected:
+def correction_in_force[C: Checked](check: C | None) -> tuple[C, Correction] | None:
+    """The check that gives a figure its right value, with that value: a correction's, never an
+    acceptance's. A figure with one shows that value, not what was read (#19 R8), and a
+    rejected figure counts in the dossier only with one."""
+    if check is None or check.verdict != Verdict.corrected or check.correction is None:
         return None
-    return check.correction
+    return check, check.correction
 
 
 class Dated(Protocol):
@@ -140,17 +140,17 @@ def check_of[C: Dated](checks: Sequence[C | None]) -> C | None:
     return max(done, key=lambda c: c.reviewed_at)
 
 
-CHECKED = {Verdict.accepted: CheckStatus.accepted, Verdict.corrected: CheckStatus.corrected}
+_STATUS_OF = {Verdict.accepted: CheckStatus.accepted, Verdict.corrected: CheckStatus.corrected}
 
 
 def fact_status(check: Checked | None) -> CheckStatus:
     """Where a CHECKS row of Facts stands, from its check in force (never a reopening)."""
-    return CHECKED[check.verdict] if check is not None else CheckStatus.to_check
+    return _STATUS_OF[check.verdict] if check is not None else CheckStatus.to_check
 
 
 def rejected_status(check: Checked | None) -> CheckStatus:
     """Where a rejected figure's row stands: rejected until a person corrects it."""
-    return CHECKED[check.verdict] if check is not None else CheckStatus.rejected
+    return _STATUS_OF[check.verdict] if check is not None else CheckStatus.rejected
 
 
 class Identified(Protocol):

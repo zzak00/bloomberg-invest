@@ -3,6 +3,7 @@
 import os
 import tempfile
 from collections.abc import Iterator, Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from math import hypot
 from pathlib import Path
@@ -18,6 +19,14 @@ CONTEXT = 8  # characters read on each side of a match to tell a whole number fr
 
 # A value quoted on a page, and the boxes of the paragraph it must be inside.
 Quote = tuple[int, str, Sequence[Box]]
+
+
+@dataclass(frozen=True)
+class Occurrence:
+    """Which place a paragraph's number was picked at, from 0, of the times it is written."""
+
+    index: int
+    written: int
 
 
 class DocumentFiles:
@@ -57,17 +66,15 @@ class DocumentFiles:
         page: int,
         quote: str,
         near: Sequence[Box],
-        occurrence: int | None = None,
-        written: int | None = None,
+        occurrence: Occurrence | None = None,
     ) -> tuple[Box, ...] | None:
         """The quote's boxes in the page's text layer, near `near` (its paragraph's boxes).
 
-        A paragraph that writes the quote more than once says which `occurrence`, from 0, and
-        how many times it is `written`: the boxes of that place inside `near` when the text layer
-        holds the quote there exactly as many times, else None, so a number is never boxed where
-        it was not picked. A paragraph that writes it once passes neither: the place inside
-        `near`, else the nearest, else with nothing near the first. None when the text layer
-        lacks the quote."""
+        A paragraph that writes the quote more than once says which `occurrence` was picked:
+        the boxes of that place inside `near` when the text layer holds the quote there exactly
+        as many times, else None, so a number is never boxed where it was not picked. A
+        paragraph that writes it once passes none: the place inside `near`, else the nearest,
+        else with nothing near the first. None when the text layer lacks the quote."""
         pdf = pdfium.PdfDocument(self.pdf_path(sha256))
         try:
             found = list(_matches(pdf, page, quote))
@@ -75,7 +82,7 @@ class DocumentFiles:
             pdf.close()
         inside = [boxes for boxes in found if near and _all_inside(boxes, near)]
         if occurrence is not None:
-            return inside[occurrence] if len(inside) == written else None
+            return inside[occurrence.index] if len(inside) == occurrence.written else None
         if inside:
             return inside[0]
         return min(found, key=lambda boxes: _distance(boxes, near), default=None)

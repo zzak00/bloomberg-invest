@@ -649,3 +649,6 @@ def test_a_value_whose_check_carried_over_only_in_part_is_not_checked(client, st
     [revenue] = grid["scopes"][0]["statements"][0]["rows"]
     [value] = revenue["years"][0]["values"]
     assert value["shown"]["needs_review"] is True
+    # The viewer describes the figure it opens: the one whose check carried over.
+    fact = client.get(f"/api/facts/{value['shown']['id']}").json()
+    assert (fact["review"]["verdict"], fact["needs_review"]) == ("accepted", False)

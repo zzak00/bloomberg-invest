@@ -75,9 +75,8 @@ def test_a_reopening_leaves_no_check_in_force():
 
 def test_only_a_correction_gives_a_value_in_force():
     fixed = correction("36 680", "MAD millions")
-    assert (
-        correction_in_force(SimpleNamespace(verdict=Verdict.corrected, correction=fixed)) == fixed
-    )
+    corrected = SimpleNamespace(verdict=Verdict.corrected, correction=fixed)
+    assert correction_in_force(corrected) == (corrected, fixed)
     assert correction_in_force(SimpleNamespace(verdict=Verdict.accepted, correction=None)) is None
     assert correction_in_force(None) is None
 

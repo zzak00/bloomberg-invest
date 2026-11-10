@@ -44,7 +44,8 @@ def company_figures(
     facts, rejected = store.figures(isin)
     shown = [f for f in (as_shown(f, label_map) for f in [*facts, *rejected]) if f is not None]
     shown.sort(key=lambda f: (-f.fiscal_year, f.page, f.line_item, f.breakdown))
-    return figure_grid([flagged(f, rules) for f in shown], label_map, rules)
+    # The grid flags each value as a whole; the viewer flags the one figure it opens.
+    return figure_grid(shown, label_map, rules)
 
 
 def figure_detail(
@@ -67,13 +68,14 @@ def as_shown(figure: Figure | RejectedFigure, label_map: LabelMap) -> Figure | N
     """The figure as the dossier shows it: with its correction's value, read from the cell or
     quote the correction picked, or for a typed value from what the figure was read from. None
     for a figure that does not count (a rejected one nobody corrected)."""
-    fixed = correction_in_force(figure.review)
-    if fixed is None:
+    corrected = correction_in_force(figure.review)
+    if corrected is None:
         # Nothing corrected: a Fact shows what it read, a rejected figure does not count.
         return figure if isinstance(figure, Figure) else None
+    review, fixed = corrected
     # A correction is parsed in the unit of the figure its CHECKS row shows.
     value = fixed.stated()
-    source = figure.review.source if figure.review else None
+    source = review.source
     if isinstance(figure, Figure):
         passage = source or figure.passage
         page = passage.page if passage else figure.page

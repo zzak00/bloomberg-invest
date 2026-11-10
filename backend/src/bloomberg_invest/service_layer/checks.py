@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from bloomberg_invest.adapters.files import DocumentFiles
+from bloomberg_invest.adapters.files import DocumentFiles, Occurrence
 from bloomberg_invest.adapters.store import GraphStore
 from bloomberg_invest.domain.dossier import agreeing
 from bloomberg_invest.domain.figures import parse_value
@@ -323,12 +323,8 @@ def _quoted(
         raise LookupError(f"no document {figure.document.id}")
     near = [(b.page, b.left, b.top, b.right, b.bottom) for b in passage.boxes]
     # Which time the paragraph writes it, when more than once: boxed there or refused.
-    if len(written) > 1:
-        boxes = files.quote_near(
-            document.sha256, passage.page, quote, near, written.index(picked), len(written)
-        )
-    else:
-        boxes = files.quote_near(document.sha256, passage.page, quote, near)
+    occurrence = Occurrence(written.index(picked), len(written)) if len(written) > 1 else None
+    boxes = files.quote_near(document.sha256, passage.page, quote, near, occurrence)
     if boxes is None:
         raise ReviewRefused(
             "That number can't be found in the page's text layer where it was picked: "
