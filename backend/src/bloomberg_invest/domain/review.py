@@ -79,6 +79,17 @@ class Correction:
     scale: int
     currency: str | None
 
+    def stated(self) -> dict[str, str | int | None]:
+        """The fields a figure shows its value with, as a correction gives them."""
+        return {
+            "value_as_written": self.value_as_written,
+            "unit_as_written": self.unit_as_written,
+            "value": self.value,
+            "unit": self.unit,
+            "scale": self.scale,
+            "currency": self.currency,
+        }
+
 
 def correction(value_as_written: str, unit_as_written: str) -> Correction:
     value, unit = parse_value(value_as_written), parse_unit(unit_as_written)
@@ -107,7 +118,8 @@ class Checked(Protocol):
 
 def correction_in_force(check: Checked | None) -> Correction | None:
     """The right value a figure's check gives it: a correction's, never an acceptance's. A
-    figure with one shows that value, not what was read (#19 R8)."""
+    figure with one shows that value, not what was read (#19 R8), and a rejected figure counts
+    in the dossier only with one."""
     if check is None or check.verdict != Verdict.corrected:
         return None
     return check.correction
@@ -128,17 +140,17 @@ def check_of[C: Dated](checks: Sequence[C | None]) -> C | None:
     return max(done, key=lambda c: c.reviewed_at)
 
 
-def check_status(check: Checked | None, rejected: bool) -> CheckStatus:
-    """Where a CHECKS row stands, from its check in force (never a reopening)."""
-    if check is None:
-        return CheckStatus.rejected if rejected else CheckStatus.to_check
-    statuses = {Verdict.accepted: CheckStatus.accepted, Verdict.corrected: CheckStatus.corrected}
-    return statuses[check.verdict]
+CHECKED = {Verdict.accepted: CheckStatus.accepted, Verdict.corrected: CheckStatus.corrected}
 
 
-def counts_in_dossier(check: Checked | None, rejected: bool) -> bool:
-    """A Fact counts in the dossier; a rejected figure only once a person corrected it."""
-    return not rejected or correction_in_force(check) is not None
+def fact_status(check: Checked | None) -> CheckStatus:
+    """Where a CHECKS row of Facts stands, from its check in force (never a reopening)."""
+    return CHECKED[check.verdict] if check is not None else CheckStatus.to_check
+
+
+def rejected_status(check: Checked | None) -> CheckStatus:
+    """Where a rejected figure's row stands: rejected until a person corrects it."""
+    return CHECKED[check.verdict] if check is not None else CheckStatus.rejected
 
 
 class Identified(Protocol):
@@ -176,11 +188,14 @@ class CheckKey:
 
 
 def fact_key(fact: KeyedFact) -> CheckKey:
+    """A Fact's key, in its parsed currency (or its unit when it has none)."""
     return _key(fact, fact.currency or fact.unit)
 
 
 def rejected_key(figure: Keyed) -> CheckKey:
-    """A rejected figure has no parsed currency: it is checked on its own."""
+    """A rejected figure's key. It has no parsed currency, and its empty one keeps it from
+    sharing a key, and so a check, with any Fact: it is checked on its own. Two functions, not
+    one, so no key is guessed from which fields a figure has."""
     return _key(figure, "")
 
 

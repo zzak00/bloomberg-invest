@@ -17,15 +17,15 @@ from bloomberg_invest.domain.review import (
     around,
     carried,
     check_of,
-    check_status,
     correction,
     correction_in_force,
-    counts_in_dossier,
     fact_key,
+    fact_status,
     needs_check,
     numbers_in,
     refusal,
     rejected_key,
+    rejected_status,
 )
 
 RULES = config.kpi_rules(config.label_map())
@@ -93,18 +93,21 @@ def test_a_value_is_checked_once_every_figure_stating_it_is():
 def test_a_row_s_status_follows_its_check():
     accepted = SimpleNamespace(verdict=Verdict.accepted)
     corrected = SimpleNamespace(verdict=Verdict.corrected)
-    assert check_status(None, rejected=False) == CheckStatus.to_check
-    assert check_status(None, rejected=True) == CheckStatus.rejected
-    assert check_status(accepted, rejected=False) == CheckStatus.accepted
-    assert check_status(corrected, rejected=True) == CheckStatus.corrected
+    assert fact_status(None) == CheckStatus.to_check
+    assert rejected_status(None) == CheckStatus.rejected
+    assert fact_status(accepted) == CheckStatus.accepted
+    assert rejected_status(corrected) == CheckStatus.corrected
 
 
-def test_a_rejected_figure_counts_in_the_dossier_only_once_corrected():
-    corrected = SimpleNamespace(verdict=Verdict.corrected, correction=correction("1", "MAD"))
-    assert counts_in_dossier(None, rejected=False)
-    assert not counts_in_dossier(None, rejected=True)
-    assert not counts_in_dossier(SimpleNamespace(verdict=Verdict.accepted), rejected=True)
-    assert counts_in_dossier(corrected, rejected=True)
+def test_a_correction_states_the_fields_a_figure_shows():
+    assert correction("36 680", "MAD millions").stated() == {
+        "value_as_written": "36 680",
+        "unit_as_written": "MAD millions",
+        "value": "36680000000",
+        "unit": "MAD",
+        "scale": 1_000_000,
+        "currency": "MAD",
+    }
 
 
 def fact(value: str = "36 681", **changes):

@@ -2,7 +2,6 @@
 
 from collections import Counter, defaultdict
 from collections.abc import Sequence
-from dataclasses import asdict
 
 from bloomberg_invest.adapters.store import GraphStore
 from bloomberg_invest.domain.dossier import agreeing
@@ -12,7 +11,6 @@ from bloomberg_invest.domain.label_map import LabelMap
 from bloomberg_invest.domain.review import (
     check_of,
     correction_in_force,
-    counts_in_dossier,
     needs_check,
 )
 from bloomberg_invest.views import (
@@ -46,7 +44,7 @@ def company_figures(
     facts, rejected = store.figures(isin)
     shown = [f for f in (as_shown(f, label_map) for f in [*facts, *rejected]) if f is not None]
     shown.sort(key=lambda f: (-f.fiscal_year, f.page, f.line_item, f.breakdown))
-    return figure_grid([flagged(f, rules) for f in shown], label_map)
+    return figure_grid([flagged(f, rules) for f in shown], label_map, rules)
 
 
 def figure_detail(
@@ -69,15 +67,13 @@ def as_shown(figure: Figure | RejectedFigure, label_map: LabelMap) -> Figure | N
     """The figure as the dossier shows it: with its correction's value, read from the cell or
     quote the correction picked, or for a typed value from what the figure was read from. None
     for a figure that does not count (a rejected one nobody corrected)."""
-    rejected = isinstance(figure, RejectedFigure)
-    if not counts_in_dossier(figure.review, rejected):
-        return None
     fixed = correction_in_force(figure.review)
-    if fixed is None or figure.review is None:
+    if fixed is None:
+        # Nothing corrected: a Fact shows what it read, a rejected figure does not count.
         return figure if isinstance(figure, Figure) else None
-    # A correction is parsed in the figure's unit, so it carries every value field.
-    value = asdict(fixed)
-    source = figure.review.source
+    # A correction is parsed in the unit of the figure its CHECKS row shows.
+    value = fixed.stated()
+    source = figure.review.source if figure.review else None
     if isinstance(figure, Figure):
         passage = source or figure.passage
         page = passage.page if passage else figure.page
@@ -113,7 +109,7 @@ def flagged(figure: Figure, rules: KpiRules) -> Figure:
     return figure.model_copy(update={"needs_review": needed})
 
 
-def figure_grid(figures: Sequence[Figure], label_map: LabelMap) -> FigureGrid:
+def figure_grid(figures: Sequence[Figure], label_map: LabelMap, rules: KpiRules) -> FigureGrid:
     """The figures by basis, statement and row, a column per fiscal year. A row is a line item,
     or one breakdown of it, in one currency: the filing's euro tables are rows of their own, not
     disagreements. A line item the label map no longer has is left out, and not counted."""
@@ -121,13 +117,15 @@ def figure_grid(figures: Sequence[Figure], label_map: LabelMap) -> FigureGrid:
     return FigureGrid(
         count=len(listed),
         scopes=[
-            _scope(scope, [f for f in listed if f.basis_scope == scope], label_map)
+            _scope(scope, [f for f in listed if f.basis_scope == scope], label_map, rules)
             for scope in Scope
         ],
     )
 
 
-def _scope(scope: Scope, figures: list[Figure], label_map: LabelMap) -> ScopeFigures:
+def _scope(
+    scope: Scope, figures: list[Figure], label_map: LabelMap, rules: KpiRules
+) -> ScopeFigures:
     years = sorted({f.fiscal_year for f in figures}, reverse=True)
     position = {name: i for i, name in enumerate(label_map.items)}
     currencies = Counter(_currency(f) for f in figures)
@@ -143,7 +141,7 @@ def _scope(scope: Scope, figures: list[Figure], label_map: LabelMap) -> ScopeFig
     by_statement: dict[str, list[FigureRow]] = defaultdict(list)
     for key in sorted(rows, key=order):
         item = label_map.items[key[0]]
-        by_statement[item.statement].append(_row(key, item.title, rows[key], years))
+        by_statement[item.statement].append(_row(key, item.title, rows[key], years, rules))
     return ScopeFigures(
         scope=scope,
         years=years,
@@ -156,25 +154,33 @@ def _scope(scope: Scope, figures: list[Figure], label_map: LabelMap) -> ScopeFig
 
 
 def _row(
-    key: tuple[str, str, str], title: str, figures: list[Figure], years: list[int]
+    key: tuple[str, str, str],
+    title: str,
+    figures: list[Figure],
+    years: list[int],
+    rules: KpiRules,
 ) -> FigureRow:
     line_item, currency, breakdown = key
     # The unit most of the row's figures are written in; the first seen on a tie.
     (unit, scale), _ = Counter((f.unit, f.scale) for f in figures).most_common(1)[0]
 
-    # A value is checked once every figure stating it is, as in CHECKS. A checked value is shown
-    # before the others, and a checked figure for its value (#19 R8); a value not yet checked
-    # stays flagged whichever figure shows it.
+    # A value is checked once every figure stating it is, as in CHECKS (`check_of`). A checked
+    # value is shown before the others, and a checked figure for its value (#19 R8); a value
+    # not yet checked stays flagged whichever figure shows it.
+    def checked(group: list[Figure]) -> bool:
+        return check_of([f.review for f in group]) is not None
+
     def value(group: list[Figure]) -> FigureValue:
         sources = sorted(
             group, key=lambda f: (f.review is None, (f.unit, f.scale) != (unit, scale), f.page)
         )
-        shown = sources[0].model_copy(update={"needs_review": any(f.needs_review for f in group)})
-        return FigureValue(shown=shown, sources=sources)
+        needed = needs_check(group[0], rules) and not checked(group)
+        return FigureValue(
+            shown=sources[0].model_copy(update={"needs_review": needed}), sources=sources
+        )
 
     def values(stated: list[Figure]) -> list[FigureValue]:
-        groups = sorted(agreeing(stated), key=lambda g: check_of([f.review for f in g]) is None)
-        return [value(g) for g in groups]
+        return [value(g) for g in sorted(agreeing(stated), key=lambda g: not checked(g))]
 
     return FigureRow(
         line_item=line_item,

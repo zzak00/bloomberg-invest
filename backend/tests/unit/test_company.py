@@ -15,7 +15,9 @@ RULES = config.kpi_rules(LABEL_MAP)
 
 def consolidated(figures: list[Figure]):
     return next(
-        s for s in figure_grid(figures, config.label_map()).scopes if s.scope == "consolidated"
+        s
+        for s in figure_grid(figures, config.label_map(), RULES).scopes
+        if s.scope == "consolidated"
     )
 
 
@@ -43,7 +45,8 @@ def test_a_rounded_statement_joins_the_exact_one_shown_in_the_rows_unit():
 
     assert (row.unit, row.scale) == ("MAD", MILLIONS)
     [value] = row.years[0].values
-    assert value.shown == exact  # the row's unit before the earlier, rounded page
+    assert value.shown.id == exact.id  # the row's unit before the earlier, rounded page
+    assert value.shown.needs_review  # revenue feeds a KPI and nobody checked it
     assert value.sources == [exact, again, rounded]
 
 
@@ -86,6 +89,7 @@ def test_each_basis_has_its_own_years_and_the_count_covers_both():
             figure("10 000", "10000000000", year=2023, scope=Scope.company_only),
         ],
         config.label_map(),
+        RULES,
     )
 
     assert grid.count == 2
@@ -97,7 +101,7 @@ def test_each_basis_has_its_own_years_and_the_count_covers_both():
 
 def test_a_line_item_the_label_map_no_longer_has_is_left_out_and_not_counted():
     retired = [figure("1", "1000000", line_item="retired_item"), figure("36 681", "36681000000")]
-    grid = figure_grid(retired, config.label_map())
+    grid = figure_grid(retired, config.label_map(), RULES)
 
     assert grid.count == 1
     assert [r.line_item for r in grid.scopes[0].statements[0].rows] == ["revenue"]

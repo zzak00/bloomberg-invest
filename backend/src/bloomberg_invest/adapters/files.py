@@ -58,14 +58,16 @@ class DocumentFiles:
         quote: str,
         near: Sequence[Box],
         occurrence: int | None = None,
+        written: int | None = None,
     ) -> tuple[Box, ...] | None:
         """The quote's boxes in the page's text layer, near `near` (its paragraph's boxes).
 
-        A paragraph that writes the quote more than once says which `occurrence`, from 0 in the
-        page's text order: its boxes inside `near`, or None when the text layer does not hold
-        that many there, so a number is never boxed where it was not picked. A paragraph that
-        writes it once passes None: the place inside `near`, else the nearest, else with nothing
-        near the first. None when the text layer lacks the quote."""
+        A paragraph that writes the quote more than once says which `occurrence`, from 0, and
+        how many times it is `written`: the boxes of that place inside `near` when the text layer
+        holds the quote there exactly as many times, else None, so a number is never boxed where
+        it was not picked. A paragraph that writes it once passes neither: the place inside
+        `near`, else the nearest, else with nothing near the first. None when the text layer
+        lacks the quote."""
         pdf = pdfium.PdfDocument(self.pdf_path(sha256))
         try:
             found = list(_matches(pdf, page, quote))
@@ -73,7 +75,7 @@ class DocumentFiles:
             pdf.close()
         inside = [boxes for boxes in found if near and _all_inside(boxes, near)]
         if occurrence is not None:
-            return inside[occurrence] if occurrence < len(inside) else None
+            return inside[occurrence] if len(inside) == written else None
         if inside:
             return inside[0]
         return min(found, key=lambda boxes: _distance(boxes, near), default=None)

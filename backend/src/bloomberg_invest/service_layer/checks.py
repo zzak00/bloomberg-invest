@@ -21,12 +21,13 @@ from bloomberg_invest.domain.review import (
     Verdict,
     around,
     check_of,
-    check_status,
     correction,
     fact_key,
+    fact_status,
     needs_check,
     numbers_in,
     refusal,
+    rejected_status,
 )
 from bloomberg_invest.views import (
     Candidate,
@@ -138,7 +139,7 @@ def _fact_row(
         label_map,
         rules,
         review=review,
-        status=check_status(review, rejected=False),
+        status=fact_status(review),
         sources=len(group),
         conflict=conflict,
     )
@@ -152,7 +153,7 @@ def _rejected_row(figure: RejectedFigure, label_map: LabelMap, rules: KpiRules) 
         label_map,
         rules,
         review=review,
-        status=check_status(review, rejected=True),
+        status=rejected_status(review),
         sources=1,
         conflict=False,
     )
@@ -253,6 +254,8 @@ def record_review(
     if not checks.reviewer:
         raise NoReviewer()
     ids = list(dict.fromkeys(figure_ids))
+    if not ids:
+        raise ReviewRefused("A check names the figures it covers")
     facts, rejected = store.figures(ids=ids)
     found: dict[str, Figure | RejectedFigure] = {f.id: f for f in [*facts, *rejected]}
     if len(found) != len(ids):
@@ -320,8 +323,12 @@ def _quoted(
         raise LookupError(f"no document {figure.document.id}")
     near = [(b.page, b.left, b.top, b.right, b.bottom) for b in passage.boxes]
     # Which time the paragraph writes it, when more than once: boxed there or refused.
-    occurrence = written.index(picked) if len(written) > 1 else None
-    boxes = files.quote_near(document.sha256, passage.page, quote, near, occurrence)
+    if len(written) > 1:
+        boxes = files.quote_near(
+            document.sha256, passage.page, quote, near, written.index(picked), len(written)
+        )
+    else:
+        boxes = files.quote_near(document.sha256, passage.page, quote, near)
     if boxes is None:
         raise ReviewRefused(
             "That number can't be found in the page's text layer where it was picked: "

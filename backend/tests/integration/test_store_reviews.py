@@ -6,11 +6,13 @@ from datetime import UTC, datetime
 import pytest
 from conftest import INCOME_ANSWER, SHA, extract_income, make_run
 
+from bloomberg_invest.domain.extraction import SourceParagraph
 from bloomberg_invest.domain.review import (
     Correction,
     QuotedSource,
     ReviewDraft,
     Verdict,
+    check_of,
     correction,
 )
 
@@ -244,3 +246,19 @@ def test_a_figure_with_no_passage_never_carries_its_check_over(store, extracted)
     again = figures_by_value(store)["6 968"]
     assert again.id != unsourced.id
     assert again.review is None
+
+
+def test_a_value_whose_check_carried_over_in_part_has_no_check(store, extracted):
+    def income(text: str, minute: int):
+        paragraph = SourceParagraph(page=2, text=text, boxes=((2, 50.0, 220.0, 545.0, 240.0),))
+        answer = [INCOME_ANSWER[0], ("revenue", 2025, "p2.0", "36 681")]
+        extract_income(store, extracted, answer, minute=minute, paragraphs=(paragraph,))
+
+    income("Le chiffre d'affaires atteint 36 681 MDH.", minute=15)
+    facts, _ = store.figures(ISIN)
+    store.record_review([f.id for f in facts], check())
+    # The cell reads the same; the paragraph does not, so its figure goes back to CHECKS.
+    income("Le chiffre d'affaires consolidé atteint 36 681 MDH.", minute=20)
+    facts, _ = store.figures(ISIN)
+    assert sorted(f.review is None for f in facts) == [False, True]
+    assert check_of([f.review for f in facts]) is None
