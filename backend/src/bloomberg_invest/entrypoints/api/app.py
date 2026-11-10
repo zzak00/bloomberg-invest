@@ -6,19 +6,18 @@ from typing import Annotated
 
 from fastapi import FastAPI, HTTPException, Path, Query, status
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from bloomberg_invest import bootstrap
 from bloomberg_invest.adapters.embedding import Embedder
 from bloomberg_invest.adapters.files import DocumentFiles
 from bloomberg_invest.adapters.store import GraphStore
 from bloomberg_invest.domain.label_map import LabelMap
+from bloomberg_invest.domain.review import Verdict
 from bloomberg_invest.service_layer.checks import (
     Checks,
     NoReviewer,
     ReviewRefused,
-    ReviewRequest,
-    StatusFilter,
     candidates,
     check_queue,
     record_review,
@@ -35,23 +34,41 @@ from bloomberg_invest.views import (
     DocumentSummary,
     FigureDetail,
     FigureGrid,
-    RecordedReview,
+    Review,
 )
 
 
-class NotFound(BaseModel):
+class Problem(BaseModel):
+    """Why a request failed, in words a person can act on."""
+
     detail: str
 
 
-NOT_FOUND = {404: {"model": NotFound, "description": "No such document, or no such page in it"}}
-NO_CHUNK = {404: {"model": NotFound, "description": "No such chunk"}}
-NO_COMPANY = {404: {"model": NotFound, "description": "No filing from an issuer with this ISIN"}}
-NO_FACT = {404: {"model": NotFound, "description": "No such financial figure"}}
-NO_FIGURE = {404: {"model": NotFound, "description": "No such current figure"}}
+class ReviewRequest(BaseModel):
+    """A check of one CHECKS row. A correction gives the right value one way: typed, or picked
+    from the figure's own source (`GET /api/figures/{id}/candidates`)."""
+
+    figure_ids: list[str] = Field(min_length=1)
+    verdict: Verdict
+    value_as_written: str | None = None  # typed
+    cell_id: str | None = None  # picked from the figure's table row
+    quote: str | None = None  # picked from the figure's paragraph
+
+
+NOT_FOUND = {404: {"model": Problem, "description": "No such document, or no such page in it"}}
+NO_CHUNK = {404: {"model": Problem, "description": "No such chunk"}}
+NO_COMPANY = {404: {"model": Problem, "description": "No filing from an issuer with this ISIN"}}
+NO_FACT = {
+    404: {
+        "model": Problem,
+        "description": "No such financial figure, or a rejected one nobody corrected",
+    }
+}
+NO_FIGURE = {404: {"model": Problem, "description": "No such current figure"}}
 REVIEW_ERRORS = {
     **NO_FIGURE,
-    409: {"model": NotFound, "description": "The check does not fit these figures, and why"},
-    503: {"model": NotFound, "description": "Nobody can check: REVIEWER is not set"},
+    409: {"model": Problem, "description": "The check does not fit these figures, and why"},
+    503: {"model": Problem, "description": "Nobody can check: REVIEWER is not set"},
 }
 
 
@@ -168,30 +185,40 @@ def create_app(
 
     @app.get("/api/facts/{fact_id}", responses=NO_FACT)
     def fact(fact_id: str) -> FigureDetail:
-        """One financial figure, current or not, so a link to it keeps working after a re-run."""
+        """One financial figure as the dossier shows it, current or not, so a link to it keeps
+        working after a re-run: a corrected figure with its correction."""
         found = figure_detail(fact_id, get_store(), app.state.label_map, app.state.checks.rules)
         if found is None:
             raise HTTPException(404, "Fact not found")
         return found
 
     @app.get("/api/checks")
-    def checks_queue(isin: str | None = None, status: StatusFilter = "open") -> CheckQueue:
-        """CHECKS: the figures that feed a KPI or screen, by filing, problems first; the counts
-        cover every status, for the company asked or all."""
-        return check_queue(get_store(), app.state.label_map, app.state.checks, isin, status)
+    def checks_queue(isin: str | None = None) -> CheckQueue:
+        """CHECKS: the figures that feed a KPI or screen, by filing, problems first, whatever
+        their status; of one company or all."""
+        return check_queue(get_store(), app.state.label_map, app.state.checks, isin)
 
     @app.post(
         "/api/reviews",
         status_code=status.HTTP_201_CREATED,
         responses=REVIEW_ERRORS,
     )
-    def review(request: ReviewRequest) -> RecordedReview:
+    def review(request: ReviewRequest) -> Review:
         """Accept, correct or reopen the figures of one CHECKS row. Checks are never deleted: a
         reopening is a check that undoes the one before."""
         try:
-            return record_review(request, get_store(), get_files(), app.state.checks)
-        except NoReviewer as error:
-            raise HTTPException(503, str(error)) from None
+            return record_review(
+                request.figure_ids,
+                request.verdict,
+                get_store(),
+                get_files(),
+                app.state.checks,
+                value_as_written=request.value_as_written,
+                cell_id=request.cell_id,
+                quote=request.quote,
+            )
+        except NoReviewer:
+            raise HTTPException(503, "Set REVIEWER in .env to record checks") from None
         except LookupError as error:
             raise HTTPException(404, str(error)) from None
         except ReviewRefused as error:

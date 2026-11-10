@@ -55,7 +55,8 @@ class DocumentFiles:
         self, sha256: str, page: int, quote: str, near: Sequence[Box]
     ) -> tuple[Box, ...] | None:
         """The quote's boxes where the page holds it inside or else nearest `near`: the boxes of
-        its paragraph, or of another number in it. None when the page's text layer lacks it."""
+        its paragraph, or of another number in it. With nothing `near`, the first place the page
+        holds it. None when the page's text layer lacks it."""
         pdf = pdfium.PdfDocument(self.pdf_path(sha256))
         try:
             found = list(_matches(pdf, page, quote))
@@ -113,7 +114,9 @@ def _all_inside(boxes: Sequence[Box], within: Sequence[Box]) -> bool:
 
 
 def _distance(boxes: Sequence[Box], near: Sequence[Box]) -> float:
-    """How far apart the first boxes' centres are, in points."""
+    """How far apart the first boxes' centres are, in points; nothing is near no boxes."""
+    if not near:
+        return 0.0
     (_, l1, t1, r1, b1), (_, l2, t2, r2, b2) = boxes[0], near[0]
     return hypot((l1 + r1 - l2 - r2) / 2, (t1 + b1 - t2 - b2) / 2)
 

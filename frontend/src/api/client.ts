@@ -20,6 +20,8 @@ export type CheckQueue = components["schemas"]["CheckQueue"];
 export type CheckGroup = components["schemas"]["CheckGroup"];
 export type CheckRow = components["schemas"]["CheckRow"];
 export type Candidate = components["schemas"]["Candidate"];
+export type CheckStatus = components["schemas"]["CheckStatus"];
+export type Verdict = components["schemas"]["Verdict"];
 
 export function pageImageUrl(documentId: string, page: number): string {
   return `/api/documents/${encodeURIComponent(documentId)}/pages/${page}.png`;

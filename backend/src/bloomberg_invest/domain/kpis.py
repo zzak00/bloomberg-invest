@@ -23,16 +23,16 @@ class Kpi:
 class KpiRules:
     version: str
     sha256: str  # of the configuration file
-    kpis: dict[str, Kpi]
+    kpis: tuple[Kpi, ...]
 
     def feeds(self, line_item: str, breakdown: str) -> list[str]:
         """The titles of the KPIs and screens that read this line item and breakdown."""
         wanted = Input(line_item, breakdown)
-        return [kpi.title for kpi in self.kpis.values() if wanted in kpi.inputs]
+        return [kpi.title for kpi in self.kpis if wanted in kpi.inputs]
 
     def check_against(self, label_map: LabelMap) -> None:
         """Fail when an input names a line item the label map does not have."""
-        for kpi in self.kpis.values():
+        for kpi in self.kpis:
             for i in kpi.inputs:
                 if i.line_item not in label_map.items:
                     raise ValueError(

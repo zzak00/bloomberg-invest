@@ -207,6 +207,11 @@ function Value({ value, row, year, conflict }: { value: FigureValue; row: Figure
   const { shown, sources } = value;
   const unit = unitLabel(shown);
   const name = row.breakdown ? `${row.title}, ${capitalised(row.breakdown)}` : row.title;
+  // A corrected value is the person's, not what was read (#19 R8).
+  const corrected = shown.review?.verdict === "corrected";
+  const meta = [corrected && "corrected", sources.length > 1 && `${sources.length} sources`]
+    .filter(Boolean)
+    .join(" · ");
   return (
     <span className="figure-value">
       {conflict && (
@@ -217,12 +222,12 @@ function Value({ value, row, year, conflict }: { value: FigureValue; row: Figure
       <Link
         className="num"
         to={`/documents/${shown.document.id}?fact=${shown.id}`}
-        aria-label={`${name}, FY${year}: ${shown.value_as_written} ${unit}, on page ${shown.passage.page}`}
+        aria-label={`${name}, FY${year}: ${shown.value_as_written} ${unit}${corrected ? ", corrected" : ""}, on page ${shown.page}`}
       >
         {shown.value_as_written}
         {unit !== unitLabel(row) && <span className="figure-unit-inline"> {unit}</span>}
       </Link>
-      {sources.length > 1 && <span className="figure-sources">{sources.length} sources</span>}
+      {meta && <span className="figure-sources">{meta}</span>}
     </span>
   );
 }

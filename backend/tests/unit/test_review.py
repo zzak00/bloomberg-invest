@@ -9,25 +9,26 @@ from bloomberg_invest.domain.label_map import LabelMap
 from bloomberg_invest.domain.review import (
     InvalidCorrection,
     Reading,
+    around,
     carried,
     correction,
     needs_review,
     numbers_in,
 )
 
-RULES = config.kpi_rules()
+RULES = config.kpi_rules(config.label_map())
 
 
 def test_the_kpi_rules_name_only_line_items_of_the_label_map():
-    rules = config.kpi_rules()
+    rules = config.kpi_rules(config.label_map())
     assert rules.version == "v1"
     assert len(rules.sha256) == 64
-    inputs = {i.line_item for kpi in rules.kpis.values() for i in kpi.inputs}
+    inputs = {i.line_item for kpi in rules.kpis for i in kpi.inputs}
     assert inputs <= set(config.label_map().items)
 
 
 def test_kpi_rules_naming_an_unknown_line_item_fail():
-    rules = KpiRules("v9", "0" * 64, {"x": Kpi("x", "X", (Input("gross_profit"),))})
+    rules = KpiRules("v9", "0" * 64, (Kpi("x", "X", (Input("gross_profit"),)),))
     with pytest.raises(ValueError, match="'gross_profit', which label map v1 does not have"):
         rules.check_against(config.label_map())
 
@@ -74,16 +75,46 @@ def test_an_unreadable_correction_says_why(written, unit, message):
         correction(written, unit)
 
 
-def test_a_paragraph_offers_each_whole_number_once():
+def test_a_paragraph_offers_each_whole_number_where_it_is_written():
     paragraph = (
         "Le chiffre d'affaires atteint 36 681 MDH en 2025, contre 36 699 MDH en 2024 ; "
         "le dividende proposé est de 4,00 dirhams, soit 36 681 au total."
     )
-    assert numbers_in(paragraph) == ["36 681", "2025", "36 699", "2024", "4,00"]
+    numbers = numbers_in(paragraph)
+    assert [n.text for n in numbers] == ["36 681", "2025", "36 699", "2024", "4,00", "36 681"]
+    assert all(paragraph[n.start :].startswith(n.text) for n in numbers)
 
 
 def test_numbers_side_by_side_in_a_flat_row_are_two():
-    assert numbers_in("Chiffre d'affaires 36 699 36 681 -988") == ["36 699", "36 681", "-988"]
+    numbers = numbers_in("Chiffre d'affaires 36 699 36 681 -988")
+    assert [n.text for n in numbers] == ["36 699", "36 681", "-988"]
+
+
+def test_a_number_written_twice_has_the_words_around_each_place():
+    paragraph = (
+        "Le chiffre d'affaires atteint 36 681 MDH en 2025, contre 36 699 MDH en 2024 ; "
+        "le dividende proposé est de 4,00 dirhams, soit 36 681 au total."
+    )
+    first, *_, last = numbers_in(paragraph)
+    assert around(paragraph, first) == (
+        "Le chiffre d'affaires atteint 36 681 MDH en 2025, contre 36 699 MDH…"
+    )
+    assert around(paragraph, last) == "…est de 4,00 dirhams, soit 36 681 au total."
+
+
+def test_the_words_around_a_number_are_cut_at_whole_words_or_kept_whole():
+    unbroken = "x" * 40
+    paragraph = f"{unbroken}:36 681:{unbroken}"
+    [number] = numbers_in(paragraph)
+    assert around(paragraph, number) == f"…{'x' * 31}:36 681:{'x' * 31}…"
+    paragraph = "Le chiffre d'affaires consolidé atteint 36 681 MDH sur l'exercice clos en 2025"
+    first = numbers_in(paragraph)[0]
+    assert around(paragraph, first) == (
+        "…d'affaires consolidé atteint 36 681 MDH sur l'exercice clos en 2025"
+    )
+    short = "Total 36 681 MDH"
+    [number] = numbers_in(short)
+    assert around(short, number) == short
 
 
 def reading(value: str = "36 681", **changes) -> Reading:
@@ -121,4 +152,4 @@ def test_a_quoted_figure_carries_over_by_page_quote_and_paragraph():
 def test_an_empty_label_map_is_not_a_kpi_source():
     empty = LabelMap("v0", "0" * 64, {}, {})
     with pytest.raises(ValueError, match="label map v0 does not have"):
-        config.kpi_rules(against=empty)
+        config.kpi_rules(empty)

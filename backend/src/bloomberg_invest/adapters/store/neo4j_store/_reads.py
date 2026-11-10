@@ -3,13 +3,14 @@
 import json
 from typing import Any
 
+from bloomberg_invest.domain.review import Verdict
 from bloomberg_invest.views import (
     Box,
     DocumentRef,
     DocumentSummary,
     Figure,
     Passage,
-    Proposed,
+    RejectedFigure,
     Review,
     Run,
     Section,
@@ -97,9 +98,10 @@ def _passage(passage: Any) -> Passage:
     )
 
 
-def _review(rv: Any) -> Review | None:
-    """The check in force, from a figure's latest Review: none when it was reopened."""
-    if rv is None or rv["verdict"] == "reopened":
+def _review(rv: Any, rp: Any) -> Review | None:
+    """The check in force, from a figure's latest Review and what it cites: none when it was
+    reopened."""
+    if rv is None or rv["verdict"] == Verdict.reopened:
         return None
     return Review(
         id=rv["id"],
@@ -108,11 +110,15 @@ def _review(rv: Any) -> Review | None:
         reviewed_at=rv["reviewed_at"].to_native(),
         value_as_written=rv.get("value_as_written"),
         value=rv.get("value"),
+        unit=rv.get("unit"),
+        scale=rv.get("scale"),
+        currency=rv.get("currency"),
+        source=_passage(rp) if rp is not None else None,
     )
 
 
-def _proposed(n: Any, d: Any, o: Any, passage: Any, rv: Any) -> Proposed:
-    return Proposed(
+def _rejected(n: Any, d: Any, o: Any, passage: Any, rv: Any, rp: Any) -> RejectedFigure:
+    return RejectedFigure(
         id=n["id"],
         line_item=n["line_item"],
         label=n["label"],
@@ -121,15 +127,16 @@ def _proposed(n: Any, d: Any, o: Any, passage: Any, rv: Any) -> Proposed:
         fiscal_year=n["fiscal_year"],
         basis_scope=n.get("basis_scope"),
         breakdown=n["breakdown"],
+        recorded_at=n["recorded_at"].to_native(),
         page=n["page"],
         reason=n["reason"],
         document=_document_ref(d, o),
         passage=_passage(passage) if passage is not None else None,
-        review=_review(rv),
+        review=_review(rv, rp),
     )
 
 
-def _figure(n: Any, d: Any, o: Any, passage: Any, rv: Any) -> Figure:
+def _figure(n: Any, d: Any, o: Any, passage: Any, rv: Any, rp: Any) -> Figure:
     return Figure(
         id=n["id"],
         line_item=n["line_item"],
@@ -150,5 +157,12 @@ def _figure(n: Any, d: Any, o: Any, passage: Any, rv: Any) -> Figure:
         recorded_at=n["recorded_at"].to_native(),
         document=_document_ref(d, o),
         passage=_passage(passage),
-        review=_review(rv),
+        page=passage["page"],
+        review=_review(rv, rp),
     )
+
+
+def _either(r: Any) -> Figure | RejectedFigure:
+    """A record of a Fact or a RejectedFigure with its Document, issuer, Passage and check."""
+    read = _figure if "Fact" in r["n"].labels else _rejected
+    return read(r["n"], r["d"], r["o"], r["passage"], r["rv"], r["rp"])

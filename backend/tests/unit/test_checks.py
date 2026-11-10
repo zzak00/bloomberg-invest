@@ -1,15 +1,15 @@
 """The CHECKS queue (#23 AC1, AC2): a row per value a filing states for a figure that feeds a
 KPI, problems first."""
 
-from builders import BILLIONS, figure, proposed, review
+from builders import BILLIONS, corrected, figure, rejected, review
 
 from bloomberg_invest import config
 from bloomberg_invest.domain.figures import Scope
-from bloomberg_invest.service_layer.checks import gated, queue_rows
+from bloomberg_invest.service_layer.checks import queue_rows
 from bloomberg_invest.views import DocumentRef
 
 LABEL_MAP = config.label_map()
-RULES = config.kpi_rules()
+RULES = config.kpi_rules(LABEL_MAP)
 
 
 def rows(facts, rejected=()):
@@ -74,7 +74,7 @@ def test_problems_come_first_then_statement_line_item_and_newest_year():
             figure("7 112", "7112000000", line_item="net_income"),
             figure("7 113", "7113000000", line_item="net_income", page=9),
         ],
-        [proposed("18 002", line_item="equity", year=2023)],
+        [rejected("18 002", line_item="equity", year=2023)],
     )
     assert [(r.line_item, r.fiscal_year, r.value_as_written) for r in queued] == [
         ("equity", 2023, "18 002"),  # rejected
@@ -87,14 +87,14 @@ def test_problems_come_first_then_statement_line_item_and_newest_year():
 
 
 def test_a_rejected_figure_needs_review_until_corrected():
-    [row] = rows([], [proposed("18 002", line_item="equity")])
+    [row] = rows([], [rejected("18 002", line_item="equity")])
     assert (row.status, row.rejected, row.value) == (
         "needs_review",
         "its value differs from its cell",
         None,
     )
-    fixed = review("corrected", value_as_written="17 920")
-    [row] = rows([], [proposed("18 002", line_item="equity", review=fixed)])
+    fixed = corrected("17 920", "17920000000")
+    [row] = rows([], [rejected("18 002", line_item="equity", review=fixed)])
     assert (row.status, row.review.value_as_written) == ("corrected", "17 920")
 
 
@@ -111,11 +111,3 @@ def test_a_row_is_done_once_every_figure_stating_it_is_checked():
         ]
     )
     assert [(r.status, r.review.reviewed_at.day) for r in done] == [("accepted", 11)]
-
-
-def test_a_figure_needs_review_until_checked_and_only_when_it_feeds_a_kpi():
-    assert gated(figure("36 681", "36681000000"), RULES).needs_review
-    assert not gated(figure("36 681", "36681000000", review=review()), RULES).needs_review
-    assert not gated(figure("5 275", "5275000000", line_item="share_capital"), RULES).needs_review
-    company_only = figure("36 681", "36681000000", scope=Scope.company_only)
-    assert not gated(company_only, RULES).needs_review

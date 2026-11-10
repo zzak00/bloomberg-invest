@@ -46,7 +46,7 @@ def extract_prompt(version: str = EXTRACT_PROMPT) -> Prompt:
     return Prompt("extract-figures", version, hashlib.sha256(raw).hexdigest(), raw.decode())
 
 
-def kpi_rules(version: str = KPI_RULES, against: LabelMap | None = None) -> KpiRules:
+def kpi_rules(against: LabelMap, version: str = KPI_RULES) -> KpiRules:
     """The KPI rules, checked against the label map in force: every input names a line item."""
     raw = (_HERE / "kpis" / f"{version}.toml").read_bytes()
     data = tomllib.loads(raw.decode())
@@ -55,14 +55,14 @@ def kpi_rules(version: str = KPI_RULES, against: LabelMap | None = None) -> KpiR
     rules = KpiRules(
         version=version,
         sha256=hashlib.sha256(raw).hexdigest(),
-        kpis={
-            name: Kpi(
+        kpis=tuple(
+            Kpi(
                 name=name,
                 title=kpi["title"],
                 inputs=tuple(Input(i) if isinstance(i, str) else Input(**i) for i in kpi["inputs"]),
             )
             for name, kpi in data["kpis"].items()
-        },
+        ),
     )
-    rules.check_against(against or label_map())
+    rules.check_against(against)
     return rules

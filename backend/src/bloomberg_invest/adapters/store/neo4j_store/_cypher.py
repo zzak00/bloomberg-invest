@@ -94,12 +94,15 @@ def _supersede_step(tx: ManagedTransaction, run_id: str, step: str) -> None:
     )
 
 
-# The check in force on the figure bound to `n`, bound to `rv`: its latest Review, or null.
-# A latest Review that reopened the figure leaves it unchecked; `_review` reads it as None.
+# The check in force on the figure bound to `n`, bound to `rv`: its latest Review, or null, with
+# the Passage a correction cites bound to `rp`. A latest Review that reopened the figure leaves it
+# unchecked; `_review` reads it as None.
 LATEST_REVIEW = """
 OPTIONAL CALL (n) {
     MATCH (rv:Review)-[:REVIEWS]->(n)
-    RETURN rv ORDER BY rv.reviewed_at DESC LIMIT 1
+    WITH rv ORDER BY rv.reviewed_at DESC LIMIT 1
+    OPTIONAL MATCH (rv)-[:CITES]->(rp:Passage)
+    RETURN rv, rp
 }
 """
 

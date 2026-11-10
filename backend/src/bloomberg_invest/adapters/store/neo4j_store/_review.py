@@ -113,13 +113,16 @@ def _carry_reviews(tx: ManagedTransaction, run_id: str) -> int:
     if previous is None:
         return 0
     checked = [
-        (_reading(r), r["rv"]["id"])
+        (reading, r["rv"]["id"])
         for r in _readings(tx, previous["id"])
-        if r["rv"] is not None and r["rv"]["verdict"] != Verdict.reopened.value
+        if r["rv"] is not None
+        and r["rv"]["verdict"] != Verdict.reopened
+        and (reading := _reading(r)) is not None
     ]
     if not checked:
         return 0
-    links = carried(checked, [(_reading(r), r["n"]["id"]) for r in _readings(tx, run_id)])
+    later = [(reading, r["n"]["id"]) for r in _readings(tx, run_id) if (reading := _reading(r))]
+    links = carried(checked, later)
     tx.run(
         f"""
         UNWIND $links AS link
@@ -151,14 +154,16 @@ def _readings(tx: ManagedTransaction, run_id: str) -> list[Any]:
     )
 
 
-def _reading(record: Any) -> Reading:
+def _reading(record: Any) -> Reading | None:
+    """What the figure read and where; None for a figure with no Passage, whose check never
+    carries over: the page and the id the LLM cited are not the same Cell (#19 R4)."""
     n, cell, span = record["n"], record["c"], record["s"]
     if cell is not None:
         source: tuple[Any, ...] = ("cell", cell["page"], cell["table"], cell["row"], cell["col"])
     elif span is not None:
         source = ("span", span["page"], span["quote"], span["text"])
     else:
-        source = ("page", n.get("page"), n["source_id"])
+        return None
     return Reading(
         line_item=n["line_item"],
         fiscal_year=n["fiscal_year"],

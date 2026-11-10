@@ -20,12 +20,22 @@ from bloomberg_invest.domain.kpis import KpiRules
 # A number as filings write it: `36 681`, `1 284,6`, `4,01`, `2025`, `-988`. Groups of three
 # after a space join one number; anything else starts another (`36 699 36 681` is two).
 NUMBER = re.compile(r"[-−]?(?:\d{1,3}(?:[  ]\d{3})+|\d+)(?:,\d+)?")
+CONTEXT = 32  # characters shown on each side of a number a correction can pick
 
 
 class Verdict(StrEnum):
     accepted = "accepted"
     corrected = "corrected"
     reopened = "reopened"  # undoes the check before it; the figure goes back to CHECKS
+
+
+class CheckStatus(StrEnum):
+    """Where a CHECKS row stands: its figures' check in force, or what they wait for."""
+
+    to_check = "to_check"
+    needs_review = "needs_review"  # a rejected figure: it can only be corrected
+    accepted = "accepted"
+    corrected = "corrected"
 
 
 def needs_review(
@@ -97,23 +107,43 @@ class ReviewDraft:
             raise ValueError("a correction cites one source at most")
 
 
-def numbers_in(paragraph: str) -> list[str]:
-    """Each number written in the paragraph, once, in reading order: what a correction of a
-    quoted figure can pick. A number is whole, never part of a longer one, as the span check
-    reads it."""
-    found: list[str] = []
-    for m in NUMBER.finditer(paragraph):
-        if stands_alone(paragraph, m.start(), m.end()) and m.group() not in found:
-            found.append(m.group())
-    return found
+@dataclass(frozen=True)
+class Number:
+    """A number written in a paragraph, and where it starts."""
+
+    text: str
+    start: int
+
+
+def numbers_in(paragraph: str) -> list[Number]:
+    """Each number written in the paragraph, in reading order, every time it is written: what a
+    correction of a quoted figure can pick. A number is whole, never part of a longer one, as the
+    span check reads it."""
+    return [
+        Number(m.group(), m.start())
+        for m in NUMBER.finditer(paragraph)
+        if stands_alone(paragraph, m.start(), m.end())
+    ]
+
+
+def around(paragraph: str, number: Number) -> str:
+    """The number with the words around it where it is written, cut at whole words; a side with
+    no space to cut at is kept whole."""
+    start, end = number.start, number.start + len(number.text)
+    before, after = paragraph[max(0, start - CONTEXT) : start], paragraph[end : end + CONTEXT]
+    if start > CONTEXT:
+        before = "…" + (before[before.index(" ") + 1 :] if " " in before else before)
+    if end + CONTEXT < len(paragraph):
+        after = (after[: after.rindex(" ")] if " " in after else after) + "…"
+    return before + number.text + after
 
 
 @dataclass(frozen=True)
 class Reading:
     """What a figure read and where: two figures with the same reading read the same value from
     the same source. `source` is the Cell's page, table, row and column (which survive a
-    re-parse), or the Span's page, quote and paragraph, or for a figure with no Passage the page
-    and the id the LLM cited."""
+    re-parse), or the Span's page, quote and paragraph. A figure with no Passage has no reading:
+    its check never carries over."""
 
     line_item: str
     fiscal_year: int

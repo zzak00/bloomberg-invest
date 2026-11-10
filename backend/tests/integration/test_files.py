@@ -46,3 +46,9 @@ def test_a_quote_inside_a_longer_number_is_not_found(files):
     inside, whole = files.quote_boxes(SHA, [(1, "68", (page_1,)), (1, "36 681", (page_1,))])
     assert inside is None  # in "36 681" and "6 968", never on its own
     assert whole is not None
+
+
+def test_a_quote_near_nothing_is_the_first_place_the_page_holds_it(files):
+    [expected] = files.quote_boxes(SHA, [(2, "4,01", (PAGE_2,))])
+    assert files.quote_near(SHA, 2, "4,01", []) == expected
+    assert files.quote_near(SHA, 2, "9,99", []) is None

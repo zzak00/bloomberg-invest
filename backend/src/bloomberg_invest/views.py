@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from bloomberg_invest.domain.figures import Scope
 from bloomberg_invest.domain.model import Bbox, DocType, Organisation, PageInfo, RunInfo
+from bloomberg_invest.domain.review import CheckStatus, Verdict
 
 
 class Section(BaseModel):
@@ -89,25 +90,20 @@ class Passage(BaseModel):
 
 
 class Review(BaseModel):
-    """The check in force on a figure (#19 R9): a person accepted it or gave the right value."""
+    """A person's check of a figure (#19 R9). On a figure it is the check in force, so accepted or
+    corrected: a figure whose latest check reopened it has none."""
 
     id: str
-    verdict: Literal["accepted", "corrected"]
+    verdict: Verdict
     reviewer: str
     reviewed_at: datetime
-    value_as_written: str | None = None  # corrected: the right value, as the person gave it
-    value: str | None = None  # corrected: the right value in the base unit
-
-
-class RecordedReview(BaseModel):
-    """A check as recorded: accepted, corrected, or reopened to undo the one before."""
-
-    id: str
-    verdict: Literal["accepted", "corrected", "reopened"]
-    reviewer: str
-    reviewed_at: datetime
+    # A correction: the right value as the person gave it, parsed like an extracted one.
     value_as_written: str | None = None
-    value: str | None = None
+    value: str | None = None  # in the base unit
+    unit: str | None = None
+    scale: int | None = None
+    currency: str | None = None
+    source: Passage | None = None  # the cell or the quote picked; None for a typed value
 
 
 class Figure(BaseModel):
@@ -131,7 +127,10 @@ class Figure(BaseModel):
     breakdown: str  # empty for the line item itself, else which part of it
     recorded_at: datetime
     document: DocumentRef
-    passage: Passage
+    # What it was read from. The dossier shows a corrected figure with the source of its
+    # correction, which a typed value does not have.
+    passage: Passage | None
+    page: int  # the page it was read on
     review: Review | None  # the check in force; None when nobody checked it (#23 AC4)
     # It feeds a KPI or screen and nobody checked it yet (#19 R10). Set by the service layer,
     # which knows the KPI rules; the store leaves it False.
@@ -194,9 +193,9 @@ class FigureGrid(BaseModel):
     scopes: list[ScopeFigures]
 
 
-class Proposed(BaseModel):
-    """A RejectedFigure: what the LLM proposed, and why the check refused it (#19 R6). It has no
-    parsed value; a person can only correct it."""
+class RejectedFigure(BaseModel):
+    """What the LLM proposed, and why the check refused it (#19 R6). It has no parsed value; a
+    person can only correct it."""
 
     id: str
     line_item: str
@@ -206,6 +205,7 @@ class Proposed(BaseModel):
     fiscal_year: int
     basis_scope: Scope | None
     breakdown: str
+    recorded_at: datetime
     page: int  # the page the LLM read
     reason: str
     document: DocumentRef
@@ -241,7 +241,7 @@ class CheckRow(BaseModel):
     rejected: str | None  # why the check refused it, for a rejected figure
     feeds: list[str]  # the KPIs and screens it feeds
     review: Review | None
-    status: Literal["to_check", "needs_review", "accepted", "corrected"]
+    status: CheckStatus
 
 
 class CheckCounts(BaseModel):

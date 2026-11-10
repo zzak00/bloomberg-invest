@@ -9,17 +9,18 @@ import {
   type CheckGroup,
   type CheckQueue,
   type CheckRow,
+  type CheckStatus,
   type PageInfo,
   type Passage,
+  type Verdict,
 } from "../api/client";
 import { useApi } from "../api/useApi";
 import { capitalised, periodLabel } from "../figures";
 import { DOC_TYPE_LABELS, formatDate } from "../format";
 
-type Status = CheckRow["status"];
 type Filter = "open" | "needs_review" | "done" | "all";
 
-type Option = { id: Filter; label: string; shows: Status[] };
+type Option = { id: Filter; label: string; shows: CheckStatus[] };
 
 const OPEN: Option = {
   id: "open",
@@ -37,7 +38,7 @@ const FILTERS: Option[] = [
   },
 ];
 
-const STATUS: Record<Status, { word: string; tone: string }> = {
+const STATUS: Record<CheckStatus, { word: string; tone: string }> = {
   to_check: { word: "To check", tone: "pending" },
   needs_review: { word: "Needs review", tone: "review" },
   accepted: { word: "Accepted", tone: "ok" },
@@ -55,7 +56,7 @@ export function ChecksPage() {
   const [touched, setTouched] = useState<Set<string>>(new Set());
   const queue = useApi(`checks:${isin}:${version}`, () =>
     api.GET("/api/checks", {
-      params: { query: { status: "all", ...(isin ? { isin } : {}) } },
+      params: { query: isin ? { isin } : {} },
     }),
   );
 
@@ -265,10 +266,12 @@ function Row({
   const [busy, setBusy] = useState(false);
   const name = row.breakdown ? `${row.title}, ${capitalised(row.breakdown)}` : row.title;
   const status = STATUS[row.status];
+  // A corrected row's parsed value is the correction's.
+  const parsed = row.status === "corrected" && row.review ? row.review : row;
   const done = row.status === "accepted" || row.status === "corrected";
 
   const send = async (fields: {
-    verdict: "accepted" | "corrected" | "reopened";
+    verdict: Verdict;
     value_as_written?: string;
     cell_id?: string;
     quote?: string;
@@ -332,8 +335,8 @@ function Row({
 
       <div className="check-value check-parsed-col">
         <div className="micro">PARSED</div>
-        <div className="num check-parsed">{row.value ? grouped(row.value) : "–"}</div>
-        <div className="check-unit">{row.value ? parsedUnit(row) : "not parsed"}</div>
+        <div className="num check-parsed">{parsed.value ? grouped(parsed.value) : "–"}</div>
+        <div className="check-unit">{parsed.value ? parsedUnit(parsed) : "not parsed"}</div>
       </div>
 
       <div className="check-act">
@@ -410,8 +413,9 @@ function Source({ row, page }: { row: CheckRow; page: PageInfo | undefined }) {
       </div>
     );
   }
+  // A rejected figure is a figure of the dossier only once corrected; until then, its page.
   const link =
-    row.rejected === null
+    row.rejected === null || row.status === "corrected"
       ? `/documents/${row.document.id}?fact=${firstFigure(row)}`
       : `/documents/${row.document.id}?page=${passage.page}`;
   const what = passage.kind === "cell" ? "cell" : "quote";
@@ -526,9 +530,9 @@ function Correction({
             {row.passage?.kind === "span" ? "PICK FROM THE SAME PARAGRAPH" : "PICK FROM THE SAME ROW"}
           </div>
           <div className="check-picks">
-            {options.map((c) => (
+            {options.map((c, i) => (
               <button
-                key={c.cell_id ?? c.value_as_written}
+                key={c.cell_id ?? `${i}:${c.value_as_written}`}
                 type="button"
                 className="check-pick"
                 disabled={busy}
@@ -565,7 +569,7 @@ function Correction({
   );
 }
 
-function StatusIcon({ status }: { status: Status }) {
+function StatusIcon({ status }: { status: CheckStatus }) {
   const inner =
     status === "to_check"
       ? "M8 4.8V8l2 1.4"
@@ -589,9 +593,9 @@ function grouped(value: string): string {
 }
 
 /** "MAD · ×1 000 000", or the unit alone when it is not scaled. */
-function parsedUnit(row: CheckRow): string {
-  const unit = row.unit === "MAD/share" ? "MAD per share" : (row.unit ?? "");
-  return row.scale && row.scale > 1 ? `${unit} · ×${grouped(String(row.scale))}` : unit;
+function parsedUnit(parsed: { unit?: string | null; scale?: number | null }): string {
+  const unit = parsed.unit === "MAD/share" ? "MAD per share" : (parsed.unit ?? "");
+  return parsed.scale && parsed.scale > 1 ? `${unit} · ×${grouped(String(parsed.scale))}` : unit;
 }
 
 /** A row's figures name it: the queue lists each figure once. */

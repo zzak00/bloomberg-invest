@@ -427,13 +427,13 @@ A Fact keeps the label map's `line_item` key only; its title and statement are r
 
 A figure's check in force is its latest `Review` (by `reviewed_at`), unless that one reopened it. Reviews are never superseded or deleted: a mistaken check is undone by a reopening, and both stay. Only consolidated figures that feed a KPI or screen need a check; `config/kpis/` names those inputs.
 
-A correction never changes the figure: the Review holds the right value, and it wins wherever the figure is read (ADR 0001). It `CITES` what the person picked: a Cell of the figure's table row, or a new Span holding a number of the figure's paragraph, boxed on that number in the PDF's text layer. Such a Span has no `PRODUCED_BY`: its Review is its provenance, so a re-extract never supersedes it. A typed value cites nothing.
+A correction never changes the figure: the Review holds the right value, and it wins wherever the figure is read (ADR 0001). It `CITES` what the person picked: a Cell of the figure's table row, or a new Span holding a number of the figure's paragraph, boxed on that number in the PDF's text layer. Such a Span has no `PRODUCED_BY`: its Review is its provenance, so a re-extract never supersedes it. A typed value cites nothing. The dossier shows a corrected figure with its correction, sourced from what the Review cites, or for a typed value from what the figure was read from; a RejectedFigure joins the dossier once corrected.
 
 An extract Run carries checks over in its own transaction (#19 R4). A new figure gains a `REVIEWS` link from the check in force of the previous extract Run's figure that read the same thing:
 - the same line item, fiscal year, scope, breakdown, `value_as_written` and `unit_as_written`;
-- from the same source: for a Cell, the same page, table index, row and column, which survive a re-parse; for a Span, the same page, quote and paragraph; for a figure with no Passage, the same page and `source_id`.
+- from the same source: for a Cell, the same page, table index, row and column, which survive a re-parse; for a Span, the same page, quote and paragraph.
 
-Any other new figure starts unchecked and goes back to CHECKS. Only the Run just before counts, so a check undone by a different reading does not come back when a later Run reads the first value again.
+Any other new figure starts unchecked and goes back to CHECKS, and so does every figure with no Passage: its page and `source_id` are not the same Cell. Only the Run just before counts, so a check undone by a different reading does not come back when a later Run reads the first value again.
 
 ## Why a Page has width and height
 

@@ -162,7 +162,8 @@ export interface paths {
         };
         /**
          * Fact
-         * @description One financial figure, current or not, so a link to it keeps working after a re-run.
+         * @description One financial figure as the dossier shows it, current or not, so a link to it keeps
+         *     working after a re-run: a corrected figure with its correction.
          */
         get: operations["fact_api_facts__fact_id__get"];
         put?: never;
@@ -182,8 +183,8 @@ export interface paths {
         };
         /**
          * Checks Queue
-         * @description CHECKS: the figures that feed a KPI or screen, by filing, problems first; the counts
-         *     cover every status, for the company asked or all.
+         * @description CHECKS: the figures that feed a KPI or screen, by filing, problems first, whatever
+         *     their status; of one company or all.
          */
         get: operations["checks_queue_api_checks_get"];
         put?: never;
@@ -353,12 +354,14 @@ export interface components {
             /** Feeds */
             feeds: string[];
             review: components["schemas"]["Review"] | null;
-            /**
-             * Status
-             * @enum {string}
-             */
-            status: "to_check" | "needs_review" | "accepted" | "corrected";
+            status: components["schemas"]["CheckStatus"];
         };
+        /**
+         * CheckStatus
+         * @description Where a CHECKS row stands: its figures' check in force, or what they wait for.
+         * @enum {string}
+         */
+        CheckStatus: "to_check" | "needs_review" | "accepted" | "corrected";
         /**
          * Chunk
          * @description A Chunk with where to find it: what search returns and the source viewer highlights.
@@ -494,7 +497,9 @@ export interface components {
              */
             recorded_at: string;
             document: components["schemas"]["DocumentRef"];
-            passage: components["schemas"]["Passage"];
+            passage: components["schemas"]["Passage"] | null;
+            /** Page */
+            page: number;
             review: components["schemas"]["Review"] | null;
             /**
              * Needs Review
@@ -544,7 +549,9 @@ export interface components {
              */
             recorded_at: string;
             document: components["schemas"]["DocumentRef"];
-            passage: components["schemas"]["Passage"];
+            passage: components["schemas"]["Passage"] | null;
+            /** Page */
+            page: number;
             review: components["schemas"]["Review"] | null;
             /**
              * Needs Review
@@ -605,11 +612,6 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
-        /** NotFound */
-        NotFound: {
-            /** Detail */
-            detail: string;
-        };
         /**
          * Organisation
          * @description The Organisation a filing comes from. Keyed by the ISIN the operator gives until
@@ -650,41 +652,22 @@ export interface components {
             quote?: string | null;
         };
         /**
-         * RecordedReview
-         * @description A check as recorded: accepted, corrected, or reopened to undo the one before.
+         * Problem
+         * @description Why a request failed, in words a person can act on.
          */
-        RecordedReview: {
-            /** Id */
-            id: string;
-            /**
-             * Verdict
-             * @enum {string}
-             */
-            verdict: "accepted" | "corrected" | "reopened";
-            /** Reviewer */
-            reviewer: string;
-            /**
-             * Reviewed At
-             * Format: date-time
-             */
-            reviewed_at: string;
-            /** Value As Written */
-            value_as_written?: string | null;
-            /** Value */
-            value?: string | null;
+        Problem: {
+            /** Detail */
+            detail: string;
         };
         /**
          * Review
-         * @description The check in force on a figure (#19 R9): a person accepted it or gave the right value.
+         * @description A person's check of a figure (#19 R9). On a figure it is the check in force, so accepted or
+         *     corrected: a figure whose latest check reopened it has none.
          */
         Review: {
             /** Id */
             id: string;
-            /**
-             * Verdict
-             * @enum {string}
-             */
-            verdict: "accepted" | "corrected";
+            verdict: components["schemas"]["Verdict"];
             /** Reviewer */
             reviewer: string;
             /**
@@ -696,6 +679,13 @@ export interface components {
             value_as_written?: string | null;
             /** Value */
             value?: string | null;
+            /** Unit */
+            unit?: string | null;
+            /** Scale */
+            scale?: number | null;
+            /** Currency */
+            currency?: string | null;
+            source?: components["schemas"]["Passage"] | null;
         };
         /**
          * ReviewRequest
@@ -906,7 +896,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["NotFound"];
+                    "application/json": components["schemas"]["Problem"];
                 };
             };
             /** @description Validation Error */
@@ -947,7 +937,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["NotFound"];
+                    "application/json": components["schemas"]["Problem"];
                 };
             };
             /** @description Validation Error */
@@ -1019,7 +1009,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["NotFound"];
+                    "application/json": components["schemas"]["Problem"];
                 };
             };
             /** @description Validation Error */
@@ -1059,7 +1049,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["NotFound"];
+                    "application/json": components["schemas"]["Problem"];
                 };
             };
             /** @description Validation Error */
@@ -1099,7 +1089,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["NotFound"];
+                    "application/json": components["schemas"]["Problem"];
                 };
             };
             /** @description Validation Error */
@@ -1133,13 +1123,13 @@ export interface operations {
                     "application/json": components["schemas"]["FigureDetail"];
                 };
             };
-            /** @description No such financial figure */
+            /** @description No such financial figure, or a rejected one nobody corrected */
             404: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["NotFound"];
+                    "application/json": components["schemas"]["Problem"];
                 };
             };
             /** @description Validation Error */
@@ -1157,7 +1147,6 @@ export interface operations {
         parameters: {
             query?: {
                 isin?: string | null;
-                status?: "open" | "needs_review" | "done" | "all";
             };
             header?: never;
             path?: never;
@@ -1204,7 +1193,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RecordedReview"];
+                    "application/json": components["schemas"]["Review"];
                 };
             };
             /** @description No such current figure */
@@ -1213,7 +1202,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["NotFound"];
+                    "application/json": components["schemas"]["Problem"];
                 };
             };
             /** @description The check does not fit these figures, and why */
@@ -1222,7 +1211,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["NotFound"];
+                    "application/json": components["schemas"]["Problem"];
                 };
             };
             /** @description Validation Error */
@@ -1240,7 +1229,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["NotFound"];
+                    "application/json": components["schemas"]["Problem"];
                 };
             };
         };
@@ -1271,7 +1260,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["NotFound"];
+                    "application/json": components["schemas"]["Problem"];
                 };
             };
             /** @description Validation Error */

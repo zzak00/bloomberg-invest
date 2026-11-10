@@ -165,6 +165,7 @@ try {
     await income.waitFor();
     const tab = await page.getByRole("tab", { selected: true }).innerText();
     check(vp.name, "AC4: the dossier opens on its figures", /^FIGURES · \d+$/.test(tab), tab);
+    const figureCount = Number(tab.split("·")[1]);
     const revenue = income.getByRole("link", { name: /^Revenue, FY2025: 36 681 MAD m, on page \d+$/ });
     check(vp.name, "AC4: revenue FY2025 is listed as written", await revenue.isVisible());
     const years = await page.getByRole("columnheader", { name: /^FY\d{4}$/ }).allInnerTexts();
@@ -247,6 +248,34 @@ try {
     await reopen.getByRole("button", { name: "REOPEN" }).click();
     await page.getByRole("listitem", { name: /^Revenue, FY2025: To check$/ }).first().waitFor();
     check(vp.name, "a reopened figure is to check again", true);
+
+    // A corrected rejected figure counts: the viewer and the dossier show the correction (#19 R8).
+    await page.goto(`${base}/checks`);
+    const rejectedRow = page.getByRole("listitem", { name: /^Total equity, FY2024: Needs review$/ }).first();
+    await rejectedRow.scrollIntoViewIfNeeded();
+    await rejectedRow.getByRole("button", { name: "CORRECT" }).click();
+    await rejectedRow.getByRole("textbox").fill("18 702");
+    await rejectedRow.getByRole("button", { name: "SAVE" }).click();
+    const corrected = page.getByRole("listitem", { name: /^Total equity, FY2024: Corrected$/ }).first();
+    await corrected.waitFor();
+    check(vp.name, "a rejected figure is corrected", /^Corrected by .+ on \d{2}\/\d{2}\/\d{4}/.test(await corrected.locator(".check-done").innerText()));
+    await shot("15-checks-corrected");
+    await corrected.getByRole("link", { name: /^Open the cell on page \d+ in the source viewer$/ }).click();
+    await page.waitForURL(/fact=/);
+    const correctedBar = page.getByRole("status");
+    await correctedBar.getByText(/^Corrected by /).waitFor();
+    const correctedText = (await correctedBar.innerText()).replace(/\s+/g, " ");
+    check(vp.name, "the viewer shows the correction on its page", /PAGE/.test(correctedText) && /18 702 MAD m/.test(correctedText), correctedText);
+    await shot("16-corrected-figure");
+    await page.goto(`${base}/companies/MA0000011488`);
+    const counted = await page.getByRole("tab", { name: /^FIGURES · \d+$/, selected: true }).innerText();
+    check(vp.name, "the dossier counts the corrected figure", Number(counted.split("·")[1]) === figureCount + 1, counted);
+    await page.getByRole("region", { name: "Balance sheet" }).getByRole("link", { name: /^Total equity, FY2024: 18 702 MAD m/ }).first().scrollIntoViewIfNeeded();
+    await shot("17-dossier-corrected");
+    await page.goto(`${base}/checks?status=done`);
+    await page.getByRole("listitem", { name: /^Total equity, FY2024: Corrected$/ }).first().getByRole("button", { name: "REOPEN" }).click();
+    await page.getByRole("listitem", { name: /^Total equity, FY2024: Needs review$/ }).first().waitFor();
+    check(vp.name, "a reopened correction needs review again", true);
 
     // MAP and KPIs show their empty states.
     for (const [path, title] of [

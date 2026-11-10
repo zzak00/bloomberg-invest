@@ -23,8 +23,7 @@ from bloomberg_invest.adapters.store.neo4j_store._parse import _record_parse, _r
 from bloomberg_invest.adapters.store.neo4j_store._reads import (
     _boxes,
     _document_ref,
-    _figure,
-    _proposed,
+    _either,
     _run,
     _summary,
     _table_part,
@@ -49,7 +48,7 @@ from bloomberg_invest.views import (
     DocumentDetail,
     DocumentSummary,
     Figure,
-    Proposed,
+    RejectedFigure,
 )
 
 CONSTRAINTS = [
@@ -162,40 +161,9 @@ class Neo4jStore(GraphStore):
         with self._driver.session() as session:
             return session.execute_write(_record_extraction, document_id, figures, run)
 
-    def figures(self, isin: str) -> list[Figure]:
-        records, _, _ = self._driver.execute_query(
-            f"""
-            MATCH (n:Fact {{kind: $kind}})-[:ABOUT]->(o:Organisation {{isin: $isin}})
-            WHERE {CURRENT}
-            MATCH (n)-[:FROM_DOCUMENT]->(d:Document), (n)-[:CITES]->(passage:Passage)
-            {LATEST_REVIEW}
-            RETURN n, d, o, passage, rv
-            ORDER BY n.fiscal_year DESC, passage.page, n.line_item, n.breakdown
-            """,
-            kind=FINANCIAL_FIGURE,
-            isin=isin,
-        )
-        return [_figure(r["n"], r["d"], r["o"], r["passage"], r["rv"]) for r in records]
-
-    def fact(self, fact_id: str) -> Figure | None:
-        records, _, _ = self._driver.execute_query(
-            f"""
-            MATCH (n:Fact {{id: $id, kind: $kind}})-[:ABOUT]->(o:Organisation)
-            MATCH (n)-[:FROM_DOCUMENT]->(d:Document), (n)-[:CITES]->(passage:Passage)
-            {LATEST_REVIEW}
-            RETURN n, d, o, passage, rv
-            """,
-            id=fact_id,
-            kind=FINANCIAL_FIGURE,
-        )
-        if not records:
-            return None
-        r = records[0]
-        return _figure(r["n"], r["d"], r["o"], r["passage"], r["rv"])
-
-    def checkable(
+    def figures(
         self, isin: str | None = None, ids: list[str] | None = None
-    ) -> tuple[list[Figure], list[Proposed]]:
+    ) -> tuple[list[Figure], list[RejectedFigure]]:
         records, _, _ = self._driver.execute_query(
             f"""
             CALL () {{
@@ -208,21 +176,34 @@ class Neo4jStore(GraphStore):
             MATCH (n)-[:FROM_DOCUMENT]->(d:Document)
             OPTIONAL MATCH (n)-[:CITES]->(passage:Passage)
             {LATEST_REVIEW}
-            RETURN n, d, o, passage, rv, n:Fact AS fact
+            RETURN n, d, o, passage, rv, rp
+            ORDER BY n.fiscal_year DESC, coalesce(passage.page, n.page), n.line_item, n.breakdown
             """,
             kind=FINANCIAL_FIGURE,
             isin=isin,
             ids=ids,
         )
-        facts = [
-            _figure(r["n"], r["d"], r["o"], r["passage"], r["rv"]) for r in records if r["fact"]
-        ]
-        rejected = [
-            _proposed(r["n"], r["d"], r["o"], r["passage"], r["rv"])
-            for r in records
-            if not r["fact"]
-        ]
-        return facts, rejected
+        read = [_either(r) for r in records]
+        return (
+            [f for f in read if isinstance(f, Figure)],
+            [f for f in read if isinstance(f, RejectedFigure)],
+        )
+
+    def figure(self, figure_id: str) -> Figure | RejectedFigure | None:
+        records, _, _ = self._driver.execute_query(
+            f"""
+            WITH $id AS id
+            {FIGURE_BY_ID}
+            WITH n WHERE n.kind = $kind
+            MATCH (n)-[:ABOUT]->(o:Organisation), (n)-[:FROM_DOCUMENT]->(d:Document)
+            OPTIONAL MATCH (n)-[:CITES]->(passage:Passage)
+            {LATEST_REVIEW}
+            RETURN n, d, o, passage, rv, rp
+            """,
+            id=figure_id,
+            kind=FINANCIAL_FIGURE,
+        )
+        return _either(records[0]) if records else None
 
     def row_cells(self, figure_id: str) -> list[Candidate]:
         records, _, _ = self._driver.execute_query(

@@ -4,7 +4,7 @@ import hashlib
 import shutil
 
 import pytest
-from conftest import FIXTURES, extract_income, make_run
+from conftest import FIXTURES, INCOME_ANSWER, extract_income, make_run
 from fakes import FakeEmbedder
 from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator
@@ -69,7 +69,7 @@ def embedder() -> FakeEmbedder:
 
 
 def app(store, files, embedder, reviewer: str | None = "Z. Bajjou"):
-    checks = Checks(config.kpi_rules(), reviewer)
+    checks = Checks(config.kpi_rules(config.label_map()), reviewer)
     return create_app(
         store=store, files=files, embedder=embedder, label_map=config.label_map(), checks=checks
     )
@@ -165,8 +165,10 @@ def test_openapi_declares_the_contract(client):
         "CheckRow",
         "Review",
         "ReviewRequest",
-        "RecordedReview",
+        "Verdict",
+        "CheckStatus",
         "Candidate",
+        "Problem",
     } <= set(schemas)
 
 
@@ -257,7 +259,8 @@ def extracted(store, document_id) -> dict[str, str]:
     """Figures extracted from the stored income statement: two that match their cells and one
     that doesn't. Returns the Fact ids by value."""
     extract_income(store, document_id)
-    return {f.value_as_written: f.id for f in store.figures("MA0000011488")}
+    facts, rejected = store.figures("MA0000011488")
+    return {f.value_as_written: f.id for f in [*facts, *rejected]}
 
 
 def test_a_company_lists_its_filings(client, document_id):
@@ -301,6 +304,7 @@ def test_a_company_s_figures_are_its_checked_facts_only_by_statement_and_year(cl
         "text": "36 681",
         "quote": None,
     }
+    assert revenue["page"] == 2
 
 
 def test_a_fact_opens_by_its_id_for_the_source_viewer(client, extracted, document_id):
@@ -310,11 +314,9 @@ def test_a_fact_opens_by_its_id_for_the_source_viewer(client, extracted, documen
     assert fact["document"]["id"] == document_id
 
 
-def test_an_unknown_or_rejected_figure_is_404(client, extracted, driver):
+def test_an_unknown_figure_or_a_rejected_one_nobody_corrected_is_404(client, extracted):
     assert client.get("/api/facts/nope").status_code == 404
-    records, _, _ = driver.execute_query("MATCH (n:RejectedFigure) RETURN n.id AS id")
-    [rejected] = [r["id"] for r in records]
-    assert client.get(f"/api/facts/{rejected}").status_code == 404
+    assert client.get(f"/api/facts/{extracted['7 121']}").status_code == 404
 
 
 # CHECKS (#23)
@@ -387,9 +389,13 @@ def test_accepting_a_figure_records_who_and_when_and_clears_its_flag(client, ext
     assert fact["review"]["reviewed_at"] == recorded["reviewed_at"]
     checks = queue(client)
     assert checks["counts"] == {"to_check": 1, "needs_review": 1, "done": 1}
-    assert [r["value_as_written"] for r in rows_of(checks)] == ["7 121", "36 699"]
-    [done] = rows_of(queue(client, status="done"))
-    assert (done["value_as_written"], done["status"]) == ("36 681", "accepted")
+    # Every status is listed, in the same order: the page filters, and keeps a row just checked
+    # where it was.
+    assert [(r["value_as_written"], r["status"]) for r in rows_of(checks)] == [
+        ("7 121", "needs_review"),
+        ("36 681", "accepted"),
+        ("36 699", "to_check"),
+    ]
 
 
 def test_every_figure_in_the_dossier_carries_its_review_status(client, extracted):
@@ -411,19 +417,51 @@ def test_a_rejected_figure_is_corrected_from_a_cell_of_its_row(client, extracted
     picked = choices[1]
     response = review(client, misread, "corrected", cell_id=picked["cell_id"])
     assert response.status_code == 201
-    assert (response.json()["value_as_written"], response.json()["value"]) == (
+    recorded = response.json()
+    assert (recorded["value_as_written"], recorded["value"]) == ("7 112", "7112000000")
+    assert (recorded["source"]["kind"], recorded["source"]["text"]) == ("cell", "7 112")
+    row = rows_of(queue(client))[0]
+    assert (row["status"], row["value_as_written"], row["review"]["value_as_written"]) == (
+        "corrected",
+        "7 121",  # CHECKS shows what was read, and the correction
+        "7 112",
+    )
+
+
+def test_a_corrected_rejected_figure_joins_the_dossier_with_the_cell_picked(client, extracted):
+    misread = rows_of(queue(client))[0]
+    [_, right] = client.get(f"/api/figures/{misread['figure_ids'][0]}/candidates").json()
+    review(client, misread, "corrected", cell_id=right["cell_id"])
+
+    grid = client.get("/api/companies/MA0000011488/figures").json()
+    assert grid["count"] == 3
+    [_, net_income] = grid["scopes"][0]["statements"][0]["rows"]
+    assert net_income["title"] == "Net income"
+    [year] = net_income["years"]
+    shown = year["values"][0]["shown"]
+    assert (shown["value_as_written"], shown["value"], shown["review"]["verdict"]) == (
         "7 112",
         "7112000000",
+        "corrected",
     )
-    [row] = rows_of(queue(client, status="done"))
-    assert (row["status"], row["review"]["value_as_written"]) == ("corrected", "7 112")
+    assert (shown["passage"]["text"], shown["page"], shown["period_end"]) == (
+        "7 112",
+        2,
+        "2025-12-31",
+    )
+    fact = client.get(f"/api/facts/{extracted['7 121']}").json()
+    assert (fact["value_as_written"], fact["line_item_title"]) == ("7 112", "Net income")
 
 
 def test_a_typed_correction_is_parsed_in_the_figure_s_unit(client, extracted):
     revenue = rows_of(queue(client))[1]
     response = review(client, revenue, "corrected", value_as_written="36 680")
     assert response.status_code == 201
-    assert response.json()["value"] == "36680000000"
+    assert (response.json()["value"], response.json()["source"]) == ("36680000000", None)
+    # The dossier shows the correction where the figure was read.
+    fact = client.get(f"/api/facts/{extracted['36 681']}").json()
+    assert (fact["value_as_written"], fact["value"]) == ("36 680", "36680000000")
+    assert (fact["passage"]["text"], fact["review"]["verdict"]) == ("36 681", "corrected")
 
 
 def test_reopening_puts_a_figure_back_to_checks(client, extracted):
@@ -453,6 +491,35 @@ def test_a_check_that_does_not_fit_its_figures_is_refused_with_why(
     assert queue(client)["counts"]["done"] == 0
 
 
+def test_one_check_covers_one_value(client, store, document_id):
+    # The model reads revenue 2025 twice: from its own cell, and from net income's.
+    extract_income(store, document_id, [*INCOME_ANSWER, ("revenue", 2025, "t2.0.r2.c2", "7 112")])
+    rows = [
+        r for r in rows_of(queue(client)) if (r["title"], r["fiscal_year"]) == ("Revenue", 2025)
+    ]
+    assert [(r["value_as_written"], r["conflict"]) for r in rows] == [
+        ("36 681", True),
+        ("7 112", True),
+    ]
+    response = client.post(
+        "/api/reviews",
+        json={"figure_ids": rows[0]["figure_ids"] + rows[1]["figure_ids"], "verdict": "accepted"},
+    )
+    assert response.status_code == 409
+    assert "different values" in response.json()["detail"]
+
+
+def test_a_figure_that_feeds_no_kpi_cannot_be_checked(client, store, document_id):
+    extract_income(store, document_id, [("share_capital", 2025, "t2.0.r1.c2", "36 681")])
+    assert rows_of(queue(client)) == []
+    [share_capital], _ = store.figures("MA0000011488")
+    response = client.post(
+        "/api/reviews", json={"figure_ids": [share_capital.id], "verdict": "accepted"}
+    )
+    assert response.status_code == 409
+    assert "needs no check" in response.json()["detail"]
+
+
 def test_one_check_covers_one_line_item_and_year(client, extracted):
     revenue, previous = rows_of(queue(client))[1:]
     response = client.post(
@@ -477,13 +544,11 @@ def test_checks_are_refused_until_the_reviewer_is_set(store, files, embedder, ex
     assert response.json() == {"detail": "Set REVIEWER in .env to record checks"}
 
 
-def test_the_queue_filters_by_company_and_status(client, extracted):
+def test_the_queue_filters_by_company(client, extracted):
     assert queue(client, isin="MA0000000000") == {
         "reviewer": "Z. Bajjou",
         "counts": {"to_check": 0, "needs_review": 0, "done": 0},
         "companies": [{"isin": "MA0000011488", "name": "Maroc Telecom"}],
         "groups": [],
     }
-    assert [r["status"] for r in rows_of(queue(client, status="needs_review"))] == ["needs_review"]
-    assert len(rows_of(queue(client, status="all"))) == 3
-    assert client.get("/api/checks", params={"status": "nope"}).status_code == 422
+    assert len(rows_of(queue(client, isin="MA0000011488"))) == 3

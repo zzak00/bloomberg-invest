@@ -13,7 +13,7 @@ from bloomberg_invest.views import (
     DocumentDetail,
     DocumentSummary,
     Figure,
-    Proposed,
+    RejectedFigure,
 )
 
 
@@ -70,17 +70,16 @@ class GraphStore(Protocol):
         source (#19 R4). A failed one is recorded with no outputs and supersedes nothing.
         """
 
-    def figures(self, isin: str) -> list[Figure]:
-        """The issuer's current financial figure Facts, newest fiscal year first."""
-
-    def fact(self, fact_id: str) -> Figure | None:
-        """One financial figure Fact, current or not, so a link to it keeps working."""
-
-    def checkable(
+    def figures(
         self, isin: str | None = None, ids: list[str] | None = None
-    ) -> tuple[list[Figure], list[Proposed]]:
+    ) -> tuple[list[Figure], list[RejectedFigure]]:
         """Current financial figures with their check in force: the Facts and the
-        RejectedFigures, of one issuer or every one, or only those with these ids."""
+        RejectedFigures, of one issuer or every one, or only those with these ids. Newest fiscal
+        year first, then by page."""
+
+    def figure(self, figure_id: str) -> Figure | RejectedFigure | None:
+        """One financial figure, Fact or RejectedFigure, current or not, so a link to it keeps
+        working."""
 
     def row_cells(self, figure_id: str) -> list[Candidate]:
         """The current cells of the row of the Cell a figure cites, by column, each with its

@@ -8,7 +8,7 @@ from bloomberg_invest.domain.dossier import agreeing
 from bloomberg_invest.domain.figures import Scope
 from bloomberg_invest.domain.kpis import KpiRules
 from bloomberg_invest.domain.label_map import LabelMap
-from bloomberg_invest.service_layer.checks import gated
+from bloomberg_invest.service_layer.figures import gated, in_force
 from bloomberg_invest.views import (
     Company,
     Figure,
@@ -32,18 +32,26 @@ def company(isin: str, store: GraphStore) -> Company | None:
 def company_figures(
     isin: str, store: GraphStore, label_map: LabelMap, rules: KpiRules
 ) -> FigureGrid | None:
+    """The issuer's figures with the values in force: a corrected figure shows its correction,
+    and a rejected figure joins once corrected (#19 R8)."""
     if store.issuer(isin) is None:
         return None
-    return figure_grid([gated(f, rules) for f in store.figures(isin)], label_map)
+    facts, rejected = store.figures(isin)
+    shown = [f for f in (in_force(f, label_map) for f in [*facts, *rejected]) if f is not None]
+    shown.sort(key=lambda f: (-f.fiscal_year, f.page, f.line_item, f.breakdown))
+    return figure_grid([gated(f, rules) for f in shown], label_map)
 
 
 def figure_detail(
-    fact_id: str, store: GraphStore, label_map: LabelMap, rules: KpiRules
+    figure_id: str, store: GraphStore, label_map: LabelMap, rules: KpiRules
 ) -> FigureDetail | None:
-    found = store.fact(fact_id)
-    if found is None:
+    """One figure as the dossier shows it: None for no such figure, or a rejected figure nobody
+    corrected."""
+    found = store.figure(figure_id)
+    shown = in_force(found, label_map) if found is not None else None
+    if shown is None:
         return None
-    figure = gated(found, rules)
+    figure = gated(shown, rules)
     item = label_map.items.get(figure.line_item)
     return FigureDetail(
         **figure.model_dump(), line_item_title=item.title if item else figure.line_item
@@ -100,7 +108,7 @@ def _row(
     (unit, scale), _ = Counter((f.unit, f.scale) for f in figures).most_common(1)[0]
 
     def value(group: list[Figure]) -> FigureValue:
-        sources = sorted(group, key=lambda f: ((f.unit, f.scale) != (unit, scale), f.passage.page))
+        sources = sorted(group, key=lambda f: ((f.unit, f.scale) != (unit, scale), f.page))
         return FigureValue(shown=sources[0], sources=sources)
 
     return FigureRow(

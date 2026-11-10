@@ -28,7 +28,7 @@ Embedding runs on the CPU in the container, about 5 seconds per long Chunk, so a
 
 Ingest then extracts the filing's financial figures (#22): each page with a table or a number goes to Azure OpenAI (`gpt-5.6-sol`), and Python keeps a figure only when its value equals the table cell or quoted text it cites. Set `AZURE_OPENAI_ENDPOINT` and `AZURE_OPENAI_API_KEY` in `.env` first; ingest stops before parsing without them. To re-extract an ingested filing: `docker compose run --rm extract <document id>`. Its figures show on the company's dossier, opened from its name on INDEX.
 
-CHECKS lists the consolidated figures that feed a KPI or Sharia screen (#23; the inputs are in `backend/src/bloomberg_invest/config/kpis/`), for a person to accept or correct before they count. Set `REVIEWER` in `.env` to the name checks should carry, then `docker compose up -d api`; until then CHECKS shows the queue but refuses checks. A re-extract keeps a check only on a figure read with the same value from the same cell; any other goes back to CHECKS.
+CHECKS lists the consolidated figures that feed a KPI or Sharia screen (#23; the inputs are in `backend/src/bloomberg_invest/config/kpis/`), for a person to accept or correct before they count. Set `REVIEWER` in `.env` to the name checks should carry, then `docker compose up -d api`; until then CHECKS shows the queue but refuses checks. The dossier then shows a corrected figure's right value. A re-extract keeps a check only on a figure read with the same value from the same cell or quote; any other goes back to CHECKS.
 
 `docker compose up --build` does not rebuild these tools, which share one image. After changing backend code, rebuild it before running them: `docker compose --profile tools build ingest`.
 

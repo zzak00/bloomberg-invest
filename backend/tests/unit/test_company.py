@@ -1,11 +1,17 @@
 """The dossier's figure grid (#19 R19): rows by the label map, values that agree grouped."""
 
-from builders import BILLIONS, MILLIONS, figure
+from datetime import date
+
+from builders import BILLIONS, MILLIONS, corrected, figure, rejected, review
 
 from bloomberg_invest import config
 from bloomberg_invest.domain.figures import Scope
 from bloomberg_invest.service_layer.company import figure_grid
-from bloomberg_invest.views import Figure
+from bloomberg_invest.service_layer.figures import gated, in_force
+from bloomberg_invest.views import Figure, Passage
+
+LABEL_MAP = config.label_map()
+RULES = config.kpi_rules(LABEL_MAP)
 
 
 def consolidated(figures: list[Figure]):
@@ -96,3 +102,53 @@ def test_a_line_item_the_label_map_no_longer_has_is_left_out_and_not_counted():
 
     assert grid.count == 1
     assert [r.line_item for r in grid.scopes[0].statements[0].rows] == ["revenue"]
+
+
+def test_a_figure_needs_review_until_checked_and_only_when_it_feeds_a_kpi():
+    assert gated(figure("36 681", "36681000000"), RULES).needs_review
+    assert not gated(figure("36 681", "36681000000", review=review()), RULES).needs_review
+    assert not gated(figure("5 275", "5275000000", line_item="share_capital"), RULES).needs_review
+    company_only = figure("36 681", "36681000000", scope=Scope.company_only)
+    assert not gated(company_only, RULES).needs_review
+
+
+def test_an_unchecked_or_accepted_figure_shows_what_it_read():
+    read = figure("36 681", "36681000000")
+    assert in_force(read, LABEL_MAP) == read
+    accepted = figure("36 681", "36681000000", review=review())
+    assert in_force(accepted, LABEL_MAP) == accepted
+
+
+def test_a_corrected_figure_shows_its_correction_from_the_cell_picked():
+    cell = Passage(kind="cell", page=24, boxes=[], text="36 680")
+    read = figure("36 681", "36681000000", review=corrected("36 680", "36680000000", source=cell))
+    shown = in_force(read, LABEL_MAP)
+    assert (shown.value_as_written, shown.value, shown.passage, shown.page) == (
+        "36 680",
+        "36680000000",
+        cell,
+        24,
+    )
+
+
+def test_a_typed_correction_shows_where_the_figure_was_read():
+    read = figure("36 681", "36681000000", review=corrected("36 680", "36680000000"))
+    shown = in_force(read, LABEL_MAP)
+    assert (shown.value_as_written, shown.passage, shown.page) == ("36 680", read.passage, 4)
+
+
+def test_a_rejected_figure_joins_the_dossier_once_corrected():
+    assert in_force(rejected("18 002", line_item="equity"), LABEL_MAP) is None
+    typed = rejected("18 002", line_item="equity", review=corrected("17 920", "17920000000"))
+    shown = in_force(typed, LABEL_MAP)
+    assert (shown.value_as_written, shown.value, shown.unit, shown.scale) == (
+        "17 920",
+        "17920000000",
+        "MAD",
+        MILLIONS,
+    )
+    assert (shown.passage, shown.page) == (None, 26)  # the page the figure was read on
+    assert (shown.as_of, shown.period_start) == (date(2025, 12, 31), None)  # equity is a stock
+    assert shown.basis_standard == "IFRS"
+    in_grid = consolidated([shown]).statements[0].rows[0].years[0].values[0].shown
+    assert in_grid.value_as_written == "17 920"

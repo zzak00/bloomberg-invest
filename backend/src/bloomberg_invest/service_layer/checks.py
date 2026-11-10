@@ -5,21 +5,21 @@ from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Literal
-
-from pydantic import BaseModel, Field
+from typing import Any
 
 from bloomberg_invest.adapters.files import DocumentFiles
 from bloomberg_invest.adapters.store import GraphStore
 from bloomberg_invest.domain.dossier import agreeing
-from bloomberg_invest.domain.figures import parse_value
+from bloomberg_invest.domain.figures import Scope, parse_value
 from bloomberg_invest.domain.kpis import KpiRules
 from bloomberg_invest.domain.label_map import LabelMap
 from bloomberg_invest.domain.review import (
+    CheckStatus,
     InvalidCorrection,
     QuotedSource,
     ReviewDraft,
     Verdict,
+    around,
     correction,
     needs_review,
     numbers_in,
@@ -31,18 +31,9 @@ from bloomberg_invest.views import (
     CheckQueue,
     CheckRow,
     Figure,
-    Proposed,
-    RecordedReview,
+    RejectedFigure,
+    Review,
 )
-
-StatusFilter = Literal["open", "needs_review", "done", "all"]
-SHOWN: dict[StatusFilter, set[str]] = {
-    "open": {"to_check", "needs_review"},
-    "needs_review": {"needs_review"},
-    "done": {"accepted", "corrected"},
-    "all": {"to_check", "needs_review", "accepted", "corrected"},
-}
-CONTEXT = 32  # characters shown on each side of a number a correction can pick
 
 
 @dataclass(frozen=True)
@@ -54,58 +45,50 @@ class Checks:
     reviewer: str | None
 
 
-class ReviewRequest(BaseModel):
-    """A check of one CHECKS row. A correction gives the right value one way: typed, or picked
-    from the figure's own source (`GET /api/figures/{id}/candidates`)."""
-
-    figure_ids: list[str] = Field(min_length=1)
-    verdict: Verdict
-    value_as_written: str | None = None  # typed
-    cell_id: str | None = None  # picked from the figure's table row
-    quote: str | None = None  # picked from the figure's paragraph
-
-
 class NoReviewer(Exception):
     """Checks are refused until the app knows who checks."""
-
-    def __str__(self) -> str:
-        return "Set REVIEWER in .env to record checks"
 
 
 class ReviewRefused(ValueError):
     """A check the figures don't allow, with the reason a person can act on."""
 
 
-def gated(figure: Figure, rules: KpiRules) -> Figure:
-    """The figure, flagged when it feeds a KPI or screen and nobody checked it (#23 AC2)."""
-    needed = figure.review is None and needs_review(
-        figure.basis_scope, figure.line_item, figure.breakdown, rules
+def check_key(figure: Figure | RejectedFigure) -> tuple[str, str, int, Scope | None, str]:
+    """What one check covers: a line item, or one breakdown of it, in one fiscal year and on one
+    basis, as one filing states it."""
+    return (
+        figure.document.id,
+        figure.line_item,
+        figure.fiscal_year,
+        figure.basis_scope,
+        figure.breakdown,
     )
-    return figure.model_copy(update={"needs_review": needed})
+
+
+def _needed(figure: Figure | RejectedFigure, rules: KpiRules) -> bool:
+    return needs_review(figure.basis_scope, figure.line_item, figure.breakdown, rules)
 
 
 def check_queue(
-    store: GraphStore,
-    label_map: LabelMap,
-    checks: Checks,
-    isin: str | None = None,
-    status: StatusFilter = "open",
+    store: GraphStore, label_map: LabelMap, checks: Checks, isin: str | None = None
 ) -> CheckQueue:
-    facts, rejected = store.checkable()
+    """Every row to check or checked, of one company or all; the page filters by status, so a
+    row just checked stays where it was."""
+    facts, rejected = store.figures()
     rows = queue_rows(facts, rejected, label_map, checks.rules)
     companies = {r.document.issuer.isin: r.document.issuer for r in rows}
     mine = [r for r in rows if isin is None or r.document.issuer.isin == isin]
     groups: dict[str, CheckGroup] = {}
     for row in mine:
-        if row.status in SHOWN[status]:
-            group = groups.setdefault(row.document.id, CheckGroup(document=row.document, rows=[]))
-            group.rows.append(row)
+        group = groups.setdefault(row.document.id, CheckGroup(document=row.document, rows=[]))
+        group.rows.append(row)
+    done = {CheckStatus.accepted, CheckStatus.corrected}
     return CheckQueue(
         reviewer=checks.reviewer,
         counts=CheckCounts(
-            to_check=sum(r.status == "to_check" for r in mine),
-            needs_review=sum(r.status == "needs_review" for r in mine),
-            done=sum(r.status in ("accepted", "corrected") for r in mine),
+            to_check=sum(r.status == CheckStatus.to_check for r in mine),
+            needs_review=sum(r.status == CheckStatus.needs_review for r in mine),
+            done=sum(r.status in done for r in mine),
         ),
         companies=sorted(companies.values(), key=lambda o: o.name),
         groups=sorted(
@@ -116,7 +99,10 @@ def check_queue(
 
 
 def queue_rows(
-    facts: Sequence[Figure], rejected: Sequence[Proposed], label_map: LabelMap, rules: KpiRules
+    facts: Sequence[Figure],
+    rejected: Sequence[RejectedFigure],
+    label_map: LabelMap,
+    rules: KpiRules,
 ) -> list[CheckRow]:
     """A row per value each filing states for a figure that needs a check, and one per rejected
     figure that would. Problems come first: rejected figures, then values the filing states
@@ -124,27 +110,19 @@ def queue_rows(
     statements = list(label_map.statements)
     position = {name: i for i, name in enumerate(label_map.items)}
 
-    def needed(line_item: str, scope: str | None, breakdown: str) -> bool:
-        return line_item in label_map.items and needs_review(scope, line_item, breakdown, rules)
-
     # A filing's figures of one line item, year, basis and currency: grouped by the value they
     # state, two groups disagree.
-    keyed: dict[tuple[str, ...], list[Figure]] = defaultdict(list)
+    keyed: dict[tuple[Any, ...], list[Figure]] = defaultdict(list)
     for f in facts:
-        if needed(f.line_item, f.basis_scope, f.breakdown):
-            key = (f.document.id, f.line_item, str(f.fiscal_year), f.basis_scope, f.breakdown)
-            keyed[(*key, f.currency or f.unit)].append(f)
+        if _needed(f, rules):
+            keyed[(*check_key(f), f.currency or f.unit)].append(f)
     rows = [
         _fact_row(group, label_map, rules, conflict=len(groups) > 1)
         for stated in keyed.values()
         for groups in [agreeing(stated)]
         for group in groups
     ]
-    rows += [
-        _rejected_row(p, label_map, rules)
-        for p in rejected
-        if needed(p.line_item, p.basis_scope, p.breakdown)
-    ]
+    rows += [_rejected_row(r, label_map, rules) for r in rejected if _needed(r, rules)]
 
     def order(row: CheckRow) -> tuple[object, ...]:
         item = label_map.items[row.line_item]
@@ -164,14 +142,64 @@ def queue_rows(
 def _fact_row(
     group: list[Figure], label_map: LabelMap, rules: KpiRules, conflict: bool
 ) -> CheckRow:
-    shown = min(group, key=lambda f: (f.passage.page, f.id))
+    shown = min(group, key=lambda f: (f.page, f.id))
     reviews = [f.review for f in group if f.review is not None]
     # A row is checked once every figure stating its value is: a re-extract may keep the check
     # of some and not others.
     review = max(reviews, key=lambda r: r.reviewed_at) if len(reviews) == len(group) else None
+    return _row(
+        shown,
+        [shown.id, *sorted(f.id for f in group if f is not shown)],
+        label_map,
+        rules,
+        review=review,
+        status=CheckStatus(review.verdict) if review else CheckStatus.to_check,
+        period_start=shown.period_start,
+        period_end=shown.period_end,
+        as_of=shown.as_of,
+        value=shown.value,
+        unit=shown.unit,
+        scale=shown.scale,
+        currency=shown.currency,
+        sources=len(group),
+        conflict=conflict,
+        rejected=None,
+    )
+
+
+def _rejected_row(figure: RejectedFigure, label_map: LabelMap, rules: KpiRules) -> CheckRow:
+    review = figure.review
+    return _row(
+        figure,
+        [figure.id],
+        label_map,
+        rules,
+        review=review,
+        status=CheckStatus(review.verdict) if review else CheckStatus.needs_review,
+        period_start=None,
+        period_end=None,
+        as_of=None,
+        value=None,
+        unit=None,
+        scale=None,
+        currency=None,
+        sources=1,
+        conflict=False,
+        rejected=figure.reason,
+    )
+
+
+def _row(
+    shown: Figure | RejectedFigure,
+    figure_ids: list[str],
+    label_map: LabelMap,
+    rules: KpiRules,
+    **specific: Any,
+) -> CheckRow:
+    """The fields a row takes from the figure it shows, whether a Fact or a rejected figure."""
     item = label_map.items[shown.line_item]
     return CheckRow(
-        figure_ids=[shown.id, *sorted(f.id for f in group if f is not shown)],
+        figure_ids=figure_ids,
         document=shown.document,
         line_item=shown.line_item,
         title=item.title,
@@ -179,62 +207,20 @@ def _fact_row(
         breakdown=shown.breakdown,
         fiscal_year=shown.fiscal_year,
         basis_scope=shown.basis_scope,
-        period_start=shown.period_start,
-        period_end=shown.period_end,
-        as_of=shown.as_of,
         label=shown.label,
         value_as_written=shown.value_as_written,
         unit_as_written=shown.unit_as_written,
-        value=shown.value,
-        unit=shown.unit,
-        scale=shown.scale,
-        currency=shown.currency,
         passage=shown.passage,
-        page=shown.passage.page,
-        sources=len(group),
-        conflict=conflict,
-        rejected=None,
+        page=shown.page,
         feeds=rules.feeds(shown.line_item, shown.breakdown),
-        review=review,
-        status=review.verdict if review else "to_check",
-    )
-
-
-def _rejected_row(p: Proposed, label_map: LabelMap, rules: KpiRules) -> CheckRow:
-    item = label_map.items[p.line_item]
-    return CheckRow(
-        figure_ids=[p.id],
-        document=p.document,
-        line_item=p.line_item,
-        title=item.title,
-        statement=label_map.statements[item.statement],
-        breakdown=p.breakdown,
-        fiscal_year=p.fiscal_year,
-        basis_scope=p.basis_scope,
-        period_start=None,
-        period_end=None,
-        as_of=None,
-        label=p.label,
-        value_as_written=p.value_as_written,
-        unit_as_written=p.unit_as_written,
-        value=None,
-        unit=None,
-        scale=None,
-        currency=None,
-        passage=p.passage,
-        page=p.page,
-        sources=1,
-        conflict=False,
-        rejected=p.reason,
-        feeds=rules.feeds(p.line_item, p.breakdown),
-        review=p.review,
-        status=p.review.verdict if p.review else "needs_review",
+        **specific,
     )
 
 
 def candidates(figure_id: str, store: GraphStore) -> list[Candidate] | None:
     """What a correction of the figure can pick from its own source: the numbers of its table
-    row, or of its paragraph. None when there is no such current figure."""
+    row, or of its paragraph each place it is written. None when there is no such current
+    figure."""
     figure = _one(figure_id, store)
     if figure is None:
         return None
@@ -245,70 +231,67 @@ def candidates(figure_id: str, store: GraphStore) -> list[Candidate] | None:
         return [c for c in store.row_cells(figure_id) if parse_value(c.value_as_written)]
     text = passage.text
     return [
-        Candidate(kind="quote", value_as_written=number, context=_around(text, number))
+        Candidate(kind="quote", value_as_written=number.text, context=around(text, number))
         for number in numbers_in(text)
     ]
 
 
-def _around(text: str, number: str) -> str:
-    """The number with the words around it, cut at whole words."""
-    start = text.index(number)
-    end = start + len(number)
-    before, after = text[max(0, start - CONTEXT) : start], text[end : end + CONTEXT]
-    if start > CONTEXT:
-        before = "…" + before[before.find(" ") + 1 :]
-    if end + CONTEXT < len(text):
-        after = after[: after.rfind(" ")] + "…"
-    return before + number + after
-
-
-def _one(figure_id: str, store: GraphStore) -> Figure | Proposed | None:
-    facts, rejected = store.checkable(ids=[figure_id])
+def _one(figure_id: str, store: GraphStore) -> Figure | RejectedFigure | None:
+    facts, rejected = store.figures(ids=[figure_id])
     return next(iter([*facts, *rejected]), None)
 
 
 def record_review(
-    request: ReviewRequest,
+    figure_ids: Sequence[str],
+    verdict: Verdict,
     store: GraphStore,
     files: DocumentFiles,
     checks: Checks,
+    *,
+    value_as_written: str | None = None,
+    cell_id: str | None = None,
+    quote: str | None = None,
     now: datetime | None = None,
-) -> RecordedReview:
-    """Record a check of one CHECKS row's figures and return it. Raises NoReviewer without a
-    REVIEWER, LookupError when a figure is not current, ReviewRefused when the check does not
-    fit the figures."""
+) -> Review:
+    """Record a check of one CHECKS row's figures and return it. A correction gives the right
+    value one way: typed, a cell of the figure's table row, or a number of its paragraph.
+
+    Raises NoReviewer without a REVIEWER, LookupError when a figure is not current, and
+    ReviewRefused when the check does not fit the figures."""
     if not checks.reviewer:
         raise NoReviewer()
-    ids = list(dict.fromkeys(request.figure_ids))
-    facts, rejected = store.checkable(ids=ids)
-    found: dict[str, Figure | Proposed] = {f.id: f for f in [*facts, *rejected]}
+    ids = list(dict.fromkeys(figure_ids))
+    if not ids:
+        raise ReviewRefused("A check names the figures it covers")
+    facts, rejected = store.figures(ids=ids)
+    found: dict[str, Figure | RejectedFigure] = {f.id: f for f in [*facts, *rejected]}
     if len(found) != len(ids):
         raise LookupError("Some of these figures are not current: reload CHECKS")
     first = found[ids[0]]
-    keys = {
-        (f.document.id, f.line_item, f.fiscal_year, f.basis_scope, f.breakdown)
-        for f in found.values()
-    }
-    if len(keys) > 1:
+    if not all(_needed(f, checks.rules) for f in found.values()):
+        raise ReviewRefused("A figure that feeds no KPI or screen needs no check")
+    if len({check_key(f) for f in found.values()}) > 1:
         raise ReviewRefused("One check covers one line item, year and basis of one filing")
-    if request.verdict == Verdict.accepted and rejected:
+    if rejected and len(ids) > 1:
+        raise ReviewRefused("A rejected figure is checked on its own")
+    if len(agreeing(facts)) > 1:
+        raise ReviewRefused("These figures state different values: check each value on its own")
+    if verdict == Verdict.accepted and rejected:
         raise ReviewRefused("A rejected figure can only be corrected")
 
-    fixed, cell_id, quoted = None, None, None
-    if request.verdict == Verdict.corrected:
-        given = [v for v in (request.value_as_written, request.cell_id, request.quote) if v]
+    fixed, cited, quoted = None, None, None
+    if verdict == Verdict.corrected:
+        given = [v for v in (value_as_written, cell_id, quote) if v]
         if len(given) != 1:
             raise ReviewRefused("Give the right value one way: typed, a cell, or a quote")
-        value = request.value_as_written
-        if request.cell_id:
-            cell = next(
-                (c for c in store.row_cells(first.id) if c.cell_id == request.cell_id), None
-            )
+        value = value_as_written
+        if cell_id:
+            cell = next((c for c in store.row_cells(first.id) if c.cell_id == cell_id), None)
             if cell is None:
                 raise ReviewRefused("That cell is not in the figure's table row")
-            value, cell_id = cell.value_as_written, cell.cell_id
-        if request.quote:
-            quoted = _quoted(first, request.quote, store, files)
+            value, cited = cell.value_as_written, cell.cell_id
+        if quote:
+            quoted = _quoted(first, quote, store, files)
             value = quoted.quote
         try:
             fixed = correction(value or "", first.unit_as_written)
@@ -316,29 +299,33 @@ def record_review(
             raise ReviewRefused(f"The right value can't be read: {error}") from None
 
     draft = ReviewDraft(
-        verdict=request.verdict,
+        verdict=verdict,
         reviewer=checks.reviewer,
         reviewed_at=now or datetime.now(UTC),
         correction=fixed,
-        cell_id=cell_id,
+        cell_id=cited,
         quoted=quoted,
     )
     review_id = store.record_review(ids, draft)
-    return RecordedReview(
-        id=review_id,
-        verdict=draft.verdict,
-        reviewer=draft.reviewer,
-        reviewed_at=draft.reviewed_at,
-        value_as_written=fixed.value_as_written if fixed else None,
-        value=fixed.value if fixed else None,
+    # The check as the figures now read it, with the source a correction cites; a reopening
+    # leaves them with none.
+    read = _one(first.id, store)
+    if read is not None and read.review is not None and read.review.id == review_id:
+        return read.review
+    return Review(
+        id=review_id, verdict=draft.verdict, reviewer=draft.reviewer, reviewed_at=draft.reviewed_at
     )
 
 
 def _quoted(
-    figure: Figure | Proposed, quote: str, store: GraphStore, files: DocumentFiles
+    figure: Figure | RejectedFigure, quote: str, store: GraphStore, files: DocumentFiles
 ) -> QuotedSource:
     passage = figure.passage
-    if passage is None or passage.kind != "span" or quote not in numbers_in(passage.text):
+    if (
+        passage is None
+        or passage.kind != "span"
+        or quote not in {n.text for n in numbers_in(passage.text)}
+    ):
         raise ReviewRefused("That number is not in the figure's paragraph")
     document = store.get_document(figure.document.id)
     if document is None:

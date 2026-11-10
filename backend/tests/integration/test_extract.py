@@ -23,7 +23,7 @@ from bloomberg_invest.adapters.parsing.docling_parser import DoclingParser
 from bloomberg_invest.adapters.store.neo4j_store._reads import _boxes
 from bloomberg_invest.domain.model import RunInfo, RunStep
 from bloomberg_invest.domain.review import Verdict
-from bloomberg_invest.service_layer.checks import Checks, ReviewRequest, candidates, record_review
+from bloomberg_invest.service_layer.checks import Checks, candidates, record_review
 from bloomberg_invest.service_layer.extract import ExtractFailed, Extraction, extract_document
 
 SHA = hashlib.sha256((FIXTURES / "filing.pdf").read_bytes()).hexdigest()
@@ -83,7 +83,7 @@ def test_each_figure_is_a_fact_with_its_period_basis_currency_and_cell(
     extracted = extract(store, filing, parser, PageReadingLLM(FIGURES))
     assert (extracted.figures, extracted.rejected) == (4, 0)
 
-    figures = {(f.line_item, f.fiscal_year): f for f in store.figures("MA0000011488")}
+    figures = {(f.line_item, f.fiscal_year): f for f in store.figures("MA0000011488")[0]}
     revenue = figures[("revenue", 2025)]
     assert (revenue.value, revenue.value_as_written) == ("36681000000", "36 681")
     assert (revenue.unit, revenue.scale, revenue.currency) == ("MAD", 1_000_000, "MAD")
@@ -128,7 +128,9 @@ def test_a_fact_stores_nothing_it_can_read_from_the_label_map_or_its_passage(
 def test_a_figure_quoted_from_a_paragraph_cites_the_span(store, filing, parser):
     extract(store, filing, parser, PageReadingLLM(FIGURES))
 
-    dividend = next(f for f in store.figures("MA0000011488") if f.line_item == "dividend_per_share")
+    dividend = next(
+        f for f in store.figures("MA0000011488")[0] if f.line_item == "dividend_per_share"
+    )
     assert (dividend.value, dividend.unit) == ("4.01", "MAD/share")
     assert dividend.passage.kind == "span"
     assert dividend.passage.quote == "4,01"
@@ -147,7 +149,7 @@ def test_a_figure_that_does_not_match_its_cell_is_rejected_and_never_a_fact(
     extracted = extract(store, filing, parser, PageReadingLLM(misread))
 
     assert extracted.rejected == 1
-    shown = {f.value_as_written for f in store.figures("MA0000011488")}
+    shown = {f.value_as_written for f in store.figures("MA0000011488")[0]}
     assert "36 618" not in shown and "36 681" not in shown
     records, _, _ = driver.execute_query(
         """
@@ -186,12 +188,12 @@ def test_the_extract_run_records_the_model_prompt_and_label_map(store, filing, p
 
 def test_re_extracting_supersedes_the_earlier_figures(store, filing, parser):
     extract(store, filing, parser, PageReadingLLM(FIGURES))
-    first = {f.id for f in store.figures("MA0000011488")}
+    first = {f.id for f in store.figures("MA0000011488")[0]}
     extract(store, filing, parser, PageReadingLLM({"36 681": {}}))
 
-    [current] = store.figures("MA0000011488")
+    [current] = store.figures("MA0000011488")[0]
     assert current.id not in first
-    assert store.fact(next(iter(first))) is not None, "a superseded Fact keeps its link"
+    assert store.figure(next(iter(first))) is not None, "a superseded Fact keeps its link"
 
 
 def test_a_failed_extraction_is_recorded_and_keeps_the_last_good_figures(store, filing, parser):
@@ -199,14 +201,14 @@ def test_a_failed_extraction_is_recorded_and_keeps_the_last_good_figures(store, 
     with pytest.raises(ExtractFailed, match="recorded as failed run"):
         extract(store, filing, parser, PageReadingLLM(FIGURES, broken=True))
 
-    assert len(store.figures("MA0000011488")) == 4
+    assert len(store.figures("MA0000011488")[0]) == 4
 
 
 def test_re_parsing_supersedes_the_figures_of_the_old_parse(store, meta, parse, filing, parser):
     extract(store, filing, parser, PageReadingLLM(FIGURES))
     store.record_parse(meta, parse[0], parse_run(10), SHA)
 
-    assert store.figures("MA0000011488") == []
+    assert store.figures("MA0000011488") == ([], [])
 
 
 def test_the_whole_filing_is_read_page_by_page(store, filing, parser):
@@ -222,18 +224,20 @@ def test_an_unknown_document_fails(store, tmp_path, parser):
 
 def test_a_quoted_figure_is_corrected_from_another_number_of_its_paragraph(store, filing, parser):
     extract(store, filing, parser, PageReadingLLM(FIGURES))
-    dividend = next(f for f in store.figures("MA0000011488") if f.line_item == "dividend_per_share")
+    dividend = next(
+        f for f in store.figures("MA0000011488")[0] if f.line_item == "dividend_per_share"
+    )
     picks = candidates(dividend.id, store)
     assert [(c.kind, c.value_as_written) for c in picks] == [("quote", "2025"), ("quote", "4,01")]
     assert picks[0].context == "…Au titre de l'exercice 2025, le Conseil propose un…"
 
     _, files = filing
-    checks = Checks(config.kpi_rules(), "Z. Bajjou")
-    request = ReviewRequest(figure_ids=[dividend.id], verdict=Verdict.corrected, quote="2025")
-    recorded = record_review(request, store, files, checks)
+    checks = Checks(config.kpi_rules(config.label_map()), "Z. Bajjou")
+    recorded = record_review([dividend.id], Verdict.corrected, store, files, checks, quote="2025")
 
     assert (recorded.value_as_written, recorded.value) == ("2025", "2025")
-    [corrected] = [f for f in store.figures("MA0000011488") if f.id == dividend.id]
+    assert (recorded.source.kind, recorded.source.quote) == ("span", "2025")
+    [corrected] = [f for f in store.figures("MA0000011488")[0] if f.id == dividend.id]
     assert corrected.review.value_as_written == "2025"
     # The Review cites a Span boxed on "2025" itself, not on the figure's "4,01".
     records, _, _ = store._driver.execute_query(

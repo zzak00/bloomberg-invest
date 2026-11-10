@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 from bloomberg_invest.domain.figures import Scope
 from bloomberg_invest.domain.model import Organisation
-from bloomberg_invest.views import DocumentRef, Figure, Passage, Proposed, Review
+from bloomberg_invest.views import DocumentRef, Figure, Passage, RejectedFigure, Review
 
 MILLIONS, BILLIONS = 1_000_000, 1_000_000_000
 DOCUMENT = DocumentRef(
@@ -49,20 +49,22 @@ def figure(
         recorded_at=datetime(2026, 11, 9, tzinfo=UTC),
         document=document,
         passage=Passage(kind="cell", page=page, boxes=[], text=written),
+        page=page,
         review=review,
     )
 
 
-def proposed(
+def rejected(
     written: str,
     *,
     line_item: str = "revenue",
     year: int = 2025,
     reason: str = "its value differs from its cell",
     page: int = 26,
+    passage: Passage | None = None,
     review: Review | None = None,
-) -> Proposed:
-    return Proposed(
+) -> RejectedFigure:
+    return RejectedFigure(
         id=f"rejected-{line_item}-{year}-{written}",
         line_item=line_item,
         label="Situation au 01.01.2023",
@@ -71,19 +73,33 @@ def proposed(
         fiscal_year=year,
         basis_scope=Scope.consolidated,
         breakdown="",
+        recorded_at=datetime(2026, 11, 9, tzinfo=UTC),
         page=page,
         reason=reason,
         document=DOCUMENT,
-        passage=None,
+        passage=passage,
         review=review,
     )
 
 
-def review(verdict: str = "accepted", day: int = 10, value_as_written: str | None = None):
+def review(verdict: str = "accepted", day: int = 10) -> Review:
     return Review(
         id=f"review-{verdict}-{day}",
         verdict=verdict,
         reviewer="Z. Bajjou",
         reviewed_at=datetime(2026, 11, day, tzinfo=UTC),
-        value_as_written=value_as_written,
+    )
+
+
+def corrected(written: str, value: str, *, day: int = 10, source: Passage | None = None) -> Review:
+    """A correction in MAD millions, citing the cell or quote picked, or typed."""
+    return review("corrected", day).model_copy(
+        update={
+            "value_as_written": written,
+            "value": value,
+            "unit": "MAD",
+            "scale": MILLIONS,
+            "currency": "MAD",
+            "source": source,
+        }
     )

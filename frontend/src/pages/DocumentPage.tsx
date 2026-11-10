@@ -171,9 +171,10 @@ function factHighlight(figure: FigureDetail): Highlight {
   return {
     param: "fact",
     id: figure.id,
-    pages: [figure.passage.page],
-    boxes: figure.passage.boxes,
-    tag: figure.passage.kind === "cell" ? "CELL" : "QUOTE",
+    pages: [figure.page],
+    // A typed correction has no cell or quote to draw: the bar names the page it was read on.
+    boxes: figure.passage?.boxes ?? [],
+    tag: figure.passage ? (figure.passage.kind === "cell" ? "CELL" : "QUOTE") : "PAGE",
     name: `${name} · ${periodLabel(figure)}`,
     detail: `${figure.value_as_written} ${unitLabel(figure)}`,
     title: figure.label,
@@ -185,7 +186,8 @@ function factHighlight(figure: FigureDetail): Highlight {
 function checkLine(figure: FigureDetail): Highlight["check"] {
   const review = figure.review;
   if (review) {
-    const what = review.verdict === "corrected" ? `Corrected to ${review.value_as_written}` : "Checked";
+    // A corrected figure already shows the person's value.
+    const what = review.verdict === "corrected" ? "Corrected" : "Checked";
     return { text: `${what} by ${review.reviewer} on ${formatDate(review.reviewed_at)}`, done: true };
   }
   return figure.needs_review ? { text: "Not checked yet", done: false } : undefined;
