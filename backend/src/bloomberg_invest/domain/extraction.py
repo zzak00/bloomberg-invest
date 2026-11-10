@@ -269,11 +269,19 @@ def _row_label(cell: SourceCell, cells: Iterable[SourceCell]) -> str:
             and c.row == cell.row
             and c.col < cell.col
             and c.text.strip()
-            and parse_value(c.text) is None
+            and not _numbers(c.text)
         ),
         key=lambda c: c.col,
     )
     return " ".join(" ".join(c.text.split()) for c in left)
+
+
+def _numbers(text: str) -> bool:
+    """Whether a cell holds only numbers: one (`12,5 %`), or several the parser ran together
+    (`512 18 204 337`)."""
+    return parse_value(text) is not None or all(
+        parse_value(word) is not None for word in text.split()
+    )
 
 
 def _sentence(value: str, paragraph: str) -> str:

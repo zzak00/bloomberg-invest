@@ -108,6 +108,18 @@ def test_a_figure_matching_its_cell_is_parsed_with_its_row_label(label_map):
     assert (draft.period.start, draft.period.end) == (date(2025, 1, 1), date(2025, 12, 31))
 
 
+def test_a_row_label_skips_cells_of_numbers_the_parser_ran_together(label_map):
+    cells = [
+        cell(0, 0, "Clients et comptes rattachés"),
+        cell(0, 1, "512 18 204 337"),
+        cell(0, 2, "12,5 %"),
+        cell(0, 3, "4 120 556"),
+    ]
+    sources = page_sources(24, [], cells)
+    [draft] = drafts({"figures": [figure("t24.0.r0.c3", "4 120 556")]}, sources, label_map)
+    assert draft.label == "Clients et comptes rattachés"
+
+
 def test_a_balance_holds_on_the_year_end_and_company_only_means_cgnc(label_map):
     sources = page_sources(24, PARAGRAPHS, CELLS)
     item = figure("t24.0.r2.c1", "-988", line_item="equity", basis_scope="company-only")

@@ -490,6 +490,7 @@ def test_reopening_puts_a_figure_back_to_checks(client, extracted):
         (1, "corrected", {}, "Give the right value one way"),
         (1, "corrected", {"value_as_written": "1", "quote": "1"}, "Give the right value one way"),
         (1, "corrected", {"value_as_written": "36 681 ou 36 699"}, "is not one number"),
+        (1, "corrected", {"value_as_written": "18 70 2"}, "is not one number"),
         (1, "corrected", {"cell_id": "nope"}, "not in the figure's table row"),
         (1, "corrected", {"quote": "36 681"}, "not in the figure's paragraph"),
     ],

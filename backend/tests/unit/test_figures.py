@@ -32,6 +32,11 @@ from bloomberg_invest.domain.figures import (
         ("4.01", Decimal("4.01")),
         ("1.284,6", Decimal("1284.6")),
         ("879 095 340", Decimal(879095340)),
+        ("1 234 567", Decimal(1234567)),
+        ("12 345,6", Decimal("12345.6")),
+        ("- 1 015", Decimal(-1015)),
+        ("( 988 )", Decimal(-988)),
+        ("12,5%", Decimal("12.5")),
     ],
 )
 def test_values_are_read_in_french_notation(written, value):
@@ -40,6 +45,14 @@ def test_values_are_read_in_french_notation(written, value):
 
 @pytest.mark.parametrize("written", ["", "n.s.", "-", "36 681 / 36 699", "12a"])
 def test_anything_but_one_number_is_not_a_value(written):
+    assert parse_value(written) is None
+
+
+@pytest.mark.parametrize(
+    "written", ["12 3456", "1 2", "1 23,5", "18 70 2", "36 681 36 699", "1 234 5", "12,5 6"]
+)
+def test_spaces_only_group_thousands(written):
+    """A space between digits groups thousands: 1 to 3 digits, then groups of exactly 3."""
     assert parse_value(written) is None
 
 
