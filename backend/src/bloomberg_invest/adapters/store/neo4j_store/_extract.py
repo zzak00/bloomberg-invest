@@ -12,6 +12,7 @@ from bloomberg_invest.adapters.store.neo4j_store._cypher import (
     _supersede_step,
     current,
 )
+from bloomberg_invest.adapters.store.neo4j_store._review import _carry_reviews
 from bloomberg_invest.domain.extraction import CellPassage, FigureDraft, SpanPassage
 from bloomberg_invest.domain.figures import FINANCIAL_FIGURE
 from bloomberg_invest.domain.model import RunInfo, RunStatus, RunStep
@@ -67,6 +68,7 @@ def _record_extraction(
     ).single(strict=True)["bare"]
     if bare:
         raise ValueError(f"{bare} figures cite a cell that is not in the current parse")
+    _carry_reviews(tx, run_id)
     return run_id
 
 

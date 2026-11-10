@@ -31,6 +31,9 @@ class Settings:
     # Record the LLM's answers to this file, or replay them from it instead of calling out.
     llm_record: Path | None = None
     llm_replay: Path | None = None
+    # Who checks figures in CHECKS on this app (#23): one app runs per laptop, so one person.
+    # Checks are refused while it is unset.
+    reviewer: str | None = None
 
     @property
     def caps(self) -> Caps:
@@ -54,6 +57,7 @@ class Settings:
             extract_concurrency=int(os.environ.get("EXTRACT_CONCURRENCY", "4")),
             llm_record=_path(os.environ.get("LLM_RECORD")),
             llm_replay=_path(os.environ.get("LLM_REPLAY")),
+            reviewer=os.environ.get("REVIEWER", "").strip() or None,
         )
 
 

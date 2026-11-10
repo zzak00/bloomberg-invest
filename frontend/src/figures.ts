@@ -14,7 +14,7 @@ export function unitLabel({ unit, scale }: { unit: string; scale: number }): str
 }
 
 /** "FY2025" for a flow, "31.12.2025" for a balance. */
-export function periodLabel(figure: Figure): string {
+export function periodLabel(figure: Pick<Figure, "fiscal_year" | "as_of">): string {
   if (!figure.as_of) return `FY${figure.fiscal_year}`;
   const [year, month, day] = figure.as_of.split("-");
   return `${day}.${month}.${year}`;

@@ -2,8 +2,10 @@
 
 import os
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from dataclasses import dataclass
 from datetime import datetime
+from math import hypot
 from pathlib import Path
 
 import pypdfium2 as pdfium
@@ -17,6 +19,14 @@ CONTEXT = 8  # characters read on each side of a match to tell a whole number fr
 
 # A value quoted on a page, and the boxes of the paragraph it must be inside.
 Quote = tuple[int, str, Sequence[Box]]
+
+
+@dataclass(frozen=True)
+class Occurrence:
+    """Which place a paragraph's number was picked at, from 0, of the times it is written."""
+
+    index: int
+    written: int
 
 
 class DocumentFiles:
@@ -50,6 +60,33 @@ class DocumentFiles:
             Path(tmp).replace(out)
         return out
 
+    def quote_near(
+        self,
+        sha256: str,
+        page: int,
+        quote: str,
+        near: Sequence[Box],
+        occurrence: Occurrence | None = None,
+    ) -> tuple[Box, ...] | None:
+        """The quote's boxes in the page's text layer, near `near` (its paragraph's boxes).
+
+        A paragraph that writes the quote more than once says which `occurrence` was picked:
+        the boxes of that place inside `near` when the text layer holds the quote there exactly
+        as many times, else None, so a number is never boxed where it was not picked. A
+        paragraph that writes it once passes none: the place inside `near`, else the nearest,
+        else with nothing near the first. None when the text layer lacks the quote."""
+        pdf = pdfium.PdfDocument(self.pdf_path(sha256))
+        try:
+            found = list(_matches(pdf, page, quote))
+        finally:
+            pdf.close()
+        inside = [boxes for boxes in found if near and _all_inside(boxes, near)]
+        if occurrence is not None:
+            return inside[occurrence.index] if len(inside) == occurrence.written else None
+        if inside:
+            return inside[0]
+        return min(found, key=lambda boxes: _distance(boxes, near), default=None)
+
     def quote_boxes(self, sha256: str, quotes: Sequence[Quote]) -> list[tuple[Box, ...] | None]:
         """Each quote's boxes in the PDF's text layer, one per line, in PDF points from the top
         left; None when the page has no such text inside the paragraph. The PDF is opened once:
@@ -64,8 +101,13 @@ class DocumentFiles:
 def _find(
     pdf: pdfium.PdfDocument, page: int, quote: str, within: Sequence[Box]
 ) -> tuple[Box, ...] | None:
+    return next((boxes for boxes in _matches(pdf, page, quote) if _all_inside(boxes, within)), None)
+
+
+def _matches(pdf: pdfium.PdfDocument, page: int, quote: str) -> Iterator[tuple[Box, ...]]:
+    """The boxes of each place the page's text layer holds the quote as a whole number."""
     if not quote.strip() or not 1 <= page <= len(pdf):
-        return None
+        return
     pdf_page = pdf[page - 1]
     height = pdf_page.get_height()
     text = pdf_page.get_textpage()
@@ -82,9 +124,20 @@ def _find(
             [(left, height - top, right, height - bottom) for left, bottom, right, top in chars],
             page,
         )
-        if boxes and all(_inside(box, within) for box in boxes):
-            return boxes
-    return None
+        if boxes:
+            yield boxes
+
+
+def _all_inside(boxes: Sequence[Box], within: Sequence[Box]) -> bool:
+    return all(_inside(box, within) for box in boxes)
+
+
+def _distance(boxes: Sequence[Box], near: Sequence[Box]) -> float:
+    """How far apart the first boxes' centres are, in points; nothing is near no boxes."""
+    if not near:
+        return 0.0
+    (_, l1, t1, r1, b1), (_, l2, t2, r2, b2) = boxes[0], near[0]
+    return hypot((l1 + r1 - l2 - r2) / 2, (t1 + b1 - t2 - b2) / 2)
 
 
 def _lines(chars: list[tuple[float, float, float, float]], page: int) -> tuple[Box, ...]:

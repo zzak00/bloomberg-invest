@@ -15,6 +15,10 @@
 
   --signal: #ffb224;
   --signal-ink: #1a1100;
+  /* Check states, from the prototype: checked, and what only a correction can settle. */
+  --ok: #3fd08a;
+  --review: #ff7ac6;
+  --review-wash: #170e13;
 
   --paper: #f4f1ea;
   --paper-ink: #1a1a17;

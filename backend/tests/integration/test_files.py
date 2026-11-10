@@ -7,7 +7,7 @@ import shutil
 import pytest
 from conftest import FIXTURES
 
-from bloomberg_invest.adapters.files import DocumentFiles
+from bloomberg_invest.adapters.files import DocumentFiles, Occurrence
 
 PDF = FIXTURES / "filing.pdf"
 SHA = hashlib.sha256(PDF.read_bytes()).hexdigest()
@@ -46,3 +46,28 @@ def test_a_quote_inside_a_longer_number_is_not_found(files):
     inside, whole = files.quote_boxes(SHA, [(1, "68", (page_1,)), (1, "36 681", (page_1,))])
     assert inside is None  # in "36 681" and "6 968", never on its own
     assert whole is not None
+
+
+def test_a_quote_near_nothing_is_the_first_place_the_page_holds_it(files):
+    [expected] = files.quote_boxes(SHA, [(2, "4,01", (PAGE_2,))])
+    assert files.quote_near(SHA, 2, "4,01", []) == expected
+    assert files.quote_near(SHA, 2, "9,99", []) is None
+
+
+def test_a_number_written_twice_is_boxed_where_it_was_picked(files):
+    # Page 1: "... au 31 décembre 2024 et au 31 décembre 2025." holds "31" twice on one line.
+    paragraph = (1, 50.0, 255.0, 545.0, 285.0)
+    first = files.quote_near(SHA, 1, "31", [paragraph], Occurrence(0, written=2))
+    second = files.quote_near(SHA, 1, "31", [paragraph], Occurrence(1, written=2))
+    assert first is not None and second is not None
+    assert first[0][2] == second[0][2]  # one line
+    assert first[0][1] < second[0][1]  # the second is further right
+
+
+def test_a_pick_is_refused_when_the_text_layer_holds_another_count(files):
+    paragraph = (1, 50.0, 255.0, 545.0, 285.0)  # its text layer holds "31" twice
+    # The parsed paragraph says three times: which place was picked is not certain.
+    assert files.quote_near(SHA, 1, "31", [paragraph], Occurrence(0, written=3)) is None
+    # A number written once may be found just outside the boxes: the nearest place.
+    elsewhere = (1, 50.0, 300.0, 545.0, 340.0)
+    assert files.quote_near(SHA, 1, "2025", [elsewhere]) is not None

@@ -5,7 +5,7 @@ import { ApiError } from "../ApiError";
 import { api, pageImageUrl, type Box, type Chunk, type FigureDetail } from "../api/client";
 import { useApi } from "../api/useApi";
 import { periodLabel, unitLabel } from "../figures";
-import { DOC_TYPE_LABELS, formatDateTime, pagesLabel } from "../format";
+import { DOC_TYPE_LABELS, formatDate, formatDateTime, pagesLabel } from "../format";
 
 /** What the outline needs from a section. */
 type Section = { id: string; title: string; page: number; children?: Section[] };
@@ -150,6 +150,7 @@ interface Highlight {
   name: string; // what it is
   detail?: string; // its value, for a figure
   title?: string; // the full section path, on hover
+  check?: { text: string; done: boolean }; // a figure's check, when it needs or has one
 }
 
 function chunkHighlight(chunk: Chunk): Highlight {
@@ -170,13 +171,26 @@ function factHighlight(figure: FigureDetail): Highlight {
   return {
     param: "fact",
     id: figure.id,
-    pages: [figure.passage.page],
-    boxes: figure.passage.boxes,
-    tag: figure.passage.kind === "cell" ? "CELL" : "QUOTE",
+    pages: [figure.page],
+    // A typed correction has no cell or quote to draw: the bar names the page it was read on.
+    boxes: figure.passage?.boxes ?? [],
+    tag: figure.passage ? (figure.passage.kind === "cell" ? "CELL" : "QUOTE") : "PAGE",
     name: `${name} · ${periodLabel(figure)}`,
     detail: `${figure.value_as_written} ${unitLabel(figure)}`,
     title: figure.label,
+    check: checkLine(figure),
   };
+}
+
+/** Who checked the figure and when, or that it still needs a check (#23 AC4). */
+function checkLine(figure: FigureDetail): Highlight["check"] {
+  const review = figure.review;
+  if (review) {
+    // A corrected figure already shows the person's value.
+    const what = review.verdict === "corrected" ? "Corrected" : "Checked";
+    return { text: `${what} by ${review.reviewer} on ${formatDate(review.reviewed_at)}`, done: true };
+  }
+  return figure.needs_review ? { text: "Not checked yet", done: false } : undefined;
 }
 
 /** The highlight: what and where it is, a way back to it, and a way to clear it. */
@@ -199,6 +213,11 @@ function HighlightBar({
         <span title={highlighted.title}>{highlighted.name}</span>{" "}
         {highlighted.detail && <span className="num nowrap highlight-bar-value">{highlighted.detail}</span>}{" "}
         <span className="num nowrap highlight-bar-pages">{pagesLabel(highlighted.pages)}</span>
+        {highlighted.check && (
+          <span className="highlight-bar-check" data-done={highlighted.check.done || undefined}>
+            {highlighted.check.text}
+          </span>
+        )}
       </span>
       {!onPage && (
         <button type="button" className="button" onClick={onGo}>

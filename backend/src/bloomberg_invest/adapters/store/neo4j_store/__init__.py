@@ -11,8 +11,11 @@ from bloomberg_invest.adapters.store.neo4j_store._chunks import _record_chunks
 from bloomberg_invest.adapters.store.neo4j_store._cypher import (
     CURRENT,
     EMBEDDABLE_CHUNKS,
+    FIGURE_BY_ID,
     LATEST_PARSE,
+    LATEST_REVIEW,
     VECTOR_INDEX,
+    current,
 )
 from bloomberg_invest.adapters.store.neo4j_store._embed import _record_embeddings
 from bloomberg_invest.adapters.store.neo4j_store._extract import _record_extraction
@@ -20,12 +23,13 @@ from bloomberg_invest.adapters.store.neo4j_store._parse import _record_parse, _r
 from bloomberg_invest.adapters.store.neo4j_store._reads import (
     _boxes,
     _document_ref,
-    _figure,
+    _either,
     _run,
     _summary,
     _table_part,
     _tree,
 )
+from bloomberg_invest.adapters.store.neo4j_store._review import _record_review
 from bloomberg_invest.domain.chunking import ChunkDraft
 from bloomberg_invest.domain.extraction import FigureDraft, SourceCell
 from bloomberg_invest.domain.figures import FINANCIAL_FIGURE
@@ -37,11 +41,14 @@ from bloomberg_invest.domain.model import (
     ParsedDocument,
     RunInfo,
 )
+from bloomberg_invest.domain.review import ReviewDraft
 from bloomberg_invest.views import (
+    Candidate,
     Chunk,
     DocumentDetail,
     DocumentSummary,
     Figure,
+    RejectedFigure,
 )
 
 CONSTRAINTS = [
@@ -56,6 +63,7 @@ CONSTRAINTS = [
     ("Fact", "id"),
     ("RejectedFigure", "id"),
     ("Span", "id"),
+    ("Review", "id"),
 ]
 
 
@@ -153,34 +161,79 @@ class Neo4jStore(GraphStore):
         with self._driver.session() as session:
             return session.execute_write(_record_extraction, document_id, figures, run)
 
-    def figures(self, isin: str) -> list[Figure]:
+    def figures(
+        self, isin: str | None = None, ids: list[str] | None = None
+    ) -> tuple[list[Figure], list[RejectedFigure]]:
         records, _, _ = self._driver.execute_query(
             f"""
-            MATCH (n:Fact {{kind: $kind}})-[:ABOUT]->(o:Organisation {{isin: $isin}})
-            WHERE {CURRENT}
-            MATCH (n)-[:FROM_DOCUMENT]->(d:Document), (n)-[:CITES]->(passage:Passage)
-            RETURN n, d, o, passage
-            ORDER BY n.fiscal_year DESC, passage.page, n.line_item, n.breakdown
+            CALL () {{
+                MATCH (n:Fact {{kind: $kind}}) RETURN n
+                UNION
+                MATCH (n:RejectedFigure {{kind: $kind}}) RETURN n
+            }}
+            WITH n WHERE {CURRENT} AND ($ids IS NULL OR n.id IN $ids)
+            MATCH (n)-[:ABOUT]->(o:Organisation) WHERE $isin IS NULL OR o.isin = $isin
+            MATCH (n)-[:FROM_DOCUMENT]->(d:Document)
+            OPTIONAL MATCH (n)-[:CITES]->(passage:Passage)
+            {LATEST_REVIEW}
+            RETURN n, d, o, passage, rv, rp
+            ORDER BY n.fiscal_year DESC, coalesce(passage.page, n.page), n.line_item, n.breakdown
             """,
             kind=FINANCIAL_FIGURE,
             isin=isin,
+            ids=ids,
         )
-        return [_figure(r["n"], r["d"], r["o"], r["passage"]) for r in records]
+        read = [_either(r) for r in records]
+        return (
+            [f for f in read if isinstance(f, Figure)],
+            [f for f in read if isinstance(f, RejectedFigure)],
+        )
 
-    def fact(self, fact_id: str) -> Figure | None:
+    def figure(self, figure_id: str) -> Figure | RejectedFigure | None:
         records, _, _ = self._driver.execute_query(
-            """
-            MATCH (n:Fact {id: $id, kind: $kind})-[:ABOUT]->(o:Organisation)
-            MATCH (n)-[:FROM_DOCUMENT]->(d:Document), (n)-[:CITES]->(passage:Passage)
-            RETURN n, d, o, passage
+            f"""
+            WITH $id AS id
+            {FIGURE_BY_ID}
+            WITH n WHERE n.kind = $kind
+            MATCH (n)-[:ABOUT]->(o:Organisation), (n)-[:FROM_DOCUMENT]->(d:Document)
+            OPTIONAL MATCH (n)-[:CITES]->(passage:Passage)
+            {LATEST_REVIEW}
+            RETURN n, d, o, passage, rv, rp
             """,
-            id=fact_id,
+            id=figure_id,
             kind=FINANCIAL_FIGURE,
         )
-        if not records:
-            return None
-        r = records[0]
-        return _figure(r["n"], r["d"], r["o"], r["passage"])
+        return _either(records[0]) if records else None
+
+    def row_cells(self, figure_id: str) -> list[Candidate]:
+        records, _, _ = self._driver.execute_query(
+            f"""
+            WITH $id AS id
+            {FIGURE_BY_ID}
+            MATCH (n)-[:CITES]->(cited:Cell)<-[:HAS_CELL]-(t:Table)
+            MATCH (t)-[:HAS_CELL]->(c:Cell {{row: cited.row}}) WHERE {current("c")}
+            CALL (t, c) {{
+                OPTIONAL MATCH (t)-[:HAS_CELL]->(h:Cell {{col: c.col, column_header: true}})
+                WITH h ORDER BY h.row
+                RETURN collect(h.text) AS headers
+            }}
+            RETURN c.id AS id, c.text AS text, headers ORDER BY c.col
+            """,
+            id=figure_id,
+        )
+        return [
+            Candidate(
+                kind="cell",
+                value_as_written=r["text"],
+                cell_id=r["id"],
+                context=" ".join(" ".join(h.split()) for h in r["headers"]),
+            )
+            for r in records
+        ]
+
+    def record_review(self, figure_ids: list[str], review: ReviewDraft) -> str:
+        with self._driver.session() as session:
+            return session.execute_write(_record_review, figure_ids, review)
 
     def search_vector(self, vector: list[float], limit: int) -> list[str]:
         records, _, _ = self._driver.execute_query(

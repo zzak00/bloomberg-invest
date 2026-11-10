@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from bloomberg_invest.domain.figures import Scope
 from bloomberg_invest.domain.model import Bbox, DocType, Organisation, PageInfo, RunInfo
+from bloomberg_invest.domain.review import CheckStatus, Correction, Verdict
 
 
 class Section(BaseModel):
@@ -88,6 +89,18 @@ class Passage(BaseModel):
     quote: str | None = None  # spans: the value as quoted
 
 
+class Review(BaseModel):
+    """A person's check of a figure (#19 R9). On a figure it is the check in force, so accepted or
+    corrected: a figure whose latest check reopened it has none."""
+
+    id: str
+    verdict: Verdict
+    reviewer: str
+    reviewed_at: datetime
+    correction: Correction | None = None  # the right value, for a correction
+    source: Passage | None = None  # the cell or the quote picked; None for a typed value
+
+
 class Figure(BaseModel):
     """A financial figure Fact (#19 R5, R6): checked against its Passage before it was stored."""
 
@@ -96,6 +109,7 @@ class Figure(BaseModel):
     label: str  # the filing's own wording
     value: str  # exact decimal in the base unit: "36681000000"
     value_as_written: str  # "36 681"
+    unit_as_written: str  # as the LLM read it: "MAD millions"
     unit: str  # "MAD", "%", "shares", "MAD/share"
     scale: int  # what the written value is multiplied by: 1, 1 000, 1 000 000...
     currency: str | None
@@ -108,7 +122,14 @@ class Figure(BaseModel):
     breakdown: str  # empty for the line item itself, else which part of it
     recorded_at: datetime
     document: DocumentRef
-    passage: Passage
+    # What it was read from. The dossier shows a corrected figure with the source of its
+    # correction, which a typed value does not have.
+    passage: Passage | None
+    page: int  # the page it was read on
+    review: Review | None  # the check in force; None when nobody checked it (#23 AC4)
+    # It feeds a KPI or screen and nobody checked it yet (#19 R10). Set by the service layer,
+    # which knows the KPI rules; the store leaves it False.
+    needs_review: bool = False
 
 
 class FigureDetail(Figure):
@@ -165,3 +186,85 @@ class FigureGrid(BaseModel):
 
     count: int  # every current figure, on both bases
     scopes: list[ScopeFigures]
+
+
+class RejectedFigure(BaseModel):
+    """What the LLM proposed, and why the check refused it (#19 R6). It has no parsed value; a
+    person can only correct it."""
+
+    id: str
+    line_item: str
+    label: str
+    value_as_written: str
+    unit_as_written: str
+    fiscal_year: int
+    basis_scope: Scope | None
+    breakdown: str
+    recorded_at: datetime
+    page: int  # the page the LLM read
+    reason: str
+    document: DocumentRef
+    passage: Passage | None  # None when the id it cited is not on the page
+    review: Review | None
+
+
+class CheckRow(BaseModel):
+    """One value to check: every figure of one filing stating it, or one rejected figure."""
+
+    figure_ids: list[str]  # what a check of this row reviews; the one shown first
+    document: DocumentRef
+    line_item: str
+    title: str  # the line item's title in the label map
+    statement: str  # its statement's title
+    breakdown: str
+    fiscal_year: int
+    basis_scope: Scope | None
+    period_start: date | None
+    period_end: date | None
+    as_of: date | None
+    label: str  # the filing's own wording
+    value_as_written: str
+    unit_as_written: str
+    value: str | None  # parsed, in the base unit; None for a rejected figure
+    unit: str | None
+    scale: int | None
+    currency: str | None
+    passage: Passage | None  # the source shown: the earliest page's
+    page: int  # the page it was read on: its passage's, or the page the LLM read
+    sources: int  # how many passages of the filing state it
+    conflict: bool  # the filing states another value for the same line item and year
+    rejected: str | None  # why the check refused it, for a rejected figure
+    feeds: list[str]  # the KPIs and screens it feeds
+    review: Review | None
+    status: CheckStatus
+
+
+class CheckCounts(BaseModel):
+    to_check: int
+    rejected: int  # rejected figures: they can only be corrected
+    done: int
+
+
+class CheckGroup(BaseModel):
+    document: DocumentRef
+    rows: list[CheckRow]
+
+
+class CheckQueue(BaseModel):
+    """CHECKS (#19 R9): the figures that feed a KPI or screen, problems first."""
+
+    reviewer: str | None  # who checks on this app; None until REVIEWER is set
+    counts: CheckCounts  # for the company asked
+    companies: list[Organisation]  # every company with a figure to check or checked
+    groups: list[CheckGroup]  # one per filing
+
+
+class Candidate(BaseModel):
+    """A value a correction can pick from the figure's own source: a cell of the same table row,
+    or a number in the same paragraph."""
+
+    kind: Literal["cell", "quote"]
+    value_as_written: str
+    cell_id: str | None = None  # cells
+    start: int | None = None  # quotes: where the number begins in the paragraph
+    context: str  # the column's header for a cell, the words around a quote

@@ -13,7 +13,7 @@ Run, test and develop: see `README.md`. To prove a change in the running app, fo
 `backend/src/bloomberg_invest/` follows Architecture Patterns with Python (cosmicpython.com). Dependencies point inward: `entrypoints` -> `service_layer` -> `domain`.
 
 - `domain/`: write models and their rules; imports no other layer.
-- `service_layer/`: one module per use case (`ingest.py`); receives its adapters as arguments.
+- `service_layer/`: one module per use case (`ingest.py`); receives its adapters as arguments, and builds the read models it returns from domain rules.
 - `adapters/`: each port is a `typing.Protocol` (`Parser`, `GraphStore`, `Embedder`, `LLM`, `TokenCounter`) that real adapters inherit.
 - `entrypoints/`: the CLI and the FastAPI app; they translate input and call a service.
 - `views.py`: the read models the store returns and the API serves.
@@ -40,7 +40,7 @@ Tests: `tests/unit/` (no Docker), `tests/integration/` (real Neo4j or Docling; o
 - **Chunk**: the search and retrieval unit: a run of one section's headings and paragraphs, never splitting a paragraph, or a table, or one part of a long table cut between rows with its header repeated (ADR 0004). Avoid: fragment, page, paragraph (paragraphs exist only inside the chunker), passage (a Passage is what a Fact cites).
 - **Passage**: the exact span a Fact cites: a table cell, a text range or an image region. In the graph, a second label on Cell and Span nodes, never a node of its own. Avoid: chunk, source.
 - **Run**: one execution of a processing step (parse, chunk, embed, extract, link, compute, answer), with its tool, model and configuration versions. Avoid: job, task.
-- **Review**: a person's check of a Fact or figure: accepted or corrected. Avoid: validation, approval.
+- **Review**: a person's check of a Fact or figure: accepted, corrected, or reopened to undo the one before. Only consolidated figures that feed a KPI or screen need one; the latest Review is the check in force. Avoid: validation, approval.
 - **Superseded**: replaced by a newer Run's output; kept, never deleted. Avoid: deleted, overwritten.
 
 ## Maintaining this file

@@ -1,6 +1,6 @@
 # Graph schema
 
-The nodes and relationships that `Neo4jStore.record_parse`, `record_chunks`, `record_embeddings` and `record_extraction` (`backend/src/bloomberg_invest/adapters/store/neo4j_store/`) write for one ingested filing. Update this file when the store writes a new label, property or relationship.
+The nodes and relationships that `Neo4jStore.record_parse`, `record_chunks`, `record_embeddings`, `record_extraction` and `record_review` (`backend/src/bloomberg_invest/adapters/store/neo4j_store/`) write for one ingested filing. Update this file when the store writes a new label, property or relationship.
 
 The diagram gives the shape; [Attributes](#attributes) gives every property's meaning and an example from the Maroc Telecom 2025 report.
 
@@ -119,6 +119,18 @@ erDiagram
         Integer page
         String other "what the LLM proposed"
     }
+    Review {
+        String id UK
+        String verdict
+        String reviewer
+        DateTime reviewed_at
+        String value_as_written
+        String unit_as_written
+        String value
+        String unit
+        Integer scale
+        String currency
+    }
 
     Document }o--|| Organisation : ISSUED_BY
     Run }o--|| Document : PROCESSED
@@ -157,7 +169,11 @@ erDiagram
     RejectedFigure }o--|| Document : FROM_DOCUMENT
     RejectedFigure }o--|| Run : "PRODUCED_BY (extract Run)"
     Span }o--|| Page : ON_PAGE
-    Span }o--|| Run : "PRODUCED_BY (extract Run)"
+    Span }o--o| Run : "PRODUCED_BY (extract Run; none for a Review's)"
+    Review }o--o{ Fact : "REVIEWS (every figure one check covers)"
+    Review }o--o{ RejectedFigure : REVIEWS
+    Review }o--o| Cell : "CITES (a correction that picked a cell)"
+    Review |o--o| Span : "CITES (a correction that picked a number in a paragraph)"
 ```
 
 Arrows in Cypher run from the first entity to the second, for example `(:Document)-[:ISSUED_BY]->(:Organisation)` and `(:Run)-[:PROCESSED]->(:Document)`.
@@ -165,7 +181,7 @@ Arrows in Cypher run from the first entity to the second, for example `(:Documen
 ## Nodes, labels and relationships
 
 - **Every box is a node label.** A node can carry more than one label.
-- **Passage is a second label, not a node type of its own.** Every Cell node is `:Cell:Passage` and every Span node is `:Span:Passage`. A Passage is what a Fact cites: the table cell or the quoted sentence its value comes from. Reads match `(:Fact)-[:CITES]->(:Passage)` so they need not ask which kind it is. No node is a Passage alone.
+- **Passage is a second label, not a node type of its own.** Every Cell node is `:Cell:Passage` and every Span node is `:Span:Passage`. A Passage is what a Fact cites, or a correction: the table cell or the quoted sentence its value comes from. Reads match `(:Fact)-[:CITES]->(:Passage)` so they need not ask which kind it is. No node is a Passage alone.
 - **Relationships carry no properties.** Their type and direction are the whole meaning; anything worth recording, such as when or by which tool, is a property of a node, usually the Run that `PRODUCED_BY` points to.
 
 One figure, as stored:
@@ -340,6 +356,20 @@ Examples:
 - **Value differs:** the LLM proposed `18 002` for equity, but the cell it cited reads `propres 18 002`, part of a label merged into it. It `CITES` that Cell.
 - **Unknown source:** the LLM cited `t46.0.r8.c2+t46.0.r8.c3`, two cells joined, which is no id on page 46. It cites nothing.
 
+### Review
+
+A person's check of figures in CHECKS (#23). One Review `REVIEWS` every figure of one CHECKS row: the Facts of one filing stating one value of a line item and year, or one RejectedFigure. A correction's properties are absent on an acceptance or a reopening.
+
+| Property | Type | Meaning | Example |
+| --- | --- | --- | --- |
+| `id` | String, unique | UUID | `5e1f0c2a-…` |
+| `verdict` | String | `accepted`, `corrected`, or `reopened` to undo the check before | `corrected` |
+| `reviewer` | String | the app's `REVIEWER` setting | `Z. Bajjou` |
+| `reviewed_at` | DateTime | UTC | `2026-11-10T14:02:11Z` |
+| `value_as_written` | String, corrections | the right value, as the person gave it | `17 920` |
+| `unit_as_written` | String, corrections | the figure's own, which the value is read in | `MAD millions` |
+| `value`, `unit`, `scale`, `currency` | corrections | parsed as on a Fact | `17920000000`, `MAD`, `1000000`, `MAD` |
+
 ## Constraints and keys
 
 Neo4j Community enforces uniqueness only. Required properties are enforced by the Pydantic domain models every write goes through (ADR 0003).
@@ -354,6 +384,7 @@ Neo4j Community enforces uniqueness only. Required properties are enforced by th
 | Chunk | `id` | always created, per chunk Run |
 | Table, Cell | `id` | always created, per parse Run |
 | Fact, RejectedFigure, Span | `id` | always created, per extract Run |
+| Review | `id` | always created, per check; never superseded |
 
 The vector index `chunk_embedding` covers `Chunk.embedding`, cosine, at full precision: Neo4j quantizes vectors to bits by default, which would change the ranking the notebook measured.
 
@@ -391,6 +422,18 @@ A figure that fails the check is stored as a `RejectedFigure` with its `reason`,
 A Fact keeps the label map's `line_item` key only; its title and statement are read from the label map in force. A Span's boxes are the quote's, found in the PDF's text layer inside its paragraph, so the viewer highlights the value; when the text layer does not hold the quote there, they are the paragraph's (`boxes_from`).
 
 `value` is a string because Neo4j has no decimal type and a float would make `4,01` unequal to `4.01`. The extract Run's `config` names the deployment, the prompt and label map versions with their SHA-256, and the parse Run it read.
+
+## Where checks live
+
+A figure's check in force is its latest `Review` (by `reviewed_at`), unless that one reopened it. Reviews are never superseded or deleted: a mistaken check is undone by a reopening, and both stay. Only consolidated figures that feed a KPI or screen need a check; `config/kpis/` names those inputs.
+
+A correction never changes the figure: the Review holds the right value, and it wins wherever the figure is read (ADR 0001). It `CITES` what the person picked: a Cell of the figure's table row, or a new Span holding a number of the figure's paragraph, boxed on that number in the PDF's text layer. Such a Span has no `PRODUCED_BY`: its Review is its provenance, so a re-extract never supersedes it. A typed value cites nothing. The dossier shows a corrected figure with its correction, sourced from what the Review cites, or for a typed value from what the figure was read from; a RejectedFigure joins the dossier once corrected.
+
+An extract Run carries checks over in its own transaction (#19 R4). A new figure gains a `REVIEWS` link from the check in force of the previous extract Run's figure that read the same thing:
+- the same line item, fiscal year, scope, breakdown, `value_as_written` and `unit_as_written`;
+- from the same source: for a Cell, the same page, table index, row and column, which survive a re-parse; for a Span, the same page, quote and paragraph.
+
+Any other new figure starts unchecked and goes back to CHECKS, and so does every figure with no Passage: its page and `source_id` are not the same Cell. Only the Run just before counts, so a check undone by a different reading does not come back when a later Run reads the first value again.
 
 ## Why a Page has width and height
 
