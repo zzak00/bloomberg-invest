@@ -6,8 +6,10 @@ from pathlib import Path
 import pytest
 from neo4j import Driver, GraphDatabase
 
+from bloomberg_invest import config
 from bloomberg_invest.adapters.store import GraphStore
 from bloomberg_invest.adapters.store.neo4j_store import Neo4jStore
+from bloomberg_invest.domain.extraction import SourceParagraph, drafts, page_sources
 from bloomberg_invest.domain.model import (
     DocType,
     DocumentMeta,
@@ -149,3 +151,41 @@ def document(store, meta, parsed):
     ids = {s.title: s.id for s in detail.sections}
     ids |= {c.title: c.id for s in detail.sections for c in s.children}
     return document_id, ids
+
+
+# What the LLM answers for the income statement on page 2: (line item, year, cell id, value).
+# Net income 2025 is misread (the cell says 7 112), so the check rejects it.
+INCOME_ANSWER = [
+    ("revenue", 2025, "t2.0.r1.c2", "36 681"),
+    ("revenue", 2024, "t2.0.r1.c1", "36 699"),
+    ("net_income", 2025, "t2.0.r2.c2", "7 121"),
+]
+
+
+def extract_income(
+    store: GraphStore,
+    document_id: str,
+    answer=INCOME_ANSWER,
+    minute: int = 10,
+    page: int = 2,
+    paragraphs: tuple[SourceParagraph, ...] = (),
+) -> str:
+    """Record an extract Run of one page, by default the income statement on page 2; return its
+    Run id. An answer cites a cell, or a paragraph given (`p<page>.<n>`)."""
+    sources = page_sources(page, paragraphs, store.cells(document_id))
+    response = {
+        "figures": [
+            {
+                "line_item": item,
+                "fiscal_year": year,
+                "basis_scope": "consolidated",
+                "breakdown": "",
+                "source_id": source,
+                "value_as_written": value,
+                "unit_scale": "MAD millions",
+            }
+            for item, year, source, value in answer
+        ]
+    }
+    run = make_run(minute).model_copy(update={"step": RunStep.extract, "output": None})
+    return store.record_extraction(document_id, drafts(response, sources, config.label_map()), run)

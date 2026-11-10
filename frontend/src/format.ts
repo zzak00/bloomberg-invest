@@ -13,6 +13,13 @@ export function formatDateTime(iso: string): string {
   return DATE_TIME.format(new Date(iso)).replace(",", "");
 }
 
+const DATE = new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
+
+/** "10/11/2026": a day in the app's French date format. */
+export function formatDate(iso: string): string {
+  return DATE.format(new Date(iso));
+}
+
 export const DOC_TYPE_LABELS: Record<DocumentSummary["doc_type"], string> = {
   annual_report: "Annual financial report",
   half_year_report: "Half-year financial report",

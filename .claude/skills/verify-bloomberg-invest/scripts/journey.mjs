@@ -165,6 +165,7 @@ try {
     await income.waitFor();
     const tab = await page.getByRole("tab", { selected: true }).innerText();
     check(vp.name, "AC4: the dossier opens on its figures", /^FIGURES · \d+$/.test(tab), tab);
+    const figureCount = Number(tab.split("·")[1]);
     const revenue = income.getByRole("link", { name: /^Revenue, FY2025: 36 681 MAD m, on page \d+$/ });
     check(vp.name, "AC4: revenue FY2025 is listed as written", await revenue.isVisible());
     const years = await page.getByRole("columnheader", { name: /^FY\d{4}$/ }).allInnerTexts();
@@ -196,17 +197,96 @@ try {
     check(vp.name, "the highlight bar names the figure", /CELL/.test(bar) && /Revenue · FY2025/.test(bar) && /36 681 MAD m/.test(bar), bar.replace(/\s+/g, " "));
     await shot("10-figure-cell");
 
-    // MAP, CHECKS and KPIs show their empty states.
+    // CHECKS lists the figures that feed a KPI, problems first; a check is recorded and undone (#23).
+    await page.goto(`${base}/checks`);
+    await page.getByRole("heading", { name: "Checks", exact: true }).waitFor();
+    const filing = page.getByRole("region", { name: /^Maroc Telecom · Annual financial report 2025$/ });
+    await filing.waitFor();
+    const checkRows = filing.getByRole("listitem");
+    const firstRow = await checkRows.first().getAttribute("aria-label");
+    check(vp.name, "AC1: problems come first", /: Needs review$/.test(firstRow ?? ""), firstRow);
+    check(
+      vp.name,
+      "a rejected figure can't be accepted",
+      await checkRows.first().getByRole("button", { name: "ACCEPT" }).isDisabled(),
+    );
+    const reviewer = await page.locator(".checks-reviewer").innerText();
+    check(vp.name, "the reviewer is set", /Checks are recorded as/.test(reviewer), reviewer);
+    const revenueRow = filing.getByRole("listitem", { name: /^Revenue, FY2025: To check$/ }).first();
+    await revenueRow.scrollIntoViewIfNeeded();
+    const crop = revenueRow.locator(".check-crop img");
+    await crop.evaluate((img) => img.complete || new Promise((done) => (img.onload = done)));
+    check(vp.name, "AC1: the source is rendered from the page", (await crop.evaluate((img) => img.naturalWidth)) > 0);
+    check(vp.name, "AC1: the cell is highlighted on it", (await revenueRow.locator(".check-crop .mark").count()) >= 1);
+    await shot("11-checks");
+
+    await revenueRow.getByRole("button", { name: "CORRECT" }).click();
+    const picks = revenueRow.getByRole("group", { name: "Cells in the same row" });
+    await picks.waitFor();
+    check(vp.name, "a correction offers the cells of the row", (await picks.getByRole("button").count()) >= 1);
+    await shot("12-checks-correct");
+    await revenueRow.getByRole("button", { name: "CANCEL" }).click();
+
+    await revenueRow.getByRole("button", { name: "ACCEPT" }).click();
+    const accepted = page.getByRole("listitem", { name: /^Revenue, FY2025: Accepted$/ }).first();
+    await accepted.waitFor();
+    const done = await accepted.locator(".check-done").innerText();
+    check(vp.name, "AC1: accepting records who and when", /^Accepted by .+ on \d{2}\/\d{2}\/\d{4}/.test(done), done);
+    await shot("13-checks-accepted");
+
+    // The source viewer says the figure was checked (#23 AC4).
+    await accepted.getByRole("link", { name: /^Open the cell on page \d+ in the source viewer$/ }).click();
+    await page.waitForURL(/fact=/);
+    const checkedBar = page.getByRole("status");
+    await checkedBar.getByText(/^Checked by /).waitFor();
+    check(vp.name, "AC4: the viewer shows the check", true, (await checkedBar.innerText()).replace(/\s+/g, " "));
+    await shot("14-checked-figure");
+
+    // Undo it: a reopening puts the figure back to CHECKS.
+    await page.goto(`${base}/checks?status=done`);
+    const reopen = page.getByRole("listitem", { name: /^Revenue, FY2025: Accepted$/ }).first();
+    await reopen.getByRole("button", { name: "REOPEN" }).click();
+    await page.getByRole("listitem", { name: /^Revenue, FY2025: To check$/ }).first().waitFor();
+    check(vp.name, "a reopened figure is to check again", true);
+
+    // A corrected rejected figure counts: the viewer and the dossier show the correction (#19 R8).
+    await page.goto(`${base}/checks`);
+    const rejectedRow = page.getByRole("listitem", { name: /^Total equity, FY2024: Needs review$/ }).first();
+    await rejectedRow.scrollIntoViewIfNeeded();
+    await rejectedRow.getByRole("button", { name: "CORRECT" }).click();
+    await rejectedRow.getByRole("textbox").fill("18 702");
+    await rejectedRow.getByRole("button", { name: "SAVE" }).click();
+    const corrected = page.getByRole("listitem", { name: /^Total equity, FY2024: Corrected$/ }).first();
+    await corrected.waitFor();
+    check(vp.name, "a rejected figure is corrected", /^Corrected by .+ on \d{2}\/\d{2}\/\d{4}/.test(await corrected.locator(".check-done").innerText()));
+    await shot("15-checks-corrected");
+    await corrected.getByRole("link", { name: /^Open the cell on page \d+ in the source viewer$/ }).click();
+    await page.waitForURL(/fact=/);
+    const correctedBar = page.getByRole("status");
+    await correctedBar.getByText(/^Corrected by /).waitFor();
+    const correctedText = (await correctedBar.innerText()).replace(/\s+/g, " ");
+    check(vp.name, "the viewer shows the correction on its page", /PAGE/.test(correctedText) && /18 702 MAD m/.test(correctedText), correctedText);
+    await shot("16-corrected-figure");
+    await page.goto(`${base}/companies/MA0000011488`);
+    const counted = await page.getByRole("tab", { name: /^FIGURES · \d+$/, selected: true }).innerText();
+    check(vp.name, "the dossier counts the corrected figure", Number(counted.split("·")[1]) === figureCount + 1, counted);
+    await page.getByRole("region", { name: "Balance sheet" }).getByRole("link", { name: /^Total equity, FY2024: 18 702 MAD m/ }).first().scrollIntoViewIfNeeded();
+    await shot("17-dossier-corrected");
+    await page.goto(`${base}/checks?status=done`);
+    await page.getByRole("listitem", { name: /^Total equity, FY2024: Corrected$/ }).first().getByRole("button", { name: "REOPEN" }).click();
+    await page.getByRole("listitem", { name: /^Total equity, FY2024: Needs review$/ }).first().waitFor();
+    check(vp.name, "a reopened correction needs review again", true);
+
+    // MAP and KPIs show their empty states.
     for (const [path, title] of [
       ["map", "The map arrives with entities and facts"],
-      ["checks", "Nothing to check yet"],
       ["kpis", "KPIs follow checked figures"],
     ]) {
       await page.goto(`${base}/${path}`);
       const heading = page.getByRole("heading", { name: title });
       await heading.waitFor();
       check(vp.name, `${path.toUpperCase()} empty state`, await heading.isVisible());
-      await shot(`11-empty-${path}`);
+      await shot(`15-empty-${path}`);
     }
 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

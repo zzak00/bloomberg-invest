@@ -1,0 +1,165 @@
+# KPI rules v1 (#7): for now, each KPI, F-score test group and Sharia screen with the figures it
+# reads. A consolidated figure of one of these inputs needs a person's check before it counts
+# (#19 R10); CHECKS names the KPIs each one feeds. #27-#29 add the formulas and thresholds here.
+#
+# An input is a line item of the label map, or a table naming its breakdown as well:
+# { line_item = "eps", breakdown = "basic" }.
+#
+# Inputs #7 names that label map v1 has no line item for, left out until a label map v2:
+# gross profit (gross margin, F-score), lease liabilities (debt), treasury shares held (market
+# cap), weighted average shares (P/E fallback).
+#
+# Never edit a released version: add v2 and point `KPI_RULES` in `config/__init__.py` at it.
+
+version = "v1"
+
+[kpis.revenue_growth]
+title = "Revenue growth"
+inputs = ["revenue"]
+
+[kpis.net_income_growth]
+title = "Net income growth"
+inputs = ["net_income"]
+
+[kpis.gross_margin]
+title = "Gross margin"
+inputs = ["revenue"]
+
+[kpis.operating_margin]
+title = "Operating margin"
+inputs = ["operating_income_ebit", "revenue"]
+
+[kpis.net_margin]
+title = "Net margin"
+inputs = ["net_income", "revenue"]
+
+[kpis.roe]
+title = "ROE"
+inputs = ["net_income_group_share", "equity_group_share"]
+
+[kpis.roa]
+title = "ROA"
+inputs = ["net_income", "total_assets"]
+
+[kpis.roic]
+title = "ROIC"
+inputs = [
+    "operating_income_ebit",
+    "tax_expense",
+    "pre_tax_income",
+    "equity",
+    "long_term_debt",
+    "short_term_debt",
+    "cash_and_equivalents",
+]
+
+[kpis.cash_conversion]
+title = "Cash conversion"
+inputs = ["operating_cash_flow", "net_income"]
+
+[kpis.free_cash_flow]
+title = "Free cash flow"
+inputs = ["operating_cash_flow", "capex_cash"]
+
+[kpis.fcf_margin]
+title = "FCF margin"
+inputs = ["operating_cash_flow", "capex_cash", "revenue"]
+
+[kpis.debt_to_equity]
+title = "Debt / equity"
+inputs = ["long_term_debt", "short_term_debt", "equity"]
+
+[kpis.net_debt_to_ebitda]
+title = "Net debt / EBITDA"
+inputs = ["long_term_debt", "short_term_debt", "cash_and_equivalents", "ebitda"]
+
+[kpis.interest_coverage]
+title = "Interest coverage"
+inputs = ["operating_income_ebit", "interest_expense"]
+
+[kpis.current_ratio]
+title = "Current ratio"
+inputs = ["current_assets", "current_liabilities"]
+
+[kpis.payout_ratio]
+title = "Payout ratio"
+inputs = ["dividends_paid", "net_income_group_share"]
+
+[kpis.f_score]
+title = "Piotroski F-score"
+inputs = [
+    "net_income",
+    "total_assets",
+    "operating_cash_flow",
+    "long_term_debt",
+    "current_assets",
+    "current_liabilities",
+    "shares_outstanding",
+    "revenue",
+]
+
+[kpis.pe]
+title = "P/E"
+inputs = [{ line_item = "eps", breakdown = "basic" }, "net_income_group_share"]
+
+[kpis.earnings_yield]
+title = "Earnings yield"
+inputs = [{ line_item = "eps", breakdown = "basic" }]
+
+[kpis.pb]
+title = "P/B"
+inputs = ["shares_outstanding", "equity_group_share"]
+
+[kpis.p_cf]
+title = "P/CF"
+inputs = ["shares_outstanding", "operating_cash_flow"]
+
+[kpis.p_fcf]
+title = "P/FCF and FCF yield"
+inputs = ["shares_outstanding", "operating_cash_flow", "capex_cash"]
+
+[kpis.ev_ebitda]
+title = "EV/EBITDA"
+inputs = [
+    "shares_outstanding",
+    "long_term_debt",
+    "short_term_debt",
+    "cash_and_equivalents",
+    "minority_interests",
+    "ebitda",
+]
+
+[kpis.ev_sales]
+title = "EV/Sales"
+inputs = [
+    "shares_outstanding",
+    "long_term_debt",
+    "short_term_debt",
+    "cash_and_equivalents",
+    "minority_interests",
+    "revenue",
+]
+
+[kpis.dividend_yield]
+title = "Dividend yield"
+inputs = ["dividend_per_share"]
+
+[kpis.peg]
+title = "PEG"
+inputs = [{ line_item = "eps", breakdown = "basic" }, "net_income"]
+
+[kpis.sharia_debt]
+title = "Sharia debt screen"
+inputs = ["long_term_debt", "short_term_debt", "total_assets"]
+
+[kpis.sharia_cash]
+title = "Sharia cash screen"
+inputs = ["cash_and_equivalents", "short_term_investments", "total_assets"]
+
+[kpis.sharia_receivables]
+title = "Sharia receivables screen"
+inputs = ["receivables", "cash_and_equivalents", "total_assets"]
+
+[kpis.sharia_income]
+title = "Sharia income screen"
+inputs = ["interest_income", "revenue"]

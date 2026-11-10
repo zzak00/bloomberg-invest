@@ -92,3 +92,26 @@ def _supersede_step(tx: ManagedTransaction, run_id: str, step: str) -> None:
         run_id=run_id,
         step=step,
     )
+
+
+# The check in force on the figure bound to `n`, bound to `rv`: its latest Review, or null, with
+# the Passage a correction cites bound to `rp`. A latest Review that reopened the figure leaves it
+# unchecked; `_review` reads it as None.
+LATEST_REVIEW = """
+OPTIONAL CALL (n) {
+    MATCH (rv:Review)-[:REVIEWS]->(n)
+    WITH rv ORDER BY rv.reviewed_at DESC LIMIT 1
+    OPTIONAL MATCH (rv)-[:CITES]->(rp:Passage)
+    RETURN rv, rp
+}
+"""
+
+
+# A Fact or RejectedFigure by its id, bound to `n`: each label has its own uniqueness index.
+FIGURE_BY_ID = """
+CALL (id) {
+    MATCH (n:Fact {id: id}) RETURN n
+    UNION
+    MATCH (n:RejectedFigure {id: id}) RETURN n
+}
+"""

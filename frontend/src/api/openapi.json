@@ -80,7 +80,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/NotFound"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -135,7 +135,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/NotFound"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -244,7 +244,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/NotFound"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -294,7 +294,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/NotFound"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -344,7 +344,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/NotFound"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -365,7 +365,7 @@
     "/api/facts/{fact_id}": {
       "get": {
         "summary": "Fact",
-        "description": "One financial figure, current or not, so a link to it keeps working after a re-run.",
+        "description": "One financial figure as the dossier shows it, current or not, so a link to it keeps\nworking after a re-run: a corrected figure with its correction.",
         "operationId": "fact_api_facts__fact_id__get",
         "parameters": [
           {
@@ -390,11 +390,181 @@
             }
           },
           "404": {
-            "description": "No such financial figure",
+            "description": "No such financial figure, or a rejected one nobody corrected",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/NotFound"
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/checks": {
+      "get": {
+        "summary": "Checks Queue",
+        "description": "CHECKS: the figures that feed a KPI or screen, checked or not, by filing, problems\nfirst; of one company or all.",
+        "operationId": "checks_queue_api_checks_get",
+        "parameters": [
+          {
+            "name": "isin",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Isin"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckQueue"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reviews": {
+      "post": {
+        "summary": "Review",
+        "description": "Accept, correct or reopen the figures of one CHECKS row. Checks are never deleted: a\nreopening is a check that undoes the one before.",
+        "operationId": "review_api_reviews_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Review"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such current figure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The check does not fit these figures, and why",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Nobody can check: REVIEWER is not set",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/figures/{figure_id}/candidates": {
+      "get": {
+        "summary": "Figure Candidates",
+        "description": "What a correction can pick from the figure's own source: the numbers of its table\nrow, or of its paragraph.",
+        "operationId": "figure_candidates_api_figures__figure_id__candidates_get",
+        "parameters": [
+          {
+            "name": "figure_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Figure Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Candidate"
+                  },
+                  "title": "Response Figure Candidates Api Figures  Figure Id  Candidates Get"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such current figure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -448,6 +618,371 @@
         ],
         "title": "Box",
         "description": "A region of a page in PDF points, top-left origin."
+      },
+      "Candidate": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "cell",
+              "quote"
+            ],
+            "title": "Kind"
+          },
+          "value_as_written": {
+            "type": "string",
+            "title": "Value As Written"
+          },
+          "cell_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cell Id"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start"
+          },
+          "context": {
+            "type": "string",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "value_as_written",
+          "context"
+        ],
+        "title": "Candidate",
+        "description": "A value a correction can pick from the figure's own source: a cell of the same table row,\nor a number in the same paragraph."
+      },
+      "CheckCounts": {
+        "properties": {
+          "to_check": {
+            "type": "integer",
+            "title": "To Check"
+          },
+          "rejected": {
+            "type": "integer",
+            "title": "Rejected"
+          },
+          "done": {
+            "type": "integer",
+            "title": "Done"
+          }
+        },
+        "type": "object",
+        "required": [
+          "to_check",
+          "rejected",
+          "done"
+        ],
+        "title": "CheckCounts"
+      },
+      "CheckGroup": {
+        "properties": {
+          "document": {
+            "$ref": "#/components/schemas/DocumentRef"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/CheckRow"
+            },
+            "type": "array",
+            "title": "Rows"
+          }
+        },
+        "type": "object",
+        "required": [
+          "document",
+          "rows"
+        ],
+        "title": "CheckGroup"
+      },
+      "CheckQueue": {
+        "properties": {
+          "reviewer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewer"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/CheckCounts"
+          },
+          "companies": {
+            "items": {
+              "$ref": "#/components/schemas/Organisation"
+            },
+            "type": "array",
+            "title": "Companies"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/CheckGroup"
+            },
+            "type": "array",
+            "title": "Groups"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reviewer",
+          "counts",
+          "companies",
+          "groups"
+        ],
+        "title": "CheckQueue",
+        "description": "CHECKS (#19 R9): the figures that feed a KPI or screen, problems first."
+      },
+      "CheckRow": {
+        "properties": {
+          "figure_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Figure Ids"
+          },
+          "document": {
+            "$ref": "#/components/schemas/DocumentRef"
+          },
+          "line_item": {
+            "type": "string",
+            "title": "Line Item"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "statement": {
+            "type": "string",
+            "title": "Statement"
+          },
+          "breakdown": {
+            "type": "string",
+            "title": "Breakdown"
+          },
+          "fiscal_year": {
+            "type": "integer",
+            "title": "Fiscal Year"
+          },
+          "basis_scope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Scope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "period_start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Start"
+          },
+          "period_end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period End"
+          },
+          "as_of": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "value_as_written": {
+            "type": "string",
+            "title": "Value As Written"
+          },
+          "unit_as_written": {
+            "type": "string",
+            "title": "Unit As Written"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "scale": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scale"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "passage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Passage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "sources": {
+            "type": "integer",
+            "title": "Sources"
+          },
+          "conflict": {
+            "type": "boolean",
+            "title": "Conflict"
+          },
+          "rejected": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rejected"
+          },
+          "feeds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Feeds"
+          },
+          "review": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Review"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/CheckStatus"
+          }
+        },
+        "type": "object",
+        "required": [
+          "figure_ids",
+          "document",
+          "line_item",
+          "title",
+          "statement",
+          "breakdown",
+          "fiscal_year",
+          "basis_scope",
+          "period_start",
+          "period_end",
+          "as_of",
+          "label",
+          "value_as_written",
+          "unit_as_written",
+          "value",
+          "unit",
+          "scale",
+          "currency",
+          "passage",
+          "page",
+          "sources",
+          "conflict",
+          "rejected",
+          "feeds",
+          "review",
+          "status"
+        ],
+        "title": "CheckRow",
+        "description": "One value to check: every figure of one filing stating it, or one rejected figure."
+      },
+      "CheckStatus": {
+        "type": "string",
+        "enum": [
+          "to_check",
+          "rejected",
+          "accepted",
+          "corrected"
+        ],
+        "title": "CheckStatus",
+        "description": "Where a CHECKS row stands: its figures' check in force, or what they wait for."
       },
       "Chunk": {
         "properties": {
@@ -535,6 +1070,52 @@
         ],
         "title": "Company",
         "description": "An issuer's dossier: its filings."
+      },
+      "Correction": {
+        "properties": {
+          "value_as_written": {
+            "type": "string",
+            "title": "Value As Written"
+          },
+          "unit_as_written": {
+            "type": "string",
+            "title": "Unit As Written"
+          },
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "unit": {
+            "type": "string",
+            "title": "Unit"
+          },
+          "scale": {
+            "type": "integer",
+            "title": "Scale"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          }
+        },
+        "type": "object",
+        "required": [
+          "value_as_written",
+          "unit_as_written",
+          "value",
+          "unit",
+          "scale",
+          "currency"
+        ],
+        "title": "Correction",
+        "description": "The right value, as the person gave it, parsed in Python like an extracted one."
       },
       "DocType": {
         "type": "string",
@@ -726,6 +1307,10 @@
             "type": "string",
             "title": "Value As Written"
           },
+          "unit_as_written": {
+            "type": "string",
+            "title": "Unit As Written"
+          },
           "unit": {
             "type": "string",
             "title": "Unit"
@@ -805,7 +1390,33 @@
             "$ref": "#/components/schemas/DocumentRef"
           },
           "passage": {
-            "$ref": "#/components/schemas/Passage"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Passage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "review": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Review"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "needs_review": {
+            "type": "boolean",
+            "title": "Needs Review",
+            "default": false
           }
         },
         "type": "object",
@@ -815,6 +1426,7 @@
           "label",
           "value",
           "value_as_written",
+          "unit_as_written",
           "unit",
           "scale",
           "currency",
@@ -827,7 +1439,9 @@
           "breakdown",
           "recorded_at",
           "document",
-          "passage"
+          "passage",
+          "page",
+          "review"
         ],
         "title": "Figure",
         "description": "A financial figure Fact (#19 R5, R6): checked against its Passage before it was stored."
@@ -854,6 +1468,10 @@
             "type": "string",
             "title": "Value As Written"
           },
+          "unit_as_written": {
+            "type": "string",
+            "title": "Unit As Written"
+          },
           "unit": {
             "type": "string",
             "title": "Unit"
@@ -933,7 +1551,33 @@
             "$ref": "#/components/schemas/DocumentRef"
           },
           "passage": {
-            "$ref": "#/components/schemas/Passage"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Passage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "review": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Review"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "needs_review": {
+            "type": "boolean",
+            "title": "Needs Review",
+            "default": false
           },
           "line_item_title": {
             "type": "string",
@@ -947,6 +1591,7 @@
           "label",
           "value",
           "value_as_written",
+          "unit_as_written",
           "unit",
           "scale",
           "currency",
@@ -960,6 +1605,8 @@
           "recorded_at",
           "document",
           "passage",
+          "page",
+          "review",
           "line_item_title"
         ],
         "title": "FigureDetail",
@@ -1089,19 +1736,6 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
-      "NotFound": {
-        "properties": {
-          "detail": {
-            "type": "string",
-            "title": "Detail"
-          }
-        },
-        "type": "object",
-        "required": [
-          "detail"
-        ],
-        "title": "NotFound"
-      },
       "Organisation": {
         "properties": {
           "isin": {
@@ -1195,6 +1829,135 @@
         ],
         "title": "Passage",
         "description": "The exact span a Fact cites: a table cell, or a quoted range of a paragraph."
+      },
+      "Problem": {
+        "properties": {
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "detail"
+        ],
+        "title": "Problem",
+        "description": "Why a request failed, in words a person can act on."
+      },
+      "Review": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "verdict": {
+            "$ref": "#/components/schemas/Verdict"
+          },
+          "reviewer": {
+            "type": "string",
+            "title": "Reviewer"
+          },
+          "reviewed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Reviewed At"
+          },
+          "correction": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Correction"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Passage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "verdict",
+          "reviewer",
+          "reviewed_at"
+        ],
+        "title": "Review",
+        "description": "A person's check of a figure (#19 R9). On a figure it is the check in force, so accepted or\ncorrected: a figure whose latest check reopened it has none."
+      },
+      "ReviewRequest": {
+        "properties": {
+          "figure_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Figure Ids"
+          },
+          "verdict": {
+            "$ref": "#/components/schemas/Verdict"
+          },
+          "value_as_written": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value As Written"
+          },
+          "cell_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cell Id"
+          },
+          "quote": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quote"
+          },
+          "quote_start": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quote Start"
+          }
+        },
+        "type": "object",
+        "required": [
+          "figure_ids",
+          "verdict"
+        ],
+        "title": "ReviewRequest",
+        "description": "A check of one CHECKS row. A correction gives the right value one way: typed, or picked\nfrom the figure's own source (`GET /api/figures/{id}/candidates`)."
       },
       "Run": {
         "properties": {
@@ -1477,6 +2240,15 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "Verdict": {
+        "type": "string",
+        "enum": [
+          "accepted",
+          "corrected",
+          "reopened"
+        ],
+        "title": "Verdict"
       }
     }
   }

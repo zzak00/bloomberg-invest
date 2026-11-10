@@ -11,6 +11,7 @@ import { createRoot } from "react-dom/client";
 import { createBrowserRouter, Navigate, RouterProvider } from "react-router";
 
 import { Shell } from "./Shell";
+import { ChecksPage } from "./pages/ChecksPage";
 import { CompanyPage } from "./pages/CompanyPage";
 import { DocumentPage } from "./pages/DocumentPage";
 import { EmptyPage } from "./pages/EmptyPage";
@@ -36,16 +37,7 @@ const router = createBrowserRouter([
           />
         ),
       },
-      {
-        path: "checks",
-        element: (
-          <EmptyPage
-            label="CHECKS"
-            title="Nothing to check yet"
-            body="Extracted figures and new names will wait here for a person to accept or correct them. Until then, extracted figures show on each company's dossier."
-          />
-        ),
-      },
+      { path: "checks", element: <ChecksPage /> },
       {
         path: "kpis",
         element: (

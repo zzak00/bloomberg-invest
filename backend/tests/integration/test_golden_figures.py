@@ -104,7 +104,7 @@ def test_golden_figures_are_extracted_as_well_as_in_the_bake_off(store, meta, tm
         extraction(),
     )
 
-    facts = store.figures("MA0000011488")
+    facts, _ = store.figures("MA0000011488")
     records, _, _ = driver.execute_query(
         """
         MATCH (n:RejectedFigure)-[:PRODUCED_BY]->(:Run {id: $run})
