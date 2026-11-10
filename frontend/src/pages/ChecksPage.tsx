@@ -25,22 +25,22 @@ type Option = { id: Filter; label: string; shows: CheckStatus[] };
 const OPEN: Option = {
   id: "open",
   label: "OPEN",
-  shows: ["to_check", "needs_review"],
+  shows: ["to_check", "rejected"],
 };
 const FILTERS: Option[] = [
   OPEN,
-  { id: "needs_review", label: "NEEDS REVIEW", shows: ["needs_review"] },
+  { id: "needs_review", label: "NEEDS REVIEW", shows: ["rejected"] },
   { id: "done", label: "DONE", shows: ["accepted", "corrected"] },
   {
     id: "all",
     label: "ALL",
-    shows: ["to_check", "needs_review", "accepted", "corrected"],
+    shows: ["to_check", "rejected", "accepted", "corrected"],
   },
 ];
 
 const STATUS: Record<CheckStatus, { word: string; tone: string }> = {
   to_check: { word: "To check", tone: "pending" },
-  needs_review: { word: "Needs review", tone: "review" },
+  rejected: { word: "Needs review", tone: "review" },
   accepted: { word: "Accepted", tone: "ok" },
   corrected: { word: "Corrected", tone: "ok" },
 };
@@ -137,7 +137,7 @@ export function ChecksPage() {
 function Counts({ queue }: { queue: CheckQueue }) {
   const counts: [number, string, string][] = [
     [queue.counts.to_check, "TO CHECK", "pending"],
-    [queue.counts.needs_review, "NEEDS REVIEW", "review"],
+    [queue.counts.rejected, "NEEDS REVIEW", "review"],
     [queue.counts.done, "DONE", "ok"],
   ];
   return (
@@ -267,7 +267,7 @@ function Row({
   const name = row.breakdown ? `${row.title}, ${capitalised(row.breakdown)}` : row.title;
   const status = STATUS[row.status];
   // A corrected row's parsed value is the correction's.
-  const parsed = row.status === "corrected" && row.review ? row.review : row;
+  const parsed = (row.status === "corrected" && row.review?.correction) || row;
   const done = row.status === "accepted" || row.status === "corrected";
 
   const send = async (fields: {
@@ -275,6 +275,7 @@ function Row({
     value_as_written?: string;
     cell_id?: string;
     quote?: string;
+    quote_start?: number;
   }) => {
     setBusy(true);
     setError(null);
@@ -325,8 +326,8 @@ function Row({
         <div className="num check-number" data-struck={row.status === "corrected" || undefined}>
           {row.value_as_written}
         </div>
-        {row.status === "corrected" && row.review?.value_as_written && (
-          <div className="num check-number check-fixed">→ {row.review.value_as_written}</div>
+        {row.status === "corrected" && row.review?.correction && (
+          <div className="num check-number check-fixed">→ {row.review.correction.value_as_written}</div>
         )}
         <div className="check-unit">{row.unit_as_written}</div>
       </div>
@@ -499,7 +500,12 @@ function Correction({
 }: {
   row: CheckRow;
   busy: boolean;
-  onSave: (fields: { value_as_written?: string; cell_id?: string; quote?: string }) => void;
+  onSave: (fields: {
+    value_as_written?: string;
+    cell_id?: string;
+    quote?: string;
+    quote_start?: number;
+  }) => void;
   onCancel: () => void;
 }) {
   const id = firstFigure(row);
@@ -514,7 +520,11 @@ function Correction({
     onSave({ value_as_written: typed });
   };
   const pick = (c: Candidate) =>
-    onSave(c.kind === "cell" ? { cell_id: c.cell_id ?? undefined } : { quote: c.value_as_written });
+    onSave(
+      c.kind === "cell"
+        ? { cell_id: c.cell_id ?? undefined }
+        : { quote: c.value_as_written, quote_start: c.start ?? undefined },
+    );
   const options =
     choices.state === "ready" ? choices.data.filter((c) => c.value_as_written !== row.value_as_written) : [];
   return (
@@ -573,7 +583,7 @@ function StatusIcon({ status }: { status: CheckStatus }) {
   const inner =
     status === "to_check"
       ? "M8 4.8V8l2 1.4"
-      : status === "needs_review"
+      : status === "rejected"
         ? "M6.3 6.3a1.75 1.75 0 1 1 2.5 1.6c-.5.25-.8.6-.8 1.1v.5M8 11.4v.2"
         : "M5.2 8.3l1.9 1.9 3.8-4.2";
   return (

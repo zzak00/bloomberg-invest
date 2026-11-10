@@ -89,13 +89,13 @@ def test_problems_come_first_then_statement_line_item_and_newest_year():
 def test_a_rejected_figure_needs_review_until_corrected():
     [row] = rows([], [rejected("18 002", line_item="equity")])
     assert (row.status, row.rejected, row.value) == (
-        "needs_review",
+        "rejected",
         "its value differs from its cell",
         None,
     )
     fixed = corrected("17 920", "17920000000")
     [row] = rows([], [rejected("18 002", line_item="equity", review=fixed)])
-    assert (row.status, row.review.value_as_written) == ("corrected", "17 920")
+    assert (row.status, row.review.correction.value_as_written) == ("corrected", "17 920")
 
 
 def test_a_row_is_done_once_every_figure_stating_it_is_checked():

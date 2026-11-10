@@ -6,6 +6,7 @@ from collections.abc import Hashable, Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
+from typing import Protocol
 
 from bloomberg_invest.domain.chunking import Box
 from bloomberg_invest.domain.figures import (
@@ -28,21 +29,38 @@ class Verdict(StrEnum):
     corrected = "corrected"
     reopened = "reopened"  # undoes the check before it; the figure goes back to CHECKS
 
+    @property
+    def in_force(self) -> bool:
+        """A figure's latest check is in force unless it reopened the figure."""
+        return self is not Verdict.reopened
+
 
 class CheckStatus(StrEnum):
     """Where a CHECKS row stands: its figures' check in force, or what they wait for."""
 
     to_check = "to_check"
-    needs_review = "needs_review"  # a rejected figure: it can only be corrected
+    rejected = "rejected"  # the extraction check refused it: it can only be corrected
     accepted = "accepted"
     corrected = "corrected"
 
 
-def needs_review(
-    basis_scope: Scope | str | None, line_item: str, breakdown: str, rules: KpiRules
-) -> bool:
-    """Only consolidated figures that feed a KPI or screen need a check before they count."""
-    return basis_scope == Scope.consolidated and bool(rules.feeds(line_item, breakdown))
+class Gated(Protocol):
+    """What decides whether a figure needs a check: a Fact, or a rejected figure."""
+
+    @property
+    def basis_scope(self) -> Scope | str | None: ...
+    @property
+    def line_item(self) -> str: ...
+    @property
+    def breakdown(self) -> str: ...
+
+
+def needs_check(figure: Gated, rules: KpiRules) -> bool:
+    """Only consolidated figures that feed a KPI or screen need a check before they count
+    (#19 R10)."""
+    return figure.basis_scope == Scope.consolidated and bool(
+        rules.feeds(figure.line_item, figure.breakdown)
+    )
 
 
 class InvalidCorrection(ValueError):
@@ -75,6 +93,23 @@ def correction(value_as_written: str, unit_as_written: str) -> Correction:
         scale=unit.scale,
         currency=unit.currency,
     )
+
+
+class Checked(Protocol):
+    """A check in force on a figure."""
+
+    @property
+    def verdict(self) -> Verdict: ...
+    @property
+    def correction(self) -> Correction | None: ...
+
+
+def correction_in_force(check: Checked | None) -> Correction | None:
+    """The right value a figure's check gives it: a correction's, never an acceptance's. A
+    figure with one shows that value, not what was read (#19 R8)."""
+    if check is None or check.verdict != Verdict.corrected:
+        return None
+    return check.correction
 
 
 @dataclass(frozen=True)
@@ -124,6 +159,13 @@ def numbers_in(paragraph: str) -> list[Number]:
         for m in NUMBER.finditer(paragraph)
         if stands_alone(paragraph, m.start(), m.end())
     ]
+
+
+def occurrence(paragraph: str, number: Number) -> int | None:
+    """Which time the number is written in the paragraph, from 0; None when the paragraph does
+    not write that number where it says."""
+    same = [n.start for n in numbers_in(paragraph) if n.text == number.text]
+    return same.index(number.start) if number.start in same else None
 
 
 def around(paragraph: str, number: Number) -> str:

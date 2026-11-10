@@ -9,7 +9,7 @@ from neo4j import Driver, GraphDatabase
 from bloomberg_invest import config
 from bloomberg_invest.adapters.store import GraphStore
 from bloomberg_invest.adapters.store.neo4j_store import Neo4jStore
-from bloomberg_invest.domain.extraction import drafts, page_sources
+from bloomberg_invest.domain.extraction import SourceParagraph, drafts, page_sources
 from bloomberg_invest.domain.model import (
     DocType,
     DocumentMeta,
@@ -163,10 +163,16 @@ INCOME_ANSWER = [
 
 
 def extract_income(
-    store: GraphStore, document_id: str, answer=INCOME_ANSWER, minute: int = 10
+    store: GraphStore,
+    document_id: str,
+    answer=INCOME_ANSWER,
+    minute: int = 10,
+    page: int = 2,
+    paragraphs: tuple[SourceParagraph, ...] = (),
 ) -> str:
-    """Record an extract Run of the income statement on page 2; return its Run id."""
-    sources = page_sources(2, [], store.cells(document_id))
+    """Record an extract Run of one page, by default the income statement on page 2; return its
+    Run id. An answer cites a cell, or a paragraph given (`p<page>.<n>`)."""
+    sources = page_sources(page, paragraphs, store.cells(document_id))
     response = {
         "figures": [
             {

@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 
 from bloomberg_invest.domain.figures import Scope
 from bloomberg_invest.domain.model import Organisation
+from bloomberg_invest.domain.review import Correction
 from bloomberg_invest.views import DocumentRef, Figure, Passage, RejectedFigure, Review
 
 MILLIONS, BILLIONS = 1_000_000, 1_000_000_000
@@ -93,13 +94,12 @@ def review(verdict: str = "accepted", day: int = 10) -> Review:
 
 def corrected(written: str, value: str, *, day: int = 10, source: Passage | None = None) -> Review:
     """A correction in MAD millions, citing the cell or quote picked, or typed."""
-    return review("corrected", day).model_copy(
-        update={
-            "value_as_written": written,
-            "value": value,
-            "unit": "MAD",
-            "scale": MILLIONS,
-            "currency": "MAD",
-            "source": source,
-        }
+    fixed = Correction(
+        value_as_written=written,
+        unit_as_written="MAD millions",
+        value=value,
+        unit="MAD",
+        scale=MILLIONS,
+        currency="MAD",
     )
+    return review("corrected", day).model_copy(update={"correction": fixed, "source": source})

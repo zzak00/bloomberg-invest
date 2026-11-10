@@ -6,8 +6,7 @@ from builders import BILLIONS, MILLIONS, corrected, figure, rejected, review
 
 from bloomberg_invest import config
 from bloomberg_invest.domain.figures import Scope
-from bloomberg_invest.service_layer.company import figure_grid
-from bloomberg_invest.service_layer.figures import gated, in_force
+from bloomberg_invest.service_layer.company import figure_grid, gated, in_force
 from bloomberg_invest.views import Figure, Passage
 
 LABEL_MAP = config.label_map()
@@ -152,3 +151,18 @@ def test_a_rejected_figure_joins_the_dossier_once_corrected():
     assert shown.basis_standard == "IFRS"
     in_grid = consolidated([shown]).statements[0].rows[0].years[0].values[0].shown
     assert in_grid.value_as_written == "17 920"
+
+
+def test_a_checked_value_is_shown_before_the_others():
+    unchecked = figure("36 681", "36681000000", page=4)
+    checked = figure("36 680", "36680000000", page=24, review=review())
+    [year] = consolidated([unchecked, checked]).statements[0].rows[0].years
+    assert [v.shown.value_as_written for v in year.values] == ["36 680", "36 681"]
+
+
+def test_a_checked_figure_is_shown_for_its_value():
+    earliest = figure("36 681", "36681000000", page=4)
+    checked = figure("36 681", "36681000000", page=9, review=review())
+    [year] = consolidated([earliest, checked]).statements[0].rows[0].years
+    [value] = year.values
+    assert (value.shown.page, len(value.sources)) == (9, 2)

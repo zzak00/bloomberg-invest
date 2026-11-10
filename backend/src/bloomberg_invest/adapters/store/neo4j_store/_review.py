@@ -3,6 +3,7 @@ new extract Run reads the same way. A Review is never superseded or deleted; a l
 a reopening, takes its place."""
 
 import uuid
+from dataclasses import asdict
 from typing import Any
 
 from neo4j import ManagedTransaction
@@ -30,23 +31,11 @@ def _record_review(tx: ManagedTransaction, figure_ids: list[str], draft: ReviewD
         raise LookupError("a check needs current figures, and some of these are not")
 
     review_id = str(uuid.uuid4())
-    fixed = draft.correction
     properties = {
         "verdict": draft.verdict.value,
         "reviewer": draft.reviewer,
         "reviewed_at": draft.reviewed_at,
-    } | (
-        {
-            "value_as_written": fixed.value_as_written,
-            "unit_as_written": fixed.unit_as_written,
-            "value": fixed.value,
-            "unit": fixed.unit,
-            "scale": fixed.scale,
-            "currency": fixed.currency,
-        }
-        if fixed
-        else {}
-    )
+    } | (asdict(draft.correction) if draft.correction else {})
     tx.run(
         f"""
         CREATE (rv:Review {{id: $review_id}})
@@ -116,7 +105,7 @@ def _carry_reviews(tx: ManagedTransaction, run_id: str) -> int:
         (reading, r["rv"]["id"])
         for r in _readings(tx, previous["id"])
         if r["rv"] is not None
-        and r["rv"]["verdict"] != Verdict.reopened
+        and Verdict(r["rv"]["verdict"]).in_force
         and (reading := _reading(r)) is not None
     ]
     if not checked:

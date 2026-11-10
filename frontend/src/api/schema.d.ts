@@ -272,6 +272,8 @@ export interface components {
             value_as_written: string;
             /** Cell Id */
             cell_id?: string | null;
+            /** Start */
+            start?: number | null;
             /** Context */
             context: string;
         };
@@ -279,8 +281,8 @@ export interface components {
         CheckCounts: {
             /** To Check */
             to_check: number;
-            /** Needs Review */
-            needs_review: number;
+            /** Rejected */
+            rejected: number;
             /** Done */
             done: number;
         };
@@ -361,7 +363,7 @@ export interface components {
          * @description Where a CHECKS row stands: its figures' check in force, or what they wait for.
          * @enum {string}
          */
-        CheckStatus: "to_check" | "needs_review" | "accepted" | "corrected";
+        CheckStatus: "to_check" | "rejected" | "accepted" | "corrected";
         /**
          * Chunk
          * @description A Chunk with where to find it: what search returns and the source viewer highlights.
@@ -393,6 +395,24 @@ export interface components {
             issuer: components["schemas"]["Organisation"];
             /** Documents */
             documents: components["schemas"]["DocumentSummary"][];
+        };
+        /**
+         * Correction
+         * @description The right value, as the person gave it, parsed in Python like an extracted one.
+         */
+        Correction: {
+            /** Value As Written */
+            value_as_written: string;
+            /** Unit As Written */
+            unit_as_written: string;
+            /** Value */
+            value: string;
+            /** Unit */
+            unit: string;
+            /** Scale */
+            scale: number;
+            /** Currency */
+            currency: string | null;
         };
         /**
          * DocType
@@ -675,16 +695,7 @@ export interface components {
              * Format: date-time
              */
             reviewed_at: string;
-            /** Value As Written */
-            value_as_written?: string | null;
-            /** Value */
-            value?: string | null;
-            /** Unit */
-            unit?: string | null;
-            /** Scale */
-            scale?: number | null;
-            /** Currency */
-            currency?: string | null;
+            correction?: components["schemas"]["Correction"] | null;
             source?: components["schemas"]["Passage"] | null;
         };
         /**
@@ -702,6 +713,8 @@ export interface components {
             cell_id?: string | null;
             /** Quote */
             quote?: string | null;
+            /** Quote Start */
+            quote_start?: number | null;
         };
         /** Run */
         Run: {

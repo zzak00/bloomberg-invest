@@ -644,6 +644,17 @@
             ],
             "title": "Cell Id"
           },
+          "start": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start"
+          },
           "context": {
             "type": "string",
             "title": "Context"
@@ -664,9 +675,9 @@
             "type": "integer",
             "title": "To Check"
           },
-          "needs_review": {
+          "rejected": {
             "type": "integer",
-            "title": "Needs Review"
+            "title": "Rejected"
           },
           "done": {
             "type": "integer",
@@ -676,7 +687,7 @@
         "type": "object",
         "required": [
           "to_check",
-          "needs_review",
+          "rejected",
           "done"
         ],
         "title": "CheckCounts"
@@ -966,7 +977,7 @@
         "type": "string",
         "enum": [
           "to_check",
-          "needs_review",
+          "rejected",
           "accepted",
           "corrected"
         ],
@@ -1059,6 +1070,52 @@
         ],
         "title": "Company",
         "description": "An issuer's dossier: its filings."
+      },
+      "Correction": {
+        "properties": {
+          "value_as_written": {
+            "type": "string",
+            "title": "Value As Written"
+          },
+          "unit_as_written": {
+            "type": "string",
+            "title": "Unit As Written"
+          },
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "unit": {
+            "type": "string",
+            "title": "Unit"
+          },
+          "scale": {
+            "type": "integer",
+            "title": "Scale"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          }
+        },
+        "type": "object",
+        "required": [
+          "value_as_written",
+          "unit_as_written",
+          "value",
+          "unit",
+          "scale",
+          "currency"
+        ],
+        "title": "Correction",
+        "description": "The right value, as the person gave it, parsed in Python like an extracted one."
       },
       "DocType": {
         "type": "string",
@@ -1805,60 +1862,15 @@
             "format": "date-time",
             "title": "Reviewed At"
           },
-          "value_as_written": {
+          "correction": {
             "anyOf": [
               {
-                "type": "string"
+                "$ref": "#/components/schemas/Correction"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Value As Written"
-          },
-          "value": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Value"
-          },
-          "unit": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Unit"
-          },
-          "scale": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Scale"
-          },
-          "currency": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Currency"
+            ]
           },
           "source": {
             "anyOf": [
@@ -1926,6 +1938,17 @@
               }
             ],
             "title": "Quote"
+          },
+          "quote_start": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quote Start"
           }
         },
         "type": "object",

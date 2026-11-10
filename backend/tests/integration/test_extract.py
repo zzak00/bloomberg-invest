@@ -235,10 +235,10 @@ def test_a_quoted_figure_is_corrected_from_another_number_of_its_paragraph(store
     checks = Checks(config.kpi_rules(config.label_map()), "Z. Bajjou")
     recorded = record_review([dividend.id], Verdict.corrected, store, files, checks, quote="2025")
 
-    assert (recorded.value_as_written, recorded.value) == ("2025", "2025")
+    assert (recorded.correction.value_as_written, recorded.correction.value) == ("2025", "2025")
     assert (recorded.source.kind, recorded.source.quote) == ("span", "2025")
     [corrected] = [f for f in store.figures("MA0000011488")[0] if f.id == dividend.id]
-    assert corrected.review.value_as_written == "2025"
+    assert corrected.review.correction.value_as_written == "2025"
     # The Review cites a Span boxed on "2025" itself, not on the figure's "4,01".
     records, _, _ = store._driver.execute_query(
         "MATCH (:Review {id: $id})-[:CITES]->(s:Span) RETURN s.boxes AS boxes", id=recorded.id

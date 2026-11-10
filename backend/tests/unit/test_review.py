@@ -1,6 +1,8 @@
 """Which figures need a check, how a correction is read, and when a check carries over
 (#19 R4, R9, R10)."""
 
+from types import SimpleNamespace
+
 import pytest
 
 from bloomberg_invest import config
@@ -8,12 +10,16 @@ from bloomberg_invest.domain.kpis import Input, Kpi, KpiRules
 from bloomberg_invest.domain.label_map import LabelMap
 from bloomberg_invest.domain.review import (
     InvalidCorrection,
+    Number,
     Reading,
+    Verdict,
     around,
     carried,
     correction,
-    needs_review,
+    correction_in_force,
+    needs_check,
     numbers_in,
+    occurrence,
 )
 
 RULES = config.kpi_rules(config.label_map())
@@ -52,7 +58,29 @@ def test_a_line_item_feeds_the_kpis_that_read_it():
     ],
 )
 def test_only_consolidated_kpi_inputs_need_a_check(scope, line_item, breakdown, needed):
-    assert needs_review(scope, line_item, breakdown, RULES) is needed
+    figure = SimpleNamespace(basis_scope=scope, line_item=line_item, breakdown=breakdown)
+    assert needs_check(figure, RULES) is needed
+
+
+def test_a_reopening_leaves_no_check_in_force():
+    assert Verdict.accepted.in_force and Verdict.corrected.in_force
+    assert not Verdict.reopened.in_force
+
+
+def test_only_a_correction_gives_a_value_in_force():
+    fixed = correction("36 680", "MAD millions")
+    assert (
+        correction_in_force(SimpleNamespace(verdict=Verdict.corrected, correction=fixed)) == fixed
+    )
+    assert correction_in_force(SimpleNamespace(verdict=Verdict.accepted, correction=None)) is None
+    assert correction_in_force(None) is None
+
+
+def test_a_picked_number_knows_which_time_it_is_written():
+    paragraph = "au 31 décembre 2024 et au 31 décembre 2025"
+    first, _, second, _ = numbers_in(paragraph)
+    assert (occurrence(paragraph, first), occurrence(paragraph, second)) == (0, 1)
+    assert occurrence(paragraph, Number("31", 1)) is None  # not where it says
 
 
 def test_a_correction_is_parsed_like_an_extracted_value():

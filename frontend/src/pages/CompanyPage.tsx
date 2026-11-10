@@ -209,9 +209,6 @@ function Value({ value, row, year, conflict }: { value: FigureValue; row: Figure
   const name = row.breakdown ? `${row.title}, ${capitalised(row.breakdown)}` : row.title;
   // A corrected value is the person's, not what was read (#19 R8).
   const corrected = shown.review?.verdict === "corrected";
-  const meta = [corrected && "corrected", sources.length > 1 && `${sources.length} sources`]
-    .filter(Boolean)
-    .join(" · ");
   return (
     <span className="figure-value">
       {conflict && (
@@ -227,7 +224,8 @@ function Value({ value, row, year, conflict }: { value: FigureValue; row: Figure
         {shown.value_as_written}
         {unit !== unitLabel(row) && <span className="figure-unit-inline"> {unit}</span>}
       </Link>
-      {meta && <span className="figure-sources">{meta}</span>}
+      {corrected && <span className="figure-sources">corrected</span>}
+      {sources.length > 1 && <span className="figure-sources">{sources.length} sources</span>}
     </span>
   );
 }

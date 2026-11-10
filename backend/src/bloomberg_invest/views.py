@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from bloomberg_invest.domain.figures import Scope
 from bloomberg_invest.domain.model import Bbox, DocType, Organisation, PageInfo, RunInfo
-from bloomberg_invest.domain.review import CheckStatus, Verdict
+from bloomberg_invest.domain.review import CheckStatus, Correction, Verdict
 
 
 class Section(BaseModel):
@@ -97,12 +97,7 @@ class Review(BaseModel):
     verdict: Verdict
     reviewer: str
     reviewed_at: datetime
-    # A correction: the right value as the person gave it, parsed like an extracted one.
-    value_as_written: str | None = None
-    value: str | None = None  # in the base unit
-    unit: str | None = None
-    scale: int | None = None
-    currency: str | None = None
+    correction: Correction | None = None  # the right value, for a correction
     source: Passage | None = None  # the cell or the quote picked; None for a typed value
 
 
@@ -246,7 +241,7 @@ class CheckRow(BaseModel):
 
 class CheckCounts(BaseModel):
     to_check: int
-    needs_review: int  # rejected figures: they can only be corrected
+    rejected: int  # rejected figures: they can only be corrected
     done: int
 
 
@@ -259,7 +254,7 @@ class CheckQueue(BaseModel):
     """CHECKS (#19 R9): the figures that feed a KPI or screen, problems first."""
 
     reviewer: str | None  # who checks on this app; None until REVIEWER is set
-    counts: CheckCounts  # for the company asked, whatever the status filter
+    counts: CheckCounts  # for the company asked
     companies: list[Organisation]  # every company with something to check
     groups: list[CheckGroup]  # one per filing
 
@@ -271,4 +266,5 @@ class Candidate(BaseModel):
     kind: Literal["cell", "quote"]
     value_as_written: str
     cell_id: str | None = None  # cells
+    start: int | None = None  # quotes: where the number begins in the paragraph
     context: str  # the column's header for a cell, the words around a quote

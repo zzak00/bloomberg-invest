@@ -53,6 +53,7 @@ class ReviewRequest(BaseModel):
     value_as_written: str | None = None  # typed
     cell_id: str | None = None  # picked from the figure's table row
     quote: str | None = None  # picked from the figure's paragraph
+    quote_start: int | None = None  # where the number picked begins in the paragraph
 
 
 NOT_FOUND = {404: {"model": Problem, "description": "No such document, or no such page in it"}}
@@ -216,6 +217,7 @@ def create_app(
                 value_as_written=request.value_as_written,
                 cell_id=request.cell_id,
                 quote=request.quote,
+                quote_start=request.quote_start,
             )
         except NoReviewer:
             raise HTTPException(503, "Set REVIEWER in .env to record checks") from None

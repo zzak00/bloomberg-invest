@@ -3,7 +3,7 @@
 import json
 from typing import Any
 
-from bloomberg_invest.domain.review import Verdict
+from bloomberg_invest.domain.review import Correction, Verdict
 from bloomberg_invest.views import (
     Box,
     DocumentRef,
@@ -101,18 +101,24 @@ def _passage(passage: Any) -> Passage:
 def _review(rv: Any, rp: Any) -> Review | None:
     """The check in force, from a figure's latest Review and what it cites: none when it was
     reopened."""
-    if rv is None or rv["verdict"] == Verdict.reopened:
+    if rv is None or not Verdict(rv["verdict"]).in_force:
         return None
+    correction = None
+    if rv.get("value") is not None:
+        correction = Correction(
+            value_as_written=rv["value_as_written"],
+            unit_as_written=rv["unit_as_written"],
+            value=rv["value"],
+            unit=rv["unit"],
+            scale=rv["scale"],
+            currency=rv.get("currency"),
+        )
     return Review(
         id=rv["id"],
         verdict=rv["verdict"],
         reviewer=rv["reviewer"],
         reviewed_at=rv["reviewed_at"].to_native(),
-        value_as_written=rv.get("value_as_written"),
-        value=rv.get("value"),
-        unit=rv.get("unit"),
-        scale=rv.get("scale"),
-        currency=rv.get("currency"),
+        correction=correction,
         source=_passage(rp) if rp is not None else None,
     )
 

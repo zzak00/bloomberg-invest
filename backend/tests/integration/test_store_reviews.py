@@ -100,12 +100,7 @@ def test_a_correction_keeps_the_right_value_and_the_cell_picked(store, extracted
         [misread.id], check(Verdict.corrected, correction=fixed("7 112"), cell_id=cell.cell_id)
     )
     corrected = figures_by_value(store)["7 121"].review
-    assert (corrected.verdict, corrected.value_as_written, corrected.value) == (
-        "corrected",
-        "7 112",
-        "7112000000",
-    )
-    assert (corrected.unit, corrected.scale, corrected.currency) == ("MAD", 1_000_000, "MAD")
+    assert (corrected.verdict, corrected.correction) == ("corrected", fixed("7 112"))
     assert (corrected.source.kind, corrected.source.text) == ("cell", "7 112")
     assert store.figure(misread.id).review == corrected
     records, _, _ = driver.execute_query(
@@ -171,7 +166,9 @@ def test_a_figure_s_row_offers_its_cells_with_their_column_headers(store, extrac
     ]
 
 
-def test_re_extracting_keeps_a_check_only_on_the_same_value_from_the_same_cell(store, extracted):
+def test_re_extracting_keeps_a_check_only_on_the_same_value_from_the_same_cell(
+    store, extracted, driver
+):
     by_value = figures_by_value(store)
     kept = store.record_review([by_value["36 681"].id], check())
     store.record_review([by_value["36 699"].id], check(minute=31))
@@ -183,6 +180,18 @@ def test_re_extracting_keeps_a_check_only_on_the_same_value_from_the_same_cell(s
     again = figures_by_value(store)
     assert again["36 681"].id != by_value["36 681"].id  # a new Fact, the old one superseded
     assert again["36 681"].review.id == kept
+    # The old figure stays in the graph, superseded, and keeps its check (#19 R4).
+    records, _, _ = driver.execute_query(
+        """
+        MATCH (:Review {id: $kept})-[:REVIEWS]->(n:Fact)
+        RETURN n.id AS id, coalesce(n.superseded, false) AS superseded ORDER BY superseded
+        """,
+        kept=kept,
+    )
+    assert [(r["id"], r["superseded"]) for r in records] == [
+        (again["36 681"].id, False),
+        (by_value["36 681"].id, True),
+    ]
     assert again["6 968"].review is None
     assert again["7 121"].review is None
 

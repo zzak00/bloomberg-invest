@@ -13,6 +13,7 @@ from starlette.routing import Match
 from bloomberg_invest import config
 from bloomberg_invest.adapters.files import DocumentFiles
 from bloomberg_invest.domain.chunking import Block, ChunkDraft
+from bloomberg_invest.domain.extraction import SourceParagraph
 from bloomberg_invest.domain.model import RunStep
 from bloomberg_invest.entrypoints.api.app import create_app
 from bloomberg_invest.service_layer.checks import Checks
@@ -167,6 +168,7 @@ def test_openapi_declares_the_contract(client):
         "ReviewRequest",
         "Verdict",
         "CheckStatus",
+        "Correction",
         "Candidate",
         "Problem",
     } <= set(schemas)
@@ -333,14 +335,14 @@ def rows_of(checks):
 def test_checks_lists_what_feeds_a_kpi_rejected_figures_first(client, extracted, document_id):
     checks = queue(client)
     assert checks["reviewer"] == "Z. Bajjou"
-    assert checks["counts"] == {"to_check": 2, "needs_review": 1, "done": 0}
+    assert checks["counts"] == {"to_check": 2, "rejected": 1, "done": 0}
     assert checks["companies"] == [{"isin": "MA0000011488", "name": "Maroc Telecom"}]
     [group] = checks["groups"]
     assert group["document"]["id"] == document_id
     assert [
         (r["title"], r["fiscal_year"], r["value_as_written"], r["status"]) for r in group["rows"]
     ] == [
-        ("Net income", 2025, "7 121", "needs_review"),
+        ("Net income", 2025, "7 121", "rejected"),
         ("Revenue", 2025, "36 681", "to_check"),
         ("Revenue", 2024, "36 699", "to_check"),
     ]
@@ -388,11 +390,11 @@ def test_accepting_a_figure_records_who_and_when_and_clears_its_flag(client, ext
     )
     assert fact["review"]["reviewed_at"] == recorded["reviewed_at"]
     checks = queue(client)
-    assert checks["counts"] == {"to_check": 1, "needs_review": 1, "done": 1}
+    assert checks["counts"] == {"to_check": 1, "rejected": 1, "done": 1}
     # Every status is listed, in the same order: the page filters, and keeps a row just checked
     # where it was.
     assert [(r["value_as_written"], r["status"]) for r in rows_of(checks)] == [
-        ("7 121", "needs_review"),
+        ("7 121", "rejected"),
         ("36 681", "accepted"),
         ("36 699", "to_check"),
     ]
@@ -418,10 +420,19 @@ def test_a_rejected_figure_is_corrected_from_a_cell_of_its_row(client, extracted
     response = review(client, misread, "corrected", cell_id=picked["cell_id"])
     assert response.status_code == 201
     recorded = response.json()
-    assert (recorded["value_as_written"], recorded["value"]) == ("7 112", "7112000000")
+    fixed = recorded["correction"]
+    assert (fixed["value_as_written"], fixed["value"], fixed["unit"]) == (
+        "7 112",
+        "7112000000",
+        "MAD",
+    )
     assert (recorded["source"]["kind"], recorded["source"]["text"]) == ("cell", "7 112")
     row = rows_of(queue(client))[0]
-    assert (row["status"], row["value_as_written"], row["review"]["value_as_written"]) == (
+    assert (
+        row["status"],
+        row["value_as_written"],
+        row["review"]["correction"]["value_as_written"],
+    ) == (
         "corrected",
         "7 121",  # CHECKS shows what was read, and the correction
         "7 112",
@@ -457,7 +468,8 @@ def test_a_typed_correction_is_parsed_in_the_figure_s_unit(client, extracted):
     revenue = rows_of(queue(client))[1]
     response = review(client, revenue, "corrected", value_as_written="36 680")
     assert response.status_code == 201
-    assert (response.json()["value"], response.json()["source"]) == ("36680000000", None)
+    recorded = response.json()
+    assert (recorded["correction"]["value"], recorded["source"]) == ("36680000000", None)
     # The dossier shows the correction where the figure was read.
     fact = client.get(f"/api/facts/{extracted['36 681']}").json()
     assert (fact["value_as_written"], fact["value"]) == ("36 680", "36680000000")
@@ -468,7 +480,7 @@ def test_reopening_puts_a_figure_back_to_checks(client, extracted):
     revenue = rows_of(queue(client))[1]
     review(client, revenue)
     assert review(client, revenue, "reopened").json()["verdict"] == "reopened"
-    assert queue(client)["counts"] == {"to_check": 2, "needs_review": 1, "done": 0}
+    assert queue(client)["counts"] == {"to_check": 2, "rejected": 1, "done": 0}
 
 
 @pytest.mark.parametrize(
@@ -527,7 +539,7 @@ def test_one_check_covers_one_line_item_and_year(client, extracted):
         json={"figure_ids": revenue["figure_ids"] + previous["figure_ids"], "verdict": "accepted"},
     )
     assert response.status_code == 409
-    assert "one line item, year and basis" in response.json()["detail"]
+    assert "one line item, year, basis and currency" in response.json()["detail"]
 
 
 def test_checking_an_unknown_figure_is_404(client, extracted):
@@ -547,8 +559,72 @@ def test_checks_are_refused_until_the_reviewer_is_set(store, files, embedder, ex
 def test_the_queue_filters_by_company(client, extracted):
     assert queue(client, isin="MA0000000000") == {
         "reviewer": "Z. Bajjou",
-        "counts": {"to_check": 0, "needs_review": 0, "done": 0},
+        "counts": {"to_check": 0, "rejected": 0, "done": 0},
         "companies": [{"isin": "MA0000011488", "name": "Maroc Telecom"}],
         "groups": [],
     }
     assert len(rows_of(queue(client, isin="MA0000011488"))) == 3
+
+
+# Page 1 of the fixture PDF: one paragraph that writes "31" twice, on one line.
+KEY_FIGURES = SourceParagraph(
+    page=1,
+    text=(
+        "Les chiffres clés du Groupe sont présentés ci-dessous en millions de dirhams, selon les "
+        "normes IFRS, pour les exercices clos au 31 décembre 2024 et au 31 décembre 2025."
+    ),
+    boxes=((1, 50.0, 255.0, 545.0, 285.0),),
+)
+
+
+def test_a_quoted_figure_is_corrected_from_the_number_picked_where_it_was_picked(
+    client, store, document_id
+):
+    extract_income(
+        store, document_id, [("revenue", 2025, "p1.0", "2025")], page=1, paragraphs=(KEY_FIGURES,)
+    )
+    [row] = rows_of(queue(client))
+    choices = client.get(f"/api/figures/{row['figure_ids'][0]}/candidates").json()
+    assert [(c["value_as_written"], c["start"] is not None) for c in choices] == [
+        ("31", True),
+        ("2024", True),
+        ("31", True),
+        ("2025", True),
+    ]
+    first, second = choices[0], choices[2]
+    assert first["context"] != second["context"]
+
+    response = review(client, row, "corrected", quote="31", quote_start=second["start"])
+    assert response.status_code == 201
+    source = response.json()["source"]
+    assert (source["kind"], source["quote"], source["page"]) == ("span", "31", 1)
+    # Boxed on the second "31" (from x = 335 pt), not the first (from x = 224 pt).
+    [box] = source["boxes"]
+    assert box["left"] > 300
+    fact = client.get(f"/api/facts/{row['figure_ids'][0]}").json()
+    assert (fact["value_as_written"], fact["passage"]["quote"]) == ("31", "31")
+
+
+def test_a_figure_that_feeds_no_kpi_needs_no_review(client, store, document_id):
+    extract_income(store, document_id, [("share_capital", 2025, "t2.0.r1.c2", "36 681")])
+    [share_capital], _ = store.figures("MA0000011488")
+    fact = client.get(f"/api/facts/{share_capital.id}").json()
+    assert (fact["review"], fact["needs_review"]) == (None, False)
+    grid = client.get("/api/companies/MA0000011488/figures").json()
+    [row] = grid["scopes"][0]["statements"][0]["rows"]
+    assert row["years"][0]["values"][0]["shown"]["needs_review"] is False
+
+
+def test_a_checked_value_is_shown_first_in_the_dossier(client, store, document_id):
+    # Revenue 2025 read twice: from its own cell, and from net income's.
+    extract_income(store, document_id, [*INCOME_ANSWER, ("revenue", 2025, "t2.0.r2.c2", "7 112")])
+    rows = [
+        r for r in rows_of(queue(client)) if (r["title"], r["fiscal_year"]) == ("Revenue", 2025)
+    ]
+    second = next(r for r in rows if r["value_as_written"] == "7 112")
+    assert review(client, second).status_code == 201
+
+    grid = client.get("/api/companies/MA0000011488/figures").json()
+    [revenue] = grid["scopes"][0]["statements"][0]["rows"]
+    year = next(y for y in revenue["years"] if y["fiscal_year"] == 2025)
+    assert [v["shown"]["value_as_written"] for v in year["values"]] == ["7 112", "36 681"]

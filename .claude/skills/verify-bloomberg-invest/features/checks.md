@@ -36,6 +36,8 @@ DATA_DIR=../data LLM_REPLAY=../data/recordings/<sha256 prefix>-extract-figures-v
 
 Proof: the row is still accepted with the same Review id, its `figure_ids` are all new, and the Review `REVIEWS` both the new figures and the superseded old ones. Then reopen the row.
 
+Last run, 2026-11-10, on the golden report: one check over the 6 figures stating revenue FY2025; a replay re-extract of 1,174 figures (28 rejected); the row stayed accepted with the same Review, which then `REVIEWS` the 6 new figures and the 6 superseded ones. After the reopening the queue was back to 113 to check, 4 needing review, 0 done.
+
 ## Gotchas
 
 - Checks are never deleted: every journey run adds a Review and a reopening per viewport to the graph. That leaves the figures as they were, unchecked.
