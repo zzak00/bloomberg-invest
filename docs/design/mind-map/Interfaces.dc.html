@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Endpoints and interfaces</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@300;400;500;600&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#ffb224}a:hover{color:#ffd27a}
+.t td{padding:9px 12px;border-bottom:1px solid #1f1f1e;vertical-align:top}
+.t th{padding:8px 12px;text-align:left;font-weight:500;font-size:12px;color:#a3a39f;border-bottom:1px solid #343434}
+.m{font-family:'IBM Plex Mono',monospace;font-size:13px;color:#f1f1ed}
+</style>
+</helmet>
+<div style="width: 1600px; height: 1700px; box-sizing: border-box; padding: 64px; background: #080808; color: #f1f1ed; font-family: 'Hanken Grotesk', system-ui, sans-serif; display: flex; flex-direction: column; gap: 32px">
+
+<div style="display: flex; flex-direction: column; gap: 8px">
+<div style="font-size: 44px; line-height: 52px; font-weight: 500; letter-spacing: -0.01em">Endpoints and interfaces</div>
+<div style="font-size: 18px; line-height: 28px; color: #a3a39f">Every way in: the HTTP API the web app reads, the CLI that writes, the web routes, and the services and settings that run them. The API only reads; all writes go through the CLI.</div>
+</div>
+
+<div style="background: #0e0e0d; border: 1px solid #343434; border-radius: 4px; padding: 20px 24px">
+<div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px"><div style="font-size: 20px; line-height: 30px; font-weight: 500">HTTP API · FastAPI</div><div class="m" style="color: #a3a39f">OpenAPI UI /api/docs · schema /api/openapi.json</div></div>
+<table class="t" style="width: 100%; border-collapse: collapse; font-size: 14px; line-height: 20px; color: #b4b4af">
+<thead><tr><th style="width: 52px">Method</th><th style="width: 420px">Path</th><th style="width: 190px">Returns</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td class="m" style="color: #7fc8b8">GET</td><td class="m">/api/health</td><td class="m">{status: "ok"}</td><td>Health check used by Compose</td></tr>
+<tr><td class="m" style="color: #7fc8b8">GET</td><td class="m">/api/documents</td><td class="m">DocumentSummary[]</td><td>Every filing with a succeeded parse (the INDEX page)</td></tr>
+<tr><td class="m" style="color: #7fc8b8">GET</td><td class="m">/api/documents/{document_id}</td><td class="m">DocumentDetail</td><td>One filing: its pages, section tree and parse Run; 404 if unknown</td></tr>
+<tr><td class="m" style="color: #7fc8b8">GET</td><td class="m">/api/documents/{document_id}/pages/{number}.png</td><td class="m">image/png</td><td>A page rendered from the stored PDF, cached for a day; 404 past the last page</td></tr>
+<tr><td class="m" style="color: #7fc8b8">GET</td><td class="m">/api/search?q=…&amp;limit=10</td><td class="m">Chunk[]</td><td>The current Chunks nearest the query, best first; q 1 to 500 characters, limit 1 to 50</td></tr>
+<tr><td class="m" style="color: #7fc8b8">GET</td><td class="m">/api/chunks/{chunk_id}</td><td class="m">Chunk</td><td>One Chunk, current or not, so a result link survives a re-chunk</td></tr>
+<tr><td class="m" style="color: #7fc8b8">GET</td><td class="m">/api/companies/{isin}</td><td class="m">Company</td><td>The issuer and its filings (the dossier header)</td></tr>
+<tr><td class="m" style="color: #7fc8b8">GET</td><td class="m">/api/companies/{isin}/figures</td><td class="m">FigureGrid</td><td>Current figures by basis, statement, line item and year, each with the Facts stating it</td></tr>
+<tr><td class="m" style="color: #7fc8b8">GET</td><td class="m">/api/facts/{fact_id}</td><td class="m">FigureDetail</td><td>One figure with its Passage, current or not, so links keep working after a re-run</td></tr>
+</tbody>
+</table>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px">
+<div style="background: #0e0e0d; border: 1px solid #343434; border-radius: 4px; padding: 20px 24px">
+<div style="font-size: 20px; line-height: 30px; font-weight: 500; margin-bottom: 8px">CLI · <span class="m" style="font-size: 16px">bloomberg</span></div>
+<table class="t" style="width: 100%; border-collapse: collapse; font-size: 14px; line-height: 20px; color: #b4b4af">
+<tbody>
+<tr><td class="m" style="width: 240px">ingest &lt;pdf&gt;<br><span style="color: #a3a39f; font-size: 12px">--issuer-isin --issuer-name<br>--doc-type --fiscal-year<br>[--source-url]</span></td><td>Parse, chunk, embed and extract a filing. Stops before parsing if the Azure OpenAI secrets are missing.</td></tr>
+<tr><td class="m">chunk &lt;document id&gt;</td><td>Re-chunk from the saved parse, then embed the new Chunks</td></tr>
+<tr><td class="m">embed &lt;document id&gt;</td><td>Re-embed the current Chunks</td></tr>
+<tr><td class="m">extract &lt;document id&gt;</td><td>Re-extract the financial figures</td></tr>
+</tbody>
+</table>
+<div style="font-size: 13px; line-height: 20px; color: #a3a39f; margin-top: 12px">In Docker: <span class="m" style="font-size: 12px; color: #b4b4af">docker compose run --rm ingest | chunk | embed | extract …</span></div>
+</div>
+<div style="background: #0e0e0d; border: 1px solid #343434; border-radius: 4px; padding: 20px 24px">
+<div style="font-size: 20px; line-height: 30px; font-weight: 500; margin-bottom: 8px">Web routes · React Router</div>
+<table class="t" style="width: 100%; border-collapse: collapse; font-size: 14px; line-height: 20px; color: #b4b4af">
+<tbody>
+<tr><td class="m" style="width: 220px">/index</td><td>INDEX: every ingested filing (/ redirects here)</td></tr>
+<tr><td class="m">/documents/:documentId</td><td>Paper source viewer: pages, sections, highlights</td></tr>
+<tr><td class="m">/companies/:isin</td><td>Company dossier with the figure grid</td></tr>
+<tr><td class="m">/search</td><td>SEARCH: Chunk results that open the viewer</td></tr>
+<tr><td class="m" style="color: #a3a39f">/map · /checks · /kpis</td><td>Placeholders for the graph, reviews and KPIs</td></tr>
+</tbody>
+</table>
+</div>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px">
+<div style="background: #0e0e0d; border: 1px solid #343434; border-radius: 4px; padding: 20px 24px">
+<div style="font-size: 20px; line-height: 30px; font-weight: 500; margin-bottom: 8px">Docker Compose services</div>
+<table class="t" style="width: 100%; border-collapse: collapse; font-size: 14px; line-height: 20px; color: #b4b4af">
+<tbody>
+<tr><td class="m" style="width: 170px">neo4j</td><td>Neo4j 2026.10 Community · :7474 browser, :7687 bolt</td></tr>
+<tr><td class="m">api</td><td>FastAPI on :8000 inside; reads PDFs, writes page images</td></tr>
+<tr><td class="m">web</td><td>nginx on :8080, serves the build and proxies /api</td></tr>
+<tr><td class="m">ingest, chunk,<br>embed, extract</td><td>Profile <span class="m">tools</span>: one image with Docling and the OpenAI client</td></tr>
+<tr><td class="m">neo4j-test</td><td>Profile <span class="m">test</span>: in-memory database on :7688</td></tr>
+<tr><td class="m" style="color: #a3a39f">volumes</td><td>neo4j-data · models (Docling, Qwen3, tiktoken)</td></tr>
+</tbody>
+</table>
+</div>
+<div style="background: #0e0e0d; border: 1px solid #343434; border-radius: 4px; padding: 20px 24px">
+<div style="font-size: 20px; line-height: 30px; font-weight: 500; margin-bottom: 8px">Settings from the environment</div>
+<table class="t" style="width: 100%; border-collapse: collapse; font-size: 14px; line-height: 20px; color: #b4b4af">
+<tbody>
+<tr><td class="m" style="width: 290px">NEO4J_URI · NEO4J_PASSWORD</td><td>The graph store</td></tr>
+<tr><td class="m">DATA_DIR</td><td>PDFs, parses and page images</td></tr>
+<tr><td class="m">PARSER=docling</td><td>Which parser adapter</td></tr>
+<tr><td class="m">CHUNK_CAP=2000 · TABLE_CAP=1500</td><td>Token caps per Chunk</td></tr>
+<tr><td class="m">EMBEDDER=qwen3-0.6b</td><td>Which embedding model</td></tr>
+<tr><td class="m">LLM=azure-openai<br>AZURE_OPENAI_ENDPOINT · _API_KEY<br>EXTRACT_DEPLOYMENT=gpt-5.6-sol<br>EXTRACT_CONCURRENCY=4</td><td>The extraction model and how many pages go at once</td></tr>
+<tr><td class="m">LLM_RECORD · LLM_REPLAY</td><td>Record answers, or replay them in tests</td></tr>
+</tbody>
+</table>
+</div>
+</div>
+
+<div style="background: #0e0e0d; border: 1px solid #343434; border-radius: 4px; padding: 20px 24px">
+<div style="font-size: 20px; line-height: 30px; font-weight: 500; margin-bottom: 8px">Read models · views.py</div>
+<div style="font-size: 14px; line-height: 22px; color: #b4b4af"><span class="m">DocumentSummary</span> ▸ <span class="m">DocumentDetail</span> (Section tree, Run) · <span class="m">Chunk</span> (Box, TablePart, DocumentRef) · <span class="m">Company</span> · <span class="m">Figure</span> ▸ <span class="m">FigureDetail</span> (Passage)<br><span class="m">FigureGrid</span> ▸ <span class="m">ScopeFigures</span> (per basis) ▸ <span class="m">StatementFigures</span> ▸ <span class="m">FigureRow</span> (line item) ▸ <span class="m">FigureYear</span> ▸ <span class="m">FigureValue</span> (agreeing Facts)<br><span style="color: #a3a39f">The frontend types come from the same OpenAPI schema: <span class="m" style="font-size: 12px; color: #b4b4af">npm run gen:api</span></span></div>
+</div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1600,"height":1700}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>
