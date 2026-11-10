@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from bloomberg_invest.domain.figures import Scope
 from bloomberg_invest.domain.model import Organisation
 from bloomberg_invest.domain.review import Correction
-from bloomberg_invest.views import DocumentRef, Figure, Passage, RejectedFigure, Review
+from bloomberg_invest.views import Box, DocumentRef, Figure, Passage, RejectedFigure, Review
 
 MILLIONS, BILLIONS = 1_000_000, 1_000_000_000
 DOCUMENT = DocumentRef(
@@ -27,6 +27,7 @@ def figure(
     breakdown: str = "",
     scope: Scope = Scope.consolidated,
     page: int = 4,
+    top: float | None = None,  # where its cell sits on the page
     document: DocumentRef = DOCUMENT,
     review: Review | None = None,
 ) -> Figure:
@@ -49,7 +50,14 @@ def figure(
         breakdown=breakdown,
         recorded_at=datetime(2026, 11, 9, tzinfo=UTC),
         document=document,
-        passage=Passage(kind="cell", page=page, boxes=[], text=written),
+        passage=Passage(
+            kind="cell",
+            page=page,
+            boxes=[]
+            if top is None
+            else [Box(page=page, left=300, top=top, right=350, bottom=top + 16)],
+            text=written,
+        ),
         page=page,
         review=review,
     )

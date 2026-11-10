@@ -86,6 +86,13 @@ def test_problems_come_first_then_statement_line_item_and_newest_year():
     ]
 
 
+def test_rows_on_one_page_come_in_reading_order():
+    lower = figure("7 112", "7112000000", line_item="net_income", top=400)
+    higher = figure("7 113", "7113000000", line_item="net_income", top=120)
+    for given in ([lower, higher], [higher, lower]):
+        assert [r.value_as_written for r in rows(given)] == ["7 113", "7 112"]
+
+
 def test_a_rejected_figure_needs_review_until_corrected():
     [row] = rows([], [rejected("18 002", line_item="equity")])
     assert (row.status, row.rejected, row.value) == (
