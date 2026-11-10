@@ -43,8 +43,8 @@ Ingest then extracts the filing's financial figures (#22): each page with a tabl
 docker compose --profile test up -d --wait neo4j-test   # throwaway database for the tests
 
 cd backend
-uv sync --locked                         # API only, like the API image
-uv run pytest -m "not ingest"            # store, API and outline tests
+uv sync --locked --extra embed           # like the API image and CI
+uv run pytest -m "not ingest"            # store, API, outline and embedder tests
 uv run --extra ingest pytest -m ingest   # Docling parser, ingest and chunk tests
 uv run --extra embed pytest -m embed     # the embedding model
 uv run --extra ingest --env-file <secrets> pytest -m live   # the live Azure OpenAI model

@@ -14,10 +14,10 @@ Run, test and develop: see `README.md`. To prove a change in the running app, fo
 
 - `domain/`: write models and their rules; imports no other layer.
 - `service_layer/`: one module per use case (`ingest.py`); receives its adapters as arguments.
-- `adapters/`: each port is a `typing.Protocol` (`Parser`, `GraphStore`) that real adapters inherit.
+- `adapters/`: each port is a `typing.Protocol` (`Parser`, `GraphStore`, `Embedder`, `LLM`, `TokenCounter`) that real adapters inherit.
 - `entrypoints/`: the CLI and the FastAPI app; they translate input and call a service.
 - `views.py`: the read models the store returns and the API serves.
-- `bootstrap.py`: the only place that names concrete adapters; picks the parser from `PARSER`.
+- `bootstrap.py`: the only place that names concrete adapters; picks each from its setting (`PARSER`, `EMBEDDER`, `LLM`).
 
 Tests: `tests/unit/` (no Docker), `tests/integration/` (real Neo4j or Docling; one contract test per port, run on every implementation), `tests/e2e/` (through the API).
 

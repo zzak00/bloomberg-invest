@@ -184,7 +184,7 @@ A Page or Section with `superseded = true` came from an older parse of the same 
 1. Run A parses the PDF and writes its Pages and Sections, all current.
 2. The same PDF is ingested again. The Document is matched by its `sha256`, so Run B processes the same Document.
 3. In the same transaction, every current node Run A produced for this Document gets `superseded = true` and a `SUPERSEDED_BY` link to Run B.
-4. Run B writes fresh Pages and Sections. Every read filters with `coalesce(n.superseded, false) = false`, so only Run B's output shows.
+4. Run B writes fresh Pages and Sections. Every read filters with `coalesce(n.superseded, false) = false`, so only Run B's output shows. The exceptions are the reads by id (`GET /api/chunks/{id}`, `GET /api/facts/{id}`), which return a node current or not so a link to it keeps working after a re-run.
 
 A chunk Run supersedes only the Chunks of earlier chunk Runs, never the parse's Pages and Sections. An extract Run likewise supersedes only earlier extract Runs' Facts, RejectedFigures and Spans; a new parse supersedes its Tables and Cells and, through them, every figure extracted from them. A new parse supersedes everything earlier Runs produced for the Document, Chunks included; ingest then chunks the new parse. A superseded Chunk loses its `index_text` and `embedding`, so it leaves the vector index and search never returns it.
 
