@@ -411,6 +411,192 @@
           }
         }
       }
+    },
+    "/api/checks": {
+      "get": {
+        "summary": "Checks Queue",
+        "description": "CHECKS: the figures that feed a KPI or screen, by filing, problems first; the counts\ncover every status, for the company asked or all.",
+        "operationId": "checks_queue_api_checks_get",
+        "parameters": [
+          {
+            "name": "isin",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Isin"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "open",
+                "needs_review",
+                "done",
+                "all"
+              ],
+              "type": "string",
+              "default": "open",
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckQueue"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reviews": {
+      "post": {
+        "summary": "Review",
+        "description": "Accept, correct or reopen the figures of one CHECKS row. Checks are never deleted: a\nreopening is a check that undoes the one before.",
+        "operationId": "review_api_reviews_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecordedReview"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such current figure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFound"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The check does not fit these figures, and why",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFound"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Nobody can check: REVIEWER is not set",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFound"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/figures/{figure_id}/candidates": {
+      "get": {
+        "summary": "Figure Candidates",
+        "description": "What a correction can pick from the figure's own source: the numbers of its table\nrow, or of its paragraph.",
+        "operationId": "figure_candidates_api_figures__figure_id__candidates_get",
+        "parameters": [
+          {
+            "name": "figure_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Figure Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Candidate"
+                  },
+                  "title": "Response Figure Candidates Api Figures  Figure Id  Candidates Get"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such current figure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFound"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -448,6 +634,356 @@
         ],
         "title": "Box",
         "description": "A region of a page in PDF points, top-left origin."
+      },
+      "Candidate": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "cell",
+              "quote"
+            ],
+            "title": "Kind"
+          },
+          "value_as_written": {
+            "type": "string",
+            "title": "Value As Written"
+          },
+          "cell_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cell Id"
+          },
+          "context": {
+            "type": "string",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "value_as_written",
+          "context"
+        ],
+        "title": "Candidate",
+        "description": "A value a correction can pick from the figure's own source: a cell of the same table row,\nor a number in the same paragraph."
+      },
+      "CheckCounts": {
+        "properties": {
+          "to_check": {
+            "type": "integer",
+            "title": "To Check"
+          },
+          "needs_review": {
+            "type": "integer",
+            "title": "Needs Review"
+          },
+          "done": {
+            "type": "integer",
+            "title": "Done"
+          }
+        },
+        "type": "object",
+        "required": [
+          "to_check",
+          "needs_review",
+          "done"
+        ],
+        "title": "CheckCounts"
+      },
+      "CheckGroup": {
+        "properties": {
+          "document": {
+            "$ref": "#/components/schemas/DocumentRef"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/CheckRow"
+            },
+            "type": "array",
+            "title": "Rows"
+          }
+        },
+        "type": "object",
+        "required": [
+          "document",
+          "rows"
+        ],
+        "title": "CheckGroup"
+      },
+      "CheckQueue": {
+        "properties": {
+          "reviewer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewer"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/CheckCounts"
+          },
+          "companies": {
+            "items": {
+              "$ref": "#/components/schemas/Organisation"
+            },
+            "type": "array",
+            "title": "Companies"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/CheckGroup"
+            },
+            "type": "array",
+            "title": "Groups"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reviewer",
+          "counts",
+          "companies",
+          "groups"
+        ],
+        "title": "CheckQueue",
+        "description": "CHECKS (#19 R9): the figures that feed a KPI or screen, problems first."
+      },
+      "CheckRow": {
+        "properties": {
+          "figure_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Figure Ids"
+          },
+          "document": {
+            "$ref": "#/components/schemas/DocumentRef"
+          },
+          "line_item": {
+            "type": "string",
+            "title": "Line Item"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "statement": {
+            "type": "string",
+            "title": "Statement"
+          },
+          "breakdown": {
+            "type": "string",
+            "title": "Breakdown"
+          },
+          "fiscal_year": {
+            "type": "integer",
+            "title": "Fiscal Year"
+          },
+          "basis_scope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Scope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "period_start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Start"
+          },
+          "period_end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period End"
+          },
+          "as_of": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "value_as_written": {
+            "type": "string",
+            "title": "Value As Written"
+          },
+          "unit_as_written": {
+            "type": "string",
+            "title": "Unit As Written"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "scale": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scale"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "passage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Passage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "sources": {
+            "type": "integer",
+            "title": "Sources"
+          },
+          "conflict": {
+            "type": "boolean",
+            "title": "Conflict"
+          },
+          "rejected": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rejected"
+          },
+          "feeds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Feeds"
+          },
+          "review": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Review"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "to_check",
+              "needs_review",
+              "accepted",
+              "corrected"
+            ],
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "figure_ids",
+          "document",
+          "line_item",
+          "title",
+          "statement",
+          "breakdown",
+          "fiscal_year",
+          "basis_scope",
+          "period_start",
+          "period_end",
+          "as_of",
+          "label",
+          "value_as_written",
+          "unit_as_written",
+          "value",
+          "unit",
+          "scale",
+          "currency",
+          "passage",
+          "page",
+          "sources",
+          "conflict",
+          "rejected",
+          "feeds",
+          "review",
+          "status"
+        ],
+        "title": "CheckRow",
+        "description": "One value to check: every figure of one filing stating it, or one rejected figure."
       },
       "Chunk": {
         "properties": {
@@ -726,6 +1262,10 @@
             "type": "string",
             "title": "Value As Written"
           },
+          "unit_as_written": {
+            "type": "string",
+            "title": "Unit As Written"
+          },
           "unit": {
             "type": "string",
             "title": "Unit"
@@ -806,6 +1346,21 @@
           },
           "passage": {
             "$ref": "#/components/schemas/Passage"
+          },
+          "review": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Review"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "needs_review": {
+            "type": "boolean",
+            "title": "Needs Review",
+            "default": false
           }
         },
         "type": "object",
@@ -815,6 +1370,7 @@
           "label",
           "value",
           "value_as_written",
+          "unit_as_written",
           "unit",
           "scale",
           "currency",
@@ -827,7 +1383,8 @@
           "breakdown",
           "recorded_at",
           "document",
-          "passage"
+          "passage",
+          "review"
         ],
         "title": "Figure",
         "description": "A financial figure Fact (#19 R5, R6): checked against its Passage before it was stored."
@@ -854,6 +1411,10 @@
             "type": "string",
             "title": "Value As Written"
           },
+          "unit_as_written": {
+            "type": "string",
+            "title": "Unit As Written"
+          },
           "unit": {
             "type": "string",
             "title": "Unit"
@@ -935,6 +1496,21 @@
           "passage": {
             "$ref": "#/components/schemas/Passage"
           },
+          "review": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Review"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "needs_review": {
+            "type": "boolean",
+            "title": "Needs Review",
+            "default": false
+          },
           "line_item_title": {
             "type": "string",
             "title": "Line Item Title"
@@ -947,6 +1523,7 @@
           "label",
           "value",
           "value_as_written",
+          "unit_as_written",
           "unit",
           "scale",
           "currency",
@@ -960,6 +1537,7 @@
           "recorded_at",
           "document",
           "passage",
+          "review",
           "line_item_title"
         ],
         "title": "FigureDetail",
@@ -1195,6 +1773,174 @@
         ],
         "title": "Passage",
         "description": "The exact span a Fact cites: a table cell, or a quoted range of a paragraph."
+      },
+      "RecordedReview": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "accepted",
+              "corrected",
+              "reopened"
+            ],
+            "title": "Verdict"
+          },
+          "reviewer": {
+            "type": "string",
+            "title": "Reviewer"
+          },
+          "reviewed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Reviewed At"
+          },
+          "value_as_written": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value As Written"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "verdict",
+          "reviewer",
+          "reviewed_at"
+        ],
+        "title": "RecordedReview",
+        "description": "A check as recorded: accepted, corrected, or reopened to undo the one before."
+      },
+      "Review": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "accepted",
+              "corrected"
+            ],
+            "title": "Verdict"
+          },
+          "reviewer": {
+            "type": "string",
+            "title": "Reviewer"
+          },
+          "reviewed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Reviewed At"
+          },
+          "value_as_written": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value As Written"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "verdict",
+          "reviewer",
+          "reviewed_at"
+        ],
+        "title": "Review",
+        "description": "The check in force on a figure (#19 R9): a person accepted it or gave the right value."
+      },
+      "ReviewRequest": {
+        "properties": {
+          "figure_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Figure Ids"
+          },
+          "verdict": {
+            "$ref": "#/components/schemas/Verdict"
+          },
+          "value_as_written": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value As Written"
+          },
+          "cell_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cell Id"
+          },
+          "quote": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quote"
+          }
+        },
+        "type": "object",
+        "required": [
+          "figure_ids",
+          "verdict"
+        ],
+        "title": "ReviewRequest",
+        "description": "A check of one CHECKS row. A correction gives the right value one way: typed, or picked\nfrom the figure's own source (`GET /api/figures/{id}/candidates`)."
       },
       "Run": {
         "properties": {
@@ -1477,6 +2223,15 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "Verdict": {
+        "type": "string",
+        "enum": [
+          "accepted",
+          "corrected",
+          "reopened"
+        ],
+        "title": "Verdict"
       }
     }
   }

@@ -20,7 +20,10 @@ pytest.importorskip("docling", reason="needs the ingest extra")
 from bloomberg_invest import config
 from bloomberg_invest.adapters.files import DocumentFiles
 from bloomberg_invest.adapters.parsing.docling_parser import DoclingParser
+from bloomberg_invest.adapters.store.neo4j_store._reads import _boxes
 from bloomberg_invest.domain.model import RunInfo, RunStep
+from bloomberg_invest.domain.review import Verdict
+from bloomberg_invest.service_layer.checks import Checks, ReviewRequest, candidates, record_review
 from bloomberg_invest.service_layer.extract import ExtractFailed, Extraction, extract_document
 
 SHA = hashlib.sha256((FIXTURES / "filing.pdf").read_bytes()).hexdigest()
@@ -215,3 +218,28 @@ def test_the_whole_filing_is_read_page_by_page(store, filing, parser):
 def test_an_unknown_document_fails(store, tmp_path, parser):
     with pytest.raises(LookupError):
         extract(store, ("nope", DocumentFiles(Path(tmp_path))), parser, PageReadingLLM({}))
+
+
+def test_a_quoted_figure_is_corrected_from_another_number_of_its_paragraph(store, filing, parser):
+    extract(store, filing, parser, PageReadingLLM(FIGURES))
+    dividend = next(f for f in store.figures("MA0000011488") if f.line_item == "dividend_per_share")
+    picks = candidates(dividend.id, store)
+    assert [(c.kind, c.value_as_written) for c in picks] == [("quote", "2025"), ("quote", "4,01")]
+    assert picks[0].context == "…Au titre de l'exercice 2025, le Conseil propose un…"
+
+    _, files = filing
+    checks = Checks(config.kpi_rules(), "Z. Bajjou")
+    request = ReviewRequest(figure_ids=[dividend.id], verdict=Verdict.corrected, quote="2025")
+    recorded = record_review(request, store, files, checks)
+
+    assert (recorded.value_as_written, recorded.value) == ("2025", "2025")
+    [corrected] = [f for f in store.figures("MA0000011488") if f.id == dividend.id]
+    assert corrected.review.value_as_written == "2025"
+    # The Review cites a Span boxed on "2025" itself, not on the figure's "4,01".
+    records, _, _ = store._driver.execute_query(
+        "MATCH (:Review {id: $id})-[:CITES]->(s:Span) RETURN s.boxes AS boxes", id=recorded.id
+    )
+    [quoted] = _boxes(records[0]["boxes"])
+    [figure_box] = dividend.passage.boxes
+    assert quoted.page == 2 and quoted.right - quoted.left < 40
+    assert (quoted.left, quoted.top) != (figure_box.left, figure_box.top)

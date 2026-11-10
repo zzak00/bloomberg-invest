@@ -173,6 +173,69 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/checks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Checks Queue
+         * @description CHECKS: the figures that feed a KPI or screen, by filing, problems first; the counts
+         *     cover every status, for the company asked or all.
+         */
+        get: operations["checks_queue_api_checks_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reviews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Review
+         * @description Accept, correct or reopen the figures of one CHECKS row. Checks are never deleted: a
+         *     reopening is a check that undoes the one before.
+         */
+        post: operations["review_api_reviews_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/figures/{figure_id}/candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Figure Candidates
+         * @description What a correction can pick from the figure's own source: the numbers of its table
+         *     row, or of its paragraph.
+         */
+        get: operations["figure_candidates_api_figures__figure_id__candidates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -192,6 +255,109 @@ export interface components {
             right: number;
             /** Bottom */
             bottom: number;
+        };
+        /**
+         * Candidate
+         * @description A value a correction can pick from the figure's own source: a cell of the same table row,
+         *     or a number in the same paragraph.
+         */
+        Candidate: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "cell" | "quote";
+            /** Value As Written */
+            value_as_written: string;
+            /** Cell Id */
+            cell_id?: string | null;
+            /** Context */
+            context: string;
+        };
+        /** CheckCounts */
+        CheckCounts: {
+            /** To Check */
+            to_check: number;
+            /** Needs Review */
+            needs_review: number;
+            /** Done */
+            done: number;
+        };
+        /** CheckGroup */
+        CheckGroup: {
+            document: components["schemas"]["DocumentRef"];
+            /** Rows */
+            rows: components["schemas"]["CheckRow"][];
+        };
+        /**
+         * CheckQueue
+         * @description CHECKS (#19 R9): the figures that feed a KPI or screen, problems first.
+         */
+        CheckQueue: {
+            /** Reviewer */
+            reviewer: string | null;
+            counts: components["schemas"]["CheckCounts"];
+            /** Companies */
+            companies: components["schemas"]["Organisation"][];
+            /** Groups */
+            groups: components["schemas"]["CheckGroup"][];
+        };
+        /**
+         * CheckRow
+         * @description One value to check: every figure of one filing stating it, or one rejected figure.
+         */
+        CheckRow: {
+            /** Figure Ids */
+            figure_ids: string[];
+            document: components["schemas"]["DocumentRef"];
+            /** Line Item */
+            line_item: string;
+            /** Title */
+            title: string;
+            /** Statement */
+            statement: string;
+            /** Breakdown */
+            breakdown: string;
+            /** Fiscal Year */
+            fiscal_year: number;
+            basis_scope: components["schemas"]["Scope"] | null;
+            /** Period Start */
+            period_start: string | null;
+            /** Period End */
+            period_end: string | null;
+            /** As Of */
+            as_of: string | null;
+            /** Label */
+            label: string;
+            /** Value As Written */
+            value_as_written: string;
+            /** Unit As Written */
+            unit_as_written: string;
+            /** Value */
+            value: string | null;
+            /** Unit */
+            unit: string | null;
+            /** Scale */
+            scale: number | null;
+            /** Currency */
+            currency: string | null;
+            passage: components["schemas"]["Passage"] | null;
+            /** Page */
+            page: number;
+            /** Sources */
+            sources: number;
+            /** Conflict */
+            conflict: boolean;
+            /** Rejected */
+            rejected: string | null;
+            /** Feeds */
+            feeds: string[];
+            review: components["schemas"]["Review"] | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "to_check" | "needs_review" | "accepted" | "corrected";
         };
         /**
          * Chunk
@@ -301,6 +467,8 @@ export interface components {
             value: string;
             /** Value As Written */
             value_as_written: string;
+            /** Unit As Written */
+            unit_as_written: string;
             /** Unit */
             unit: string;
             /** Scale */
@@ -327,6 +495,12 @@ export interface components {
             recorded_at: string;
             document: components["schemas"]["DocumentRef"];
             passage: components["schemas"]["Passage"];
+            review: components["schemas"]["Review"] | null;
+            /**
+             * Needs Review
+             * @default false
+             */
+            needs_review: boolean;
         };
         /**
          * FigureDetail
@@ -343,6 +517,8 @@ export interface components {
             value: string;
             /** Value As Written */
             value_as_written: string;
+            /** Unit As Written */
+            unit_as_written: string;
             /** Unit */
             unit: string;
             /** Scale */
@@ -369,6 +545,12 @@ export interface components {
             recorded_at: string;
             document: components["schemas"]["DocumentRef"];
             passage: components["schemas"]["Passage"];
+            review: components["schemas"]["Review"] | null;
+            /**
+             * Needs Review
+             * @default false
+             */
+            needs_review: boolean;
             /** Line Item Title */
             line_item_title: string;
         };
@@ -464,6 +646,70 @@ export interface components {
             boxes: components["schemas"]["Box"][];
             /** Text */
             text: string;
+            /** Quote */
+            quote?: string | null;
+        };
+        /**
+         * RecordedReview
+         * @description A check as recorded: accepted, corrected, or reopened to undo the one before.
+         */
+        RecordedReview: {
+            /** Id */
+            id: string;
+            /**
+             * Verdict
+             * @enum {string}
+             */
+            verdict: "accepted" | "corrected" | "reopened";
+            /** Reviewer */
+            reviewer: string;
+            /**
+             * Reviewed At
+             * Format: date-time
+             */
+            reviewed_at: string;
+            /** Value As Written */
+            value_as_written?: string | null;
+            /** Value */
+            value?: string | null;
+        };
+        /**
+         * Review
+         * @description The check in force on a figure (#19 R9): a person accepted it or gave the right value.
+         */
+        Review: {
+            /** Id */
+            id: string;
+            /**
+             * Verdict
+             * @enum {string}
+             */
+            verdict: "accepted" | "corrected";
+            /** Reviewer */
+            reviewer: string;
+            /**
+             * Reviewed At
+             * Format: date-time
+             */
+            reviewed_at: string;
+            /** Value As Written */
+            value_as_written?: string | null;
+            /** Value */
+            value?: string | null;
+        };
+        /**
+         * ReviewRequest
+         * @description A check of one CHECKS row. A correction gives the right value one way: typed, or picked
+         *     from the figure's own source (`GET /api/figures/{id}/candidates`).
+         */
+        ReviewRequest: {
+            /** Figure Ids */
+            figure_ids: string[];
+            verdict: components["schemas"]["Verdict"];
+            /** Value As Written */
+            value_as_written?: string | null;
+            /** Cell Id */
+            cell_id?: string | null;
             /** Quote */
             quote?: string | null;
         };
@@ -578,6 +824,11 @@ export interface components {
             /** Context */
             ctx?: Record<string, never>;
         };
+        /**
+         * Verdict
+         * @enum {string}
+         */
+        Verdict: "accepted" | "corrected" | "reopened";
     };
     responses: never;
     parameters: never;
@@ -883,6 +1134,138 @@ export interface operations {
                 };
             };
             /** @description No such financial figure */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotFound"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    checks_queue_api_checks_get: {
+        parameters: {
+            query?: {
+                isin?: string | null;
+                status?: "open" | "needs_review" | "done" | "all";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckQueue"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    review_api_reviews_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecordedReview"];
+                };
+            };
+            /** @description No such current figure */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotFound"];
+                };
+            };
+            /** @description The check does not fit these figures, and why */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotFound"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Nobody can check: REVIEWER is not set */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotFound"];
+                };
+            };
+        };
+    };
+    figure_candidates_api_figures__figure_id__candidates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                figure_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Candidate"][];
+                };
+            };
+            /** @description No such current figure */
             404: {
                 headers: {
                     [name: string]: unknown;

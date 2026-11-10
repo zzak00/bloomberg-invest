@@ -6,7 +6,15 @@ from bloomberg_invest.domain.chunking import ChunkDraft
 from bloomberg_invest.domain.extraction import FigureDraft, SourceCell
 from bloomberg_invest.domain.indexing import EmbedInput
 from bloomberg_invest.domain.model import DocumentMeta, Organisation, ParsedDocument, RunInfo
-from bloomberg_invest.views import Chunk, DocumentDetail, DocumentSummary, Figure
+from bloomberg_invest.domain.review import ReviewDraft
+from bloomberg_invest.views import (
+    Candidate,
+    Chunk,
+    DocumentDetail,
+    DocumentSummary,
+    Figure,
+    Proposed,
+)
 
 
 class GraphStore(Protocol):
@@ -57,8 +65,9 @@ class GraphStore(Protocol):
         """Store an extract Run's figures for the Document; return the Run id.
 
         A figure that passed its check becomes a Fact citing its Passage, one that failed a
-        RejectedFigure. A succeeded Run supersedes earlier extract Runs' outputs; a failed one is
-        recorded with no outputs and supersedes nothing.
+        RejectedFigure. A succeeded Run supersedes earlier extract Runs' outputs, and a new figure
+        keeps the check of the previous Run's figure that read the same value from the same
+        source (#19 R4). A failed one is recorded with no outputs and supersedes nothing.
         """
 
     def figures(self, isin: str) -> list[Figure]:
@@ -66,6 +75,21 @@ class GraphStore(Protocol):
 
     def fact(self, fact_id: str) -> Figure | None:
         """One financial figure Fact, current or not, so a link to it keeps working."""
+
+    def checkable(
+        self, isin: str | None = None, ids: list[str] | None = None
+    ) -> tuple[list[Figure], list[Proposed]]:
+        """Current financial figures with their check in force: the Facts and the
+        RejectedFigures, of one issuer or every one, or only those with these ids."""
+
+    def row_cells(self, figure_id: str) -> list[Candidate]:
+        """The current cells of the row of the Cell a figure cites, by column, each with its
+        column's headers; none for a figure that cites no Cell."""
+
+    def record_review(self, figure_ids: list[str], review: ReviewDraft) -> str:
+        """Record a check of these current figures; return the Review id. A correction that
+        picked a number in a paragraph gets a Span the Review cites. Raises LookupError when a
+        figure is not current, or the cited cell or page is not."""
 
     def search_vector(self, vector: list[float], limit: int) -> list[str]:
         """Current Chunk ids whose vectors are nearest the query's, best first."""

@@ -2,8 +2,9 @@
 
 import os
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from datetime import datetime
+from math import hypot
 from pathlib import Path
 
 import pypdfium2 as pdfium
@@ -50,6 +51,22 @@ class DocumentFiles:
             Path(tmp).replace(out)
         return out
 
+    def quote_near(
+        self, sha256: str, page: int, quote: str, near: Sequence[Box]
+    ) -> tuple[Box, ...] | None:
+        """The quote's boxes where the page holds it inside or else nearest `near`: the boxes of
+        its paragraph, or of another number in it. None when the page's text layer lacks it."""
+        pdf = pdfium.PdfDocument(self.pdf_path(sha256))
+        try:
+            found = list(_matches(pdf, page, quote))
+        finally:
+            pdf.close()
+        return min(
+            found,
+            key=lambda boxes: (not _all_inside(boxes, near), _distance(boxes, near)),
+            default=None,
+        )
+
     def quote_boxes(self, sha256: str, quotes: Sequence[Quote]) -> list[tuple[Box, ...] | None]:
         """Each quote's boxes in the PDF's text layer, one per line, in PDF points from the top
         left; None when the page has no such text inside the paragraph. The PDF is opened once:
@@ -64,8 +81,13 @@ class DocumentFiles:
 def _find(
     pdf: pdfium.PdfDocument, page: int, quote: str, within: Sequence[Box]
 ) -> tuple[Box, ...] | None:
+    return next((boxes for boxes in _matches(pdf, page, quote) if _all_inside(boxes, within)), None)
+
+
+def _matches(pdf: pdfium.PdfDocument, page: int, quote: str) -> Iterator[tuple[Box, ...]]:
+    """The boxes of each place the page's text layer holds the quote as a whole number."""
     if not quote.strip() or not 1 <= page <= len(pdf):
-        return None
+        return
     pdf_page = pdf[page - 1]
     height = pdf_page.get_height()
     text = pdf_page.get_textpage()
@@ -82,9 +104,18 @@ def _find(
             [(left, height - top, right, height - bottom) for left, bottom, right, top in chars],
             page,
         )
-        if boxes and all(_inside(box, within) for box in boxes):
-            return boxes
-    return None
+        if boxes:
+            yield boxes
+
+
+def _all_inside(boxes: Sequence[Box], within: Sequence[Box]) -> bool:
+    return all(_inside(box, within) for box in boxes)
+
+
+def _distance(boxes: Sequence[Box], near: Sequence[Box]) -> float:
+    """How far apart the first boxes' centres are, in points."""
+    (_, l1, t1, r1, b1), (_, l2, t2, r2, b2) = boxes[0], near[0]
+    return hypot((l1 + r1 - l2 - r2) / 2, (t1 + b1 - t2 - b2) / 2)
 
 
 def _lines(chars: list[tuple[float, float, float, float]], page: int) -> tuple[Box, ...]:

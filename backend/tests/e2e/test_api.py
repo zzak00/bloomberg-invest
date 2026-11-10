@@ -4,7 +4,7 @@ import hashlib
 import shutil
 
 import pytest
-from conftest import FIXTURES, make_run
+from conftest import FIXTURES, extract_income, make_run
 from fakes import FakeEmbedder
 from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator
@@ -13,9 +13,9 @@ from starlette.routing import Match
 from bloomberg_invest import config
 from bloomberg_invest.adapters.files import DocumentFiles
 from bloomberg_invest.domain.chunking import Block, ChunkDraft
-from bloomberg_invest.domain.extraction import drafts, page_sources
 from bloomberg_invest.domain.model import RunStep
 from bloomberg_invest.entrypoints.api.app import create_app
+from bloomberg_invest.service_layer.checks import Checks
 from bloomberg_invest.service_layer.embed import embed_document
 
 PDF = FIXTURES / "filing.pdf"
@@ -40,11 +40,17 @@ class ContractClient(TestClient):
             self._check(response)
         return response
 
+    def post(self, url, *args, **kwargs):
+        response = super().post(url, *args, **kwargs)
+        self._check(response)
+        return response
+
     def _check(self, response):
         spec = self.app.openapi()
-        scope = {"type": "http", "method": "GET", "path": response.request.url.path}
+        method = response.request.method
+        scope = {"type": "http", "method": method, "path": response.request.url.path}
         route = next(r for r in self.app.routes if r.matches(scope)[0] == Match.FULL)
-        declared = spec["paths"][route.path]["get"]["responses"]
+        declared = spec["paths"][route.path][method.lower()]["responses"]
         status = str(response.status_code)
         assert status in declared, f"{route.path} returned {status}, which the contract omits"
         media = response.headers["content-type"].split(";")[0]
@@ -62,11 +68,16 @@ def embedder() -> FakeEmbedder:
     return FakeEmbedder()
 
 
+def app(store, files, embedder, reviewer: str | None = "Z. Bajjou"):
+    checks = Checks(config.kpi_rules(), reviewer)
+    return create_app(
+        store=store, files=files, embedder=embedder, label_map=config.label_map(), checks=checks
+    )
+
+
 @pytest.fixture
 def client(store, files, embedder) -> TestClient:
-    return ContractClient(
-        create_app(store=store, files=files, embedder=embedder, label_map=config.label_map())
-    )
+    return ContractClient(app(store, files, embedder))
 
 
 @pytest.fixture
@@ -132,6 +143,9 @@ def test_openapi_declares_the_contract(client):
         "/api/companies/{isin}",
         "/api/companies/{isin}/figures",
         "/api/facts/{fact_id}",
+        "/api/checks",
+        "/api/reviews",
+        "/api/figures/{figure_id}/candidates",
     }
     schemas = spec["components"]["schemas"]
     assert {
@@ -147,11 +161,17 @@ def test_openapi_declares_the_contract(client):
         "FigureGrid",
         "Passage",
         "Scope",
+        "CheckQueue",
+        "CheckRow",
+        "Review",
+        "ReviewRequest",
+        "RecordedReview",
+        "Candidate",
     } <= set(schemas)
 
 
 def test_the_app_takes_all_its_dependencies_or_none(files):
-    with pytest.raises(TypeError, match="store, files, embedder and label_map, or none"):
+    with pytest.raises(TypeError, match="store, files, embedder, label_map and checks, or none"):
         create_app(files=files)
 
 
@@ -235,29 +255,8 @@ def test_an_unknown_chunk_is_404(client):
 @pytest.fixture
 def extracted(store, document_id) -> dict[str, str]:
     """Figures extracted from the stored income statement: two that match their cells and one
-    that doesn't. Returns the Fact ids by value, and the RejectedFigure's id."""
-    label_map = config.label_map()
-    sources = page_sources(2, [], store.cells(document_id))
-    answer = {
-        "figures": [
-            {
-                "line_item": item,
-                "fiscal_year": year,
-                "basis_scope": "consolidated",
-                "breakdown": "",
-                "source_id": source,
-                "value_as_written": value,
-                "unit_scale": "MAD millions",
-            }
-            for item, year, source, value in [
-                ("revenue", 2025, "t2.0.r1.c2", "36 681"),
-                ("revenue", 2024, "t2.0.r1.c1", "36 699"),
-                ("net_income", 2025, "t2.0.r2.c2", "7 121"),
-            ]
-        ]
-    }
-    run = make_run().model_copy(update={"step": RunStep.extract, "output": None})
-    store.record_extraction(document_id, drafts(answer, sources, label_map), run)
+    that doesn't. Returns the Fact ids by value."""
+    extract_income(store, document_id)
     return {f.value_as_written: f.id for f in store.figures("MA0000011488")}
 
 
@@ -316,3 +315,175 @@ def test_an_unknown_or_rejected_figure_is_404(client, extracted, driver):
     records, _, _ = driver.execute_query("MATCH (n:RejectedFigure) RETURN n.id AS id")
     [rejected] = [r["id"] for r in records]
     assert client.get(f"/api/facts/{rejected}").status_code == 404
+
+
+# CHECKS (#23)
+
+
+def queue(client, **params):
+    return client.get("/api/checks", params=params).json()
+
+
+def rows_of(checks):
+    return [row for group in checks["groups"] for row in group["rows"]]
+
+
+def test_checks_lists_what_feeds_a_kpi_rejected_figures_first(client, extracted, document_id):
+    checks = queue(client)
+    assert checks["reviewer"] == "Z. Bajjou"
+    assert checks["counts"] == {"to_check": 2, "needs_review": 1, "done": 0}
+    assert checks["companies"] == [{"isin": "MA0000011488", "name": "Maroc Telecom"}]
+    [group] = checks["groups"]
+    assert group["document"]["id"] == document_id
+    assert [
+        (r["title"], r["fiscal_year"], r["value_as_written"], r["status"]) for r in group["rows"]
+    ] == [
+        ("Net income", 2025, "7 121", "needs_review"),
+        ("Revenue", 2025, "36 681", "to_check"),
+        ("Revenue", 2024, "36 699", "to_check"),
+    ]
+    revenue = group["rows"][1]
+    assert (revenue["label"], revenue["basis_scope"], revenue["period_end"]) == (
+        "Chiffre d'affaires",
+        "consolidated",
+        "2025-12-31",
+    )
+    assert (revenue["value"], revenue["unit_as_written"], revenue["passage"]["text"]) == (
+        "36681000000",
+        "MAD millions",
+        "36 681",
+    )
+    assert "Revenue growth" in revenue["feeds"]
+    misread = group["rows"][0]
+    assert (misread["rejected"], misread["value"], misread["passage"]["text"]) == (
+        "its value differs from its cell",
+        None,
+        "7 112",
+    )
+
+
+def review(client, row, verdict="accepted", **fields):
+    return client.post(
+        "/api/reviews", json={"figure_ids": row["figure_ids"], "verdict": verdict, **fields}
+    )
+
+
+def test_accepting_a_figure_records_who_and_when_and_clears_its_flag(client, extracted):
+    revenue = rows_of(queue(client))[1]
+    fact = client.get(f"/api/facts/{extracted['36 681']}").json()
+    assert (fact["review"], fact["needs_review"]) == (None, True)
+
+    response = review(client, revenue)
+    assert response.status_code == 201
+    recorded = response.json()
+    assert (recorded["verdict"], recorded["reviewer"]) == ("accepted", "Z. Bajjou")
+
+    fact = client.get(f"/api/facts/{extracted['36 681']}").json()
+    assert (fact["review"]["id"], fact["review"]["reviewer"], fact["needs_review"]) == (
+        recorded["id"],
+        "Z. Bajjou",
+        False,
+    )
+    assert fact["review"]["reviewed_at"] == recorded["reviewed_at"]
+    checks = queue(client)
+    assert checks["counts"] == {"to_check": 1, "needs_review": 1, "done": 1}
+    assert [r["value_as_written"] for r in rows_of(checks)] == ["7 121", "36 699"]
+    [done] = rows_of(queue(client, status="done"))
+    assert (done["value_as_written"], done["status"]) == ("36 681", "accepted")
+
+
+def test_every_figure_in_the_dossier_carries_its_review_status(client, extracted):
+    review(client, rows_of(queue(client))[1])
+    grid = client.get("/api/companies/MA0000011488/figures").json()
+    [row] = grid["scopes"][0]["statements"][0]["rows"]
+    shown = {y["fiscal_year"]: y["values"][0]["shown"] for y in row["years"]}
+    assert (shown[2025]["review"]["verdict"], shown[2025]["needs_review"]) == ("accepted", False)
+    assert (shown[2024]["review"], shown[2024]["needs_review"]) == (None, True)
+
+
+def test_a_rejected_figure_is_corrected_from_a_cell_of_its_row(client, extracted):
+    misread = rows_of(queue(client))[0]
+    choices = client.get(f"/api/figures/{misread['figure_ids'][0]}/candidates").json()
+    assert [(c["kind"], c["value_as_written"], c["context"]) for c in choices] == [
+        ("cell", "6 968", "31-déc.-24"),
+        ("cell", "7 112", "31-déc.-25"),
+    ]
+    picked = choices[1]
+    response = review(client, misread, "corrected", cell_id=picked["cell_id"])
+    assert response.status_code == 201
+    assert (response.json()["value_as_written"], response.json()["value"]) == (
+        "7 112",
+        "7112000000",
+    )
+    [row] = rows_of(queue(client, status="done"))
+    assert (row["status"], row["review"]["value_as_written"]) == ("corrected", "7 112")
+
+
+def test_a_typed_correction_is_parsed_in_the_figure_s_unit(client, extracted):
+    revenue = rows_of(queue(client))[1]
+    response = review(client, revenue, "corrected", value_as_written="36 680")
+    assert response.status_code == 201
+    assert response.json()["value"] == "36680000000"
+
+
+def test_reopening_puts_a_figure_back_to_checks(client, extracted):
+    revenue = rows_of(queue(client))[1]
+    review(client, revenue)
+    assert review(client, revenue, "reopened").json()["verdict"] == "reopened"
+    assert queue(client)["counts"] == {"to_check": 2, "needs_review": 1, "done": 0}
+
+
+@pytest.mark.parametrize(
+    ("row", "verdict", "fields", "message"),
+    [
+        (0, "accepted", {}, "A rejected figure can only be corrected"),
+        (1, "corrected", {}, "Give the right value one way"),
+        (1, "corrected", {"value_as_written": "1", "quote": "1"}, "Give the right value one way"),
+        (1, "corrected", {"value_as_written": "36 681 ou 36 699"}, "is not one number"),
+        (1, "corrected", {"cell_id": "nope"}, "not in the figure's table row"),
+        (1, "corrected", {"quote": "36 681"}, "not in the figure's paragraph"),
+    ],
+)
+def test_a_check_that_does_not_fit_its_figures_is_refused_with_why(
+    client, extracted, row, verdict, fields, message
+):
+    response = review(client, rows_of(queue(client))[row], verdict, **fields)
+    assert response.status_code == 409
+    assert message in response.json()["detail"]
+    assert queue(client)["counts"]["done"] == 0
+
+
+def test_one_check_covers_one_line_item_and_year(client, extracted):
+    revenue, previous = rows_of(queue(client))[1:]
+    response = client.post(
+        "/api/reviews",
+        json={"figure_ids": revenue["figure_ids"] + previous["figure_ids"], "verdict": "accepted"},
+    )
+    assert response.status_code == 409
+    assert "one line item, year and basis" in response.json()["detail"]
+
+
+def test_checking_an_unknown_figure_is_404(client, extracted):
+    response = client.post("/api/reviews", json={"figure_ids": ["nope"], "verdict": "accepted"})
+    assert response.status_code == 404
+    assert client.get("/api/figures/nope/candidates").status_code == 404
+
+
+def test_checks_are_refused_until_the_reviewer_is_set(store, files, embedder, extracted):
+    client = ContractClient(app(store, files, embedder, reviewer=None))
+    assert queue(client)["reviewer"] is None
+    response = review(client, rows_of(queue(client))[1])
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Set REVIEWER in .env to record checks"}
+
+
+def test_the_queue_filters_by_company_and_status(client, extracted):
+    assert queue(client, isin="MA0000000000") == {
+        "reviewer": "Z. Bajjou",
+        "counts": {"to_check": 0, "needs_review": 0, "done": 0},
+        "companies": [{"isin": "MA0000011488", "name": "Maroc Telecom"}],
+        "groups": [],
+    }
+    assert [r["status"] for r in rows_of(queue(client, status="needs_review"))] == ["needs_review"]
+    assert len(rows_of(queue(client, status="all"))) == 3
+    assert client.get("/api/checks", params={"status": "nope"}).status_code == 422

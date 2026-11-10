@@ -6,7 +6,9 @@ from collections.abc import Sequence
 from bloomberg_invest.adapters.store import GraphStore
 from bloomberg_invest.domain.dossier import agreeing
 from bloomberg_invest.domain.figures import Scope
+from bloomberg_invest.domain.kpis import KpiRules
 from bloomberg_invest.domain.label_map import LabelMap
+from bloomberg_invest.service_layer.checks import gated
 from bloomberg_invest.views import (
     Company,
     Figure,
@@ -27,16 +29,21 @@ def company(isin: str, store: GraphStore) -> Company | None:
     return Company(issuer=issuer, documents=store.list_documents(isin))
 
 
-def company_figures(isin: str, store: GraphStore, label_map: LabelMap) -> FigureGrid | None:
+def company_figures(
+    isin: str, store: GraphStore, label_map: LabelMap, rules: KpiRules
+) -> FigureGrid | None:
     if store.issuer(isin) is None:
         return None
-    return figure_grid(store.figures(isin), label_map)
+    return figure_grid([gated(f, rules) for f in store.figures(isin)], label_map)
 
 
-def figure_detail(fact_id: str, store: GraphStore, label_map: LabelMap) -> FigureDetail | None:
-    figure = store.fact(fact_id)
-    if figure is None:
+def figure_detail(
+    fact_id: str, store: GraphStore, label_map: LabelMap, rules: KpiRules
+) -> FigureDetail | None:
+    found = store.fact(fact_id)
+    if found is None:
         return None
+    figure = gated(found, rules)
     item = label_map.items.get(figure.line_item)
     return FigureDetail(
         **figure.model_dump(), line_item_title=item.title if item else figure.line_item

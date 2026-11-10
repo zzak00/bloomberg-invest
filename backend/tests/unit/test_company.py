@@ -1,54 +1,11 @@
 """The dossier's figure grid (#19 R19): rows by the label map, values that agree grouped."""
 
-from datetime import UTC, datetime
+from builders import BILLIONS, MILLIONS, figure
 
 from bloomberg_invest import config
 from bloomberg_invest.domain.figures import Scope
-from bloomberg_invest.domain.model import Organisation
 from bloomberg_invest.service_layer.company import figure_grid
-from bloomberg_invest.views import DocumentRef, Figure, Passage
-
-MILLIONS, BILLIONS = 1_000_000, 1_000_000_000
-DOCUMENT = DocumentRef(
-    id="d1",
-    issuer=Organisation(isin="MA0000011488", name="Maroc Telecom"),
-    doc_type="annual_report",
-    fiscal_year=2025,
-)
-
-
-def figure(
-    written: str,
-    value: str,
-    *,
-    line_item: str = "revenue",
-    year: int = 2025,
-    scale: int = MILLIONS,
-    currency: str = "MAD",
-    breakdown: str = "",
-    scope: Scope = Scope.consolidated,
-    page: int = 4,
-) -> Figure:
-    return Figure(
-        id=f"{line_item}-{written}-{page}",
-        line_item=line_item,
-        label="Chiffre d'affaires",
-        value=value,
-        value_as_written=written,
-        unit=currency,
-        scale=scale,
-        currency=currency,
-        fiscal_year=year,
-        period_start=None,
-        period_end=None,
-        as_of=None,
-        basis_scope=scope,
-        basis_standard="IFRS",
-        breakdown=breakdown,
-        recorded_at=datetime(2026, 11, 9, tzinfo=UTC),
-        document=DOCUMENT,
-        passage=Passage(kind="cell", page=page, boxes=[], text=written),
-    )
+from bloomberg_invest.views import Figure
 
 
 def consolidated(figures: list[Figure]):

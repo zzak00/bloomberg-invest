@@ -9,6 +9,8 @@ from bloomberg_invest.views import (
     DocumentSummary,
     Figure,
     Passage,
+    Proposed,
+    Review,
     Run,
     Section,
     TablePart,
@@ -80,35 +82,73 @@ def _document_ref(d: Any, o: Any) -> DocumentRef:
     )
 
 
-def _figure(n: Any, d: Any, o: Any, passage: Any) -> Figure:
-    def day(value: Any):
-        return value.to_native() if value is not None else None
+def _day(value: Any):
+    return value.to_native() if value is not None else None
 
+
+def _passage(passage: Any) -> Passage:
     cell = "Cell" in passage.labels
-    boxes = [passage["page"], *passage["bbox"]] if cell else passage["boxes"]
+    return Passage(
+        kind="cell" if cell else "span",
+        page=passage["page"],
+        boxes=_boxes([passage["page"], *passage["bbox"]] if cell else passage["boxes"]),
+        text=passage["text"],
+        quote=None if cell else passage["quote"],
+    )
+
+
+def _review(rv: Any) -> Review | None:
+    """The check in force, from a figure's latest Review: none when it was reopened."""
+    if rv is None or rv["verdict"] == "reopened":
+        return None
+    return Review(
+        id=rv["id"],
+        verdict=rv["verdict"],
+        reviewer=rv["reviewer"],
+        reviewed_at=rv["reviewed_at"].to_native(),
+        value_as_written=rv.get("value_as_written"),
+        value=rv.get("value"),
+    )
+
+
+def _proposed(n: Any, d: Any, o: Any, passage: Any, rv: Any) -> Proposed:
+    return Proposed(
+        id=n["id"],
+        line_item=n["line_item"],
+        label=n["label"],
+        value_as_written=n["value_as_written"],
+        unit_as_written=n["unit_as_written"],
+        fiscal_year=n["fiscal_year"],
+        basis_scope=n.get("basis_scope"),
+        breakdown=n["breakdown"],
+        page=n["page"],
+        reason=n["reason"],
+        document=_document_ref(d, o),
+        passage=_passage(passage) if passage is not None else None,
+        review=_review(rv),
+    )
+
+
+def _figure(n: Any, d: Any, o: Any, passage: Any, rv: Any) -> Figure:
     return Figure(
         id=n["id"],
         line_item=n["line_item"],
         label=n["label"],
         value=n["value"],
         value_as_written=n["value_as_written"],
+        unit_as_written=n["unit_as_written"],
         unit=n["unit"],
         scale=n["scale"],
         currency=n.get("currency"),
         fiscal_year=n["fiscal_year"],
-        period_start=day(n.get("period_start")),
-        period_end=day(n.get("period_end")),
-        as_of=day(n.get("as_of")),
+        period_start=_day(n.get("period_start")),
+        period_end=_day(n.get("period_end")),
+        as_of=_day(n.get("as_of")),
         basis_scope=n["basis_scope"],
         basis_standard=n["basis_standard"],
         breakdown=n["breakdown"],
         recorded_at=n["recorded_at"].to_native(),
         document=_document_ref(d, o),
-        passage=Passage(
-            kind="cell" if cell else "span",
-            page=passage["page"],
-            boxes=_boxes(boxes),
-            text=passage["text"],
-            quote=None if cell else passage["quote"],
-        ),
+        passage=_passage(passage),
+        review=_review(rv),
     )

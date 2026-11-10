@@ -20,6 +20,7 @@ from bloomberg_invest.adapters.store import GraphStore
 from bloomberg_invest.adapters.store.neo4j_store import Neo4jStore
 from bloomberg_invest.adapters.tokens import TiktokenCounter, TokenCounter
 from bloomberg_invest.domain.label_map import LabelMap
+from bloomberg_invest.service_layer.checks import Checks
 from bloomberg_invest.service_layer.extract import Extraction
 from bloomberg_invest.settings import Settings
 
@@ -114,6 +115,11 @@ def llm(settings: Settings) -> LLM:
 def label_map() -> LabelMap:
     """The label map in force: extraction asks for its line items, the dossier groups by them."""
     return config.label_map()
+
+
+def checks(settings: Settings) -> Checks:
+    """The KPI rules in force, checked against the label map, and who checks figures."""
+    return Checks(config.kpi_rules(against=label_map()), settings.reviewer)
 
 
 def extraction(settings: Settings) -> Extraction:
