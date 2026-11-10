@@ -1,6 +1,7 @@
 """CHECKS (#19 R4, R9, R10; #23): the figures a person must check before they count, and the
 checks themselves. Only consolidated figures that feed a KPI or screen need one."""
 
+import math
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -95,7 +96,8 @@ def queue_rows(
 ) -> list[CheckRow]:
     """A row per value each filing states for a figure that needs a check, and one per rejected
     figure that would. Problems come first: rejected figures, then values the filing states
-    differently elsewhere (≠), then the rest by statement, line item and year, newest first."""
+    differently elsewhere (≠), then the rest by statement, line item and year, newest first.
+    Rows still tied come in the filing's reading order: page, then place on the page."""
     statements = list(label_map.statements)
     position = {name: i for i, name in enumerate(label_map.items)}
 
@@ -123,9 +125,19 @@ def queue_rows(
             -row.fiscal_year,
             row.breakdown,
             row.page,
+            *_place(row),
+            row.figure_ids[0],
         )
 
     return sorted(rows, key=order)
+
+
+def _place(row: CheckRow) -> tuple[float, float]:
+    """Where a row's source sits on its page, top then left; one with no box comes last."""
+    if row.passage is None or not row.passage.boxes:
+        return (math.inf, math.inf)
+    box = row.passage.boxes[0]
+    return (box.top, box.left)
 
 
 def _fact_row(

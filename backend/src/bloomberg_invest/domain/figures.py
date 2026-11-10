@@ -14,6 +14,8 @@ from bloomberg_invest.domain.label_map import Kind
 
 SPACES = re.compile(r"[\s  ]+")
 MINUS = ("-", "−", "–")
+# Thousands grouped by spaces: 1 to 3 digits, then groups of exactly 3, then any decimals.
+GROUPED = re.compile(r"\d{1,3}( \d{3})+([.,]\d+)?")
 # The kind of Fact a financial figure is (#19 R5); other kinds of Fact come with later slices.
 FINANCIAL_FIGURE = "financial_figure"
 
@@ -76,13 +78,17 @@ def stands_alone(text: str, start: int, end: int) -> bool:
 def parse_value(text: str) -> Decimal | None:
     """The number a value is written as, or None when it is not one number.
 
-    French notation: spaces group thousands and a comma marks decimals (`1 284,6`). A dot is
+    French notation: spaces group thousands and a comma marks decimals (`1 284,6`). A space
+    between digits only groups thousands, so `12 3456` and `18 70 2` are not numbers. A dot is
     read as a thousands separator when three digits follow it (`36.681`), otherwise as decimals.
     A sign, parentheses and a trailing `%` are allowed.
     """
-    text = SPACES.sub("", text.strip())
+    text = SPACES.sub(" ", text).strip()
     negative = _negative(text)
-    text = text.strip("()").lstrip("".join(MINUS) + "+").removesuffix("%")
+    text = text.strip("()").strip().lstrip("".join(MINUS) + "+").strip().removesuffix("%").strip()
+    if " " in text and not GROUPED.fullmatch(text):
+        return None
+    text = text.replace(" ", "")
     if "," in text and "." in text:
         decimal = "," if text.rindex(",") > text.rindex(".") else "."
         text = text.replace("." if decimal == "," else ",", "").replace(",", ".")
