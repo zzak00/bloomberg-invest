@@ -5,7 +5,7 @@ The cap is set low (200 tokens) so the fixture's long section must split.
 
 import pytest
 from conftest import FIXTURES
-from fakes import FakeEmbedder
+from fakes import FakeEmbedder, fake_extraction
 
 pytestmark = pytest.mark.ingest
 pytest.importorskip("docling", reason="needs the ingest extra")
@@ -47,6 +47,7 @@ def ingested(store, meta, tmp_path, counter):
         counter,
         CAPS,
         FakeEmbedder(),
+        fake_extraction(),
     )
     return result, files
 

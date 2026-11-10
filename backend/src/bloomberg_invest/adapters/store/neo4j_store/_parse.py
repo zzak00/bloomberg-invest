@@ -1,4 +1,4 @@
-"""Writing a parse: the Organisation, Document and Run, then Pages and Sections (#20)."""
+"""Writing a parse: the Organisation, Document and Run, then Pages, Sections, Tables and Cells."""
 
 import uuid
 from typing import Any
@@ -10,6 +10,7 @@ from bloomberg_invest.adapters.store.neo4j_store._embed import _supersede_embed_
 from bloomberg_invest.domain.model import (
     DocumentMeta,
     ParsedDocument,
+    ParsedTable,
     RunInfo,
     SectionNode,
     section_not_on_parsed_page,
@@ -105,7 +106,45 @@ def _record_parse(
         # A MATCH with no Page creates nothing: fail the transaction rather than lose the section.
         if created is None:
             raise ValueError(section_not_on_parsed_page(row["title"], row["page"]))
+    _record_tables(tx, document_id, run_id, parsed.tables)
     return document_id
+
+
+def _record_tables(
+    tx: ManagedTransaction, document_id: str, run_id: str, tables: list[ParsedTable]
+) -> None:
+    """Tables and their Cells, each Cell a Passage a figure can cite (#19 R1, R6)."""
+    tx.run(
+        """
+        MATCH (d:Document {id: $document_id}), (r:Run {id: $run_id})
+        UNWIND $tables AS t
+        MATCH (d)-[:HAS_PAGE]->(p:Page {number: t.page})-[:PRODUCED_BY]->(r)
+        CREATE (table:Table {id: t.id, index: t.index, page: t.page, bbox: t.bbox})
+        CREATE (d)-[:HAS_TABLE]->(table), (table)-[:PRODUCED_BY]->(r), (table)-[:ON_PAGE]->(p)
+        WITH d, r, table, t
+        UNWIND t.cells AS c
+        MATCH (d)-[:HAS_PAGE]->(p:Page {number: c.page})-[:PRODUCED_BY]->(r)
+        CREATE (n:Cell:Passage {id: c.id, row: c.row, col: c.col, row_span: c.row_span,
+                                col_span: c.col_span, text: c.text, page: c.page, bbox: c.bbox,
+                                column_header: c.column_header, row_header: c.row_header})
+        CREATE (table)-[:HAS_CELL]->(n), (n)-[:PRODUCED_BY]->(r), (n)-[:ON_PAGE]->(p)
+        """,
+        document_id=document_id,
+        run_id=run_id,
+        tables=[
+            {
+                "id": str(uuid.uuid4()),
+                "index": i,
+                "page": t.page,
+                "bbox": list(t.bbox) if t.bbox else None,
+                "cells": [
+                    c.model_dump() | {"id": str(uuid.uuid4()), "bbox": list(c.bbox)}
+                    for c in t.cells
+                ],
+            }
+            for i, t in enumerate(tables)
+        ],
+    )
 
 
 def _flatten(nodes: list[SectionNode]) -> list[dict[str, Any]]:

@@ -3,9 +3,10 @@
 from typing import Protocol
 
 from bloomberg_invest.domain.chunking import ChunkDraft
+from bloomberg_invest.domain.extraction import FigureDraft, SourceCell
 from bloomberg_invest.domain.indexing import EmbedInput
-from bloomberg_invest.domain.model import DocumentMeta, ParsedDocument, RunInfo
-from bloomberg_invest.views import Chunk, DocumentDetail, DocumentSummary
+from bloomberg_invest.domain.model import DocumentMeta, Organisation, ParsedDocument, RunInfo
+from bloomberg_invest.views import Chunk, DocumentDetail, DocumentSummary, Figure
 
 
 class GraphStore(Protocol):
@@ -49,12 +50,33 @@ class GraphStore(Protocol):
     def current_chunk_run(self, document_id: str) -> str | None:
         """The chunk Run that produced the Document's current Chunks, if any."""
 
+    def cells(self, document_id: str) -> list[SourceCell]:
+        """The Document's current table Cells, by table, row and column."""
+
+    def record_extraction(self, document_id: str, figures: list[FigureDraft], run: RunInfo) -> str:
+        """Store an extract Run's figures for the Document; return the Run id.
+
+        A figure that passed its check becomes a Fact citing its Passage, one that failed a
+        RejectedFigure. A succeeded Run supersedes earlier extract Runs' outputs; a failed one is
+        recorded with no outputs and supersedes nothing.
+        """
+
+    def figures(self, isin: str) -> list[Figure]:
+        """The issuer's current financial figure Facts, newest fiscal year first."""
+
+    def fact(self, fact_id: str) -> Figure | None:
+        """One financial figure Fact, current or not, so a link to it keeps working."""
+
     def search_vector(self, vector: list[float], limit: int) -> list[str]:
         """Current Chunk ids whose vectors are nearest the query's, best first."""
 
     def chunks(self, chunk_ids: list[str]) -> list[Chunk]:
         """The Chunks, in the order given, with their Document, section path, pages and boxes."""
 
-    def list_documents(self) -> list[DocumentSummary]: ...
+    def list_documents(self, isin: str | None = None) -> list[DocumentSummary]:
+        """Every ingested filing, or one issuer's."""
+
+    def issuer(self, isin: str) -> Organisation | None:
+        """The Organisation with this ISIN, if a filing of it is shown: parsed successfully."""
 
     def get_document(self, document_id: str) -> DocumentDetail | None: ...

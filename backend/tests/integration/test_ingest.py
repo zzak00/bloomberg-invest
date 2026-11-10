@@ -1,13 +1,11 @@
 """The ingest command end to end: PDF in, Document in Neo4j, PDF stored for the viewer."""
 
 import hashlib
-import os
 import re
-from pathlib import Path
 
 import pytest
-from conftest import FIXTURES
-from fakes import FakeEmbedder
+from conftest import FIXTURES, GOLDEN_PDF, GOLDEN_SHA
+from fakes import FakeEmbedder, fake_extraction
 
 pytestmark = pytest.mark.ingest
 pytest.importorskip("docling", reason="needs the ingest extra")
@@ -22,14 +20,8 @@ from bloomberg_invest.domain.chunking import Caps
 from bloomberg_invest.service_layer.ingest import ingest
 from bloomberg_invest.service_layer.search import search
 
-GOLDEN_PDF = Path(
-    os.environ.get(
-        "GOLDEN_PDF", Path(__file__).parents[3] / "data" / "inbox" / "Maroc_Telecom_RFA_2025.pdf"
-    )
-)
 # The app's default caps (settings.py).
 CAPS = Caps(text=2000, table=1500)
-GOLDEN_SHA = "90e8b73c7f11bfde45d0c7ddb3ce506d162bac2030244d48d9ca2f641ddd4214"
 
 
 def test_ingest_stores_the_pdf_and_records_the_parse(store, meta, tmp_path):
@@ -43,6 +35,7 @@ def test_ingest_stores_the_pdf_and_records_the_parse(store, meta, tmp_path):
         TiktokenCounter(),
         CAPS,
         FakeEmbedder(),
+        fake_extraction(),
     )
     document_id = ingested.document_id
 
@@ -69,7 +62,9 @@ def test_the_golden_report_parses_into_its_outline_and_chunks_and_is_searchable(
     files = DocumentFiles(tmp_path)
     counter = TiktokenCounter()
     embedder = bootstrap.EMBEDDERS["qwen3-0.6b"]()
-    ingested = ingest(GOLDEN_PDF, meta, store, files, DoclingParser(), counter, CAPS, embedder)
+    ingested = ingest(
+        GOLDEN_PDF, meta, store, files, DoclingParser(), counter, CAPS, embedder, fake_extraction()
+    )
     document_id = ingested.document_id
 
     detail = store.get_document(document_id)

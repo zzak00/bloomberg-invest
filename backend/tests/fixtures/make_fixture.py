@@ -55,7 +55,8 @@ OVERVIEW = [
     ),
     (
         "Le Groupe maintient une politique de distribution de dividendes régulière, adaptée à "
-        "ses besoins d'investissement et à son niveau d'endettement."
+        "ses besoins d'investissement et à son niveau d'endettement. Au titre de l'exercice "
+        "2025, le Conseil propose un dividende de 4,01 dirhams par action."
     ),
 ]
 

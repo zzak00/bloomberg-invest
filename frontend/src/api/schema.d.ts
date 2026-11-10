@@ -112,6 +112,67 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/companies/{isin}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Company Dossier
+         * @description The issuer's filings.
+         */
+        get: operations["company_dossier_api_companies__isin__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/companies/{isin}/figures": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Figures
+         * @description The issuer's current financial figures on each basis, by statement, line item and
+         *     year, each value with the figures stating it and the Passage each was checked against.
+         */
+        get: operations["figures_api_companies__isin__figures_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/facts/{fact_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Fact
+         * @description One financial figure, current or not, so a link to it keeps working after a re-run.
+         */
+        get: operations["fact_api_facts__fact_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -154,6 +215,15 @@ export interface components {
             section_path: string[];
             table?: components["schemas"]["TablePart"] | null;
             document: components["schemas"]["DocumentRef"];
+        };
+        /**
+         * Company
+         * @description An issuer's dossier: its filings.
+         */
+        Company: {
+            issuer: components["schemas"]["Organisation"];
+            /** Documents */
+            documents: components["schemas"]["DocumentSummary"][];
         };
         /**
          * DocType
@@ -216,6 +286,138 @@ export interface components {
              */
             ingested_at: string;
         };
+        /**
+         * Figure
+         * @description A financial figure Fact (#19 R5, R6): checked against its Passage before it was stored.
+         */
+        Figure: {
+            /** Id */
+            id: string;
+            /** Line Item */
+            line_item: string;
+            /** Label */
+            label: string;
+            /** Value */
+            value: string;
+            /** Value As Written */
+            value_as_written: string;
+            /** Unit */
+            unit: string;
+            /** Scale */
+            scale: number;
+            /** Currency */
+            currency: string | null;
+            /** Fiscal Year */
+            fiscal_year: number;
+            /** Period Start */
+            period_start: string | null;
+            /** Period End */
+            period_end: string | null;
+            /** As Of */
+            as_of: string | null;
+            basis_scope: components["schemas"]["Scope"];
+            /** Basis Standard */
+            basis_standard: string;
+            /** Breakdown */
+            breakdown: string;
+            /**
+             * Recorded At
+             * Format: date-time
+             */
+            recorded_at: string;
+            document: components["schemas"]["DocumentRef"];
+            passage: components["schemas"]["Passage"];
+        };
+        /**
+         * FigureDetail
+         * @description A figure with its line item's title in the current label map, as the viewer names it.
+         */
+        FigureDetail: {
+            /** Id */
+            id: string;
+            /** Line Item */
+            line_item: string;
+            /** Label */
+            label: string;
+            /** Value */
+            value: string;
+            /** Value As Written */
+            value_as_written: string;
+            /** Unit */
+            unit: string;
+            /** Scale */
+            scale: number;
+            /** Currency */
+            currency: string | null;
+            /** Fiscal Year */
+            fiscal_year: number;
+            /** Period Start */
+            period_start: string | null;
+            /** Period End */
+            period_end: string | null;
+            /** As Of */
+            as_of: string | null;
+            basis_scope: components["schemas"]["Scope"];
+            /** Basis Standard */
+            basis_standard: string;
+            /** Breakdown */
+            breakdown: string;
+            /**
+             * Recorded At
+             * Format: date-time
+             */
+            recorded_at: string;
+            document: components["schemas"]["DocumentRef"];
+            passage: components["schemas"]["Passage"];
+            /** Line Item Title */
+            line_item_title: string;
+        };
+        /**
+         * FigureGrid
+         * @description An issuer's current figures as the dossier lists them, on each basis.
+         */
+        FigureGrid: {
+            /** Count */
+            count: number;
+            /** Scopes */
+            scopes: components["schemas"]["ScopeFigures"][];
+        };
+        /**
+         * FigureRow
+         * @description A line item, or one breakdown of it, in one currency, by fiscal year.
+         */
+        FigureRow: {
+            /** Line Item */
+            line_item: string;
+            /** Title */
+            title: string;
+            /** Breakdown */
+            breakdown: string;
+            /** Currency */
+            currency: string;
+            /** Unit */
+            unit: string;
+            /** Scale */
+            scale: number;
+            /** Years */
+            years: components["schemas"]["FigureYear"][];
+        };
+        /**
+         * FigureValue
+         * @description One value a line item takes in a year, and every figure stating it, rounded or not.
+         */
+        FigureValue: {
+            shown: components["schemas"]["Figure"];
+            /** Sources */
+            sources: components["schemas"]["Figure"][];
+        };
+        /** FigureYear */
+        FigureYear: {
+            /** Fiscal Year */
+            fiscal_year: number;
+            /** Values */
+            values: components["schemas"]["FigureValue"][];
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -245,6 +447,25 @@ export interface components {
             width: number;
             /** Height */
             height: number;
+        };
+        /**
+         * Passage
+         * @description The exact span a Fact cites: a table cell, or a quoted range of a paragraph.
+         */
+        Passage: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "cell" | "span";
+            /** Page */
+            page: number;
+            /** Boxes */
+            boxes: components["schemas"]["Box"][];
+            /** Text */
+            text: string;
+            /** Quote */
+            quote?: string | null;
         };
         /** Run */
         Run: {
@@ -286,7 +507,20 @@ export interface components {
          * @description The processing steps a Run records (AGENTS.md); later steps add theirs.
          * @enum {string}
          */
-        RunStep: "parse" | "chunk" | "embed";
+        RunStep: "parse" | "chunk" | "embed" | "extract";
+        /**
+         * Scope
+         * @enum {string}
+         */
+        Scope: "consolidated" | "company-only";
+        /** ScopeFigures */
+        ScopeFigures: {
+            scope: components["schemas"]["Scope"];
+            /** Years */
+            years: number[];
+            /** Statements */
+            statements: components["schemas"]["StatementFigures"][];
+        };
         /** Section */
         Section: {
             /** Id */
@@ -309,6 +543,15 @@ export interface components {
              * @default []
              */
             children: components["schemas"]["Section"][];
+        };
+        /** StatementFigures */
+        StatementFigures: {
+            /** Key */
+            key: string;
+            /** Title */
+            title: string;
+            /** Rows */
+            rows: components["schemas"]["FigureRow"][];
         };
         /**
          * TablePart
@@ -520,6 +763,126 @@ export interface operations {
                 };
             };
             /** @description No such chunk */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotFound"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    company_dossier_api_companies__isin__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                isin: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Company"];
+                };
+            };
+            /** @description No filing from an issuer with this ISIN */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotFound"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    figures_api_companies__isin__figures_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                isin: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FigureGrid"];
+                };
+            };
+            /** @description No filing from an issuer with this ISIN */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotFound"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    fact_api_facts__fact_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                fact_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FigureDetail"];
+                };
+            };
+            /** @description No such financial figure */
             404: {
                 headers: {
                     [name: string]: unknown;

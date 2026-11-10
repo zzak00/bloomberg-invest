@@ -1,4 +1,4 @@
-"""Ingest a filing: store the PDF, parse it, record the parse Run, then chunk and embed it."""
+"""Ingest a filing: store the PDF, parse it, record the parse Run, then chunk, embed and extract it."""
 
 import hashlib
 import shutil
@@ -15,6 +15,7 @@ from bloomberg_invest.domain.chunking import Caps
 from bloomberg_invest.domain.model import DocumentMeta, RunInfo, RunStatus, RunStep
 from bloomberg_invest.service_layer.chunk import Chunked, chunk_document
 from bloomberg_invest.service_layer.embed import Embedded, embed_document
+from bloomberg_invest.service_layer.extract import Extracted, Extraction, extract_document
 
 
 @dataclass(frozen=True)
@@ -22,6 +23,7 @@ class Ingested:
     document_id: str
     chunked: Chunked
     embedded: Embedded
+    extracted: Extracted
 
 
 class IngestFailed(Exception):
@@ -41,11 +43,15 @@ def ingest(
     count: TokenCounter,
     caps: Caps,
     embedder: Embedder,
+    extraction: Extraction,
 ) -> Ingested:
-    """Parse the filing, then chunk and embed it (#21): each step records its own Run."""
+    """Parse the filing, then chunk, embed (#21) and extract it (#22): each step records its
+    own Run."""
     document_id = _parse(pdf, meta, store, files, parser)
     chunked = chunk_document(document_id, store, files, parser, count, caps)
-    return Ingested(document_id, chunked, embed_document(document_id, store, embedder))
+    embedded = embed_document(document_id, store, embedder)
+    extracted = extract_document(document_id, store, files, parser, extraction)
+    return Ingested(document_id, chunked, embedded, extracted)
 
 
 def _parse(

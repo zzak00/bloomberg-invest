@@ -10,8 +10,10 @@ from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator
 from starlette.routing import Match
 
+from bloomberg_invest import config
 from bloomberg_invest.adapters.files import DocumentFiles
 from bloomberg_invest.domain.chunking import Block, ChunkDraft
+from bloomberg_invest.domain.extraction import drafts, page_sources
 from bloomberg_invest.domain.model import RunStep
 from bloomberg_invest.entrypoints.api.app import create_app
 from bloomberg_invest.service_layer.embed import embed_document
@@ -62,7 +64,9 @@ def embedder() -> FakeEmbedder:
 
 @pytest.fixture
 def client(store, files, embedder) -> TestClient:
-    return ContractClient(create_app(store=store, files=files, embedder=embedder))
+    return ContractClient(
+        create_app(store=store, files=files, embedder=embedder, label_map=config.label_map())
+    )
 
 
 @pytest.fixture
@@ -125,15 +129,29 @@ def test_openapi_declares_the_contract(client):
         "/api/documents/{document_id}/pages/{number}.png",
         "/api/search",
         "/api/chunks/{chunk_id}",
+        "/api/companies/{isin}",
+        "/api/companies/{isin}/figures",
+        "/api/facts/{fact_id}",
     }
     schemas = spec["components"]["schemas"]
-    assert {"DocumentSummary", "DocumentDetail", "Section", "Run", "PageInfo", "Chunk"} <= set(
-        schemas
-    )
+    assert {
+        "DocumentSummary",
+        "DocumentDetail",
+        "Section",
+        "Run",
+        "PageInfo",
+        "Chunk",
+        "Company",
+        "Figure",
+        "FigureDetail",
+        "FigureGrid",
+        "Passage",
+        "Scope",
+    } <= set(schemas)
 
 
 def test_the_app_takes_all_its_dependencies_or_none(files):
-    with pytest.raises(TypeError, match="store, files and embedder, or none"):
+    with pytest.raises(TypeError, match="store, files, embedder and label_map, or none"):
         create_app(files=files)
 
 
@@ -212,3 +230,89 @@ def test_an_unknown_chunk_is_404(client):
     response = client.get("/api/chunks/nope")
     assert response.status_code == 404
     assert response.json() == {"detail": "Chunk not found"}
+
+
+@pytest.fixture
+def extracted(store, document_id) -> dict[str, str]:
+    """Figures extracted from the stored income statement: two that match their cells and one
+    that doesn't. Returns the Fact ids by value, and the RejectedFigure's id."""
+    label_map = config.label_map()
+    sources = page_sources(2, [], store.cells(document_id))
+    answer = {
+        "figures": [
+            {
+                "line_item": item,
+                "fiscal_year": year,
+                "basis_scope": "consolidated",
+                "breakdown": "",
+                "source_id": source,
+                "value_as_written": value,
+                "unit_scale": "MAD millions",
+            }
+            for item, year, source, value in [
+                ("revenue", 2025, "t2.0.r1.c2", "36 681"),
+                ("revenue", 2024, "t2.0.r1.c1", "36 699"),
+                ("net_income", 2025, "t2.0.r2.c2", "7 121"),
+            ]
+        ]
+    }
+    run = make_run().model_copy(update={"step": RunStep.extract, "output": None})
+    store.record_extraction(document_id, drafts(answer, sources, label_map), run)
+    return {f.value_as_written: f.id for f in store.figures("MA0000011488")}
+
+
+def test_a_company_lists_its_filings(client, document_id):
+    company = client.get("/api/companies/MA0000011488").json()
+    assert company["issuer"] == {"isin": "MA0000011488", "name": "Maroc Telecom"}
+    assert [d["id"] for d in company["documents"]] == [document_id]
+
+
+def test_an_unknown_company_is_404(client):
+    assert client.get("/api/companies/MA0000000000").status_code == 404
+    assert client.get("/api/companies/MA0000000000/figures").status_code == 404
+
+
+def test_a_company_s_figures_are_its_checked_facts_only_by_statement_and_year(client, extracted):
+    grid = client.get("/api/companies/MA0000011488/figures").json()
+    assert grid["count"] == 2
+    [consolidated, company_only] = grid["scopes"]
+    assert (consolidated["scope"], consolidated["years"]) == ("consolidated", [2025, 2024])
+    assert company_only == {"scope": "company-only", "years": [], "statements": []}
+    [income] = consolidated["statements"]
+    assert (income["key"], income["title"]) == ("income_statement", "Income statement")
+    [row] = income["rows"]
+    assert (row["title"], row["unit"], row["scale"]) == ("Revenue", "MAD", 1_000_000)
+    assert [
+        (y["fiscal_year"], [v["shown"]["value"] for v in y["values"]]) for y in row["years"]
+    ] == [
+        (2025, ["36681000000"]),
+        (2024, ["36699000000"]),
+    ]
+    revenue = row["years"][0]["values"][0]["shown"]
+    assert (revenue["period_start"], revenue["period_end"]) == ("2025-01-01", "2025-12-31")
+    assert (revenue["basis_scope"], revenue["basis_standard"], revenue["currency"]) == (
+        "consolidated",
+        "IFRS",
+        "MAD",
+    )
+    assert revenue["passage"] == {
+        "kind": "cell",
+        "page": 2,
+        "boxes": [{"page": 2, "left": 380.0, "top": 140.0, "right": 540.0, "bottom": 156.0}],
+        "text": "36 681",
+        "quote": None,
+    }
+
+
+def test_a_fact_opens_by_its_id_for_the_source_viewer(client, extracted, document_id):
+    fact = client.get(f"/api/facts/{extracted['36 681']}").json()
+    assert (fact["value_as_written"], fact["label"]) == ("36 681", "Chiffre d'affaires")
+    assert fact["line_item_title"] == "Revenue"
+    assert fact["document"]["id"] == document_id
+
+
+def test_an_unknown_or_rejected_figure_is_404(client, extracted, driver):
+    assert client.get("/api/facts/nope").status_code == 404
+    records, _, _ = driver.execute_query("MATCH (n:RejectedFigure) RETURN n.id AS id")
+    [rejected] = [r["id"] for r in records]
+    assert client.get(f"/api/facts/{rejected}").status_code == 404

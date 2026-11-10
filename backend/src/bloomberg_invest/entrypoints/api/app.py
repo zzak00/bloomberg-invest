@@ -12,9 +12,18 @@ from bloomberg_invest import bootstrap
 from bloomberg_invest.adapters.embedding import Embedder
 from bloomberg_invest.adapters.files import DocumentFiles
 from bloomberg_invest.adapters.store import GraphStore
+from bloomberg_invest.domain.label_map import LabelMap
+from bloomberg_invest.service_layer.company import company, company_figures, figure_detail
 from bloomberg_invest.service_layer.search import search
 from bloomberg_invest.settings import Settings
-from bloomberg_invest.views import Chunk, DocumentDetail, DocumentSummary
+from bloomberg_invest.views import (
+    Chunk,
+    Company,
+    DocumentDetail,
+    DocumentSummary,
+    FigureDetail,
+    FigureGrid,
+)
 
 
 class NotFound(BaseModel):
@@ -23,17 +32,20 @@ class NotFound(BaseModel):
 
 NOT_FOUND = {404: {"model": NotFound, "description": "No such document, or no such page in it"}}
 NO_CHUNK = {404: {"model": NotFound, "description": "No such chunk"}}
+NO_COMPANY = {404: {"model": NotFound, "description": "No filing from an issuer with this ISIN"}}
+NO_FACT = {404: {"model": NotFound, "description": "No such financial figure"}}
 
 
 def create_app(
     store: GraphStore | None = None,
     files: DocumentFiles | None = None,
     embedder: Embedder | None = None,
+    label_map: LabelMap | None = None,
 ) -> FastAPI:
     """Build the app; without arguments it connects and loads the embedder using the environment."""
-    given = [d is not None for d in (store, files, embedder)]
+    given = [d is not None for d in (store, files, embedder, label_map)]
     if any(given) and not all(given):
-        raise TypeError("create_app takes store, files and embedder, or none")
+        raise TypeError("create_app takes store, files, embedder and label_map, or none")
     injected = all(given)
 
     @asynccontextmanager
@@ -44,6 +56,7 @@ def create_app(
         settings = Settings.from_env()
         # Loaded once at startup: queries are embedded with the model the Chunks were.
         app.state.embedder = bootstrap.embedder(settings)
+        app.state.label_map = bootstrap.label_map()
         with bootstrap.connect(settings) as deps:
             app.state.store, app.state.files = deps.store, deps.files
             yield
@@ -57,7 +70,8 @@ def create_app(
         lifespan=lifespan,
     )
     if injected:
-        app.state.store, app.state.files, app.state.embedder = store, files, embedder
+        app.state.store, app.state.files = store, files
+        app.state.embedder, app.state.label_map = embedder, label_map
 
     def get_store() -> GraphStore:
         return app.state.store
@@ -112,6 +126,31 @@ def create_app(
         if not found:
             raise HTTPException(404, "Chunk not found")
         return found[0]
+
+    @app.get("/api/companies/{isin}", responses=NO_COMPANY)
+    def company_dossier(isin: str) -> Company:
+        """The issuer's filings."""
+        found = company(isin, get_store())
+        if found is None:
+            raise HTTPException(404, "Company not found")
+        return found
+
+    @app.get("/api/companies/{isin}/figures", responses=NO_COMPANY)
+    def figures(isin: str) -> FigureGrid:
+        """The issuer's current financial figures on each basis, by statement, line item and
+        year, each value with the figures stating it and the Passage each was checked against."""
+        found = company_figures(isin, get_store(), app.state.label_map)
+        if found is None:
+            raise HTTPException(404, "Company not found")
+        return found
+
+    @app.get("/api/facts/{fact_id}", responses=NO_FACT)
+    def fact(fact_id: str) -> FigureDetail:
+        """One financial figure, current or not, so a link to it keeps working after a re-run."""
+        found = figure_detail(fact_id, get_store(), app.state.label_map)
+        if found is None:
+            raise HTTPException(404, "Fact not found")
+        return found
 
     return app
 

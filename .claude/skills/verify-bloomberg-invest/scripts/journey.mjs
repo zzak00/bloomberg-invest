@@ -43,14 +43,14 @@ try {
 
     // INDEX lists the filings.
     await page.goto(`${base}/index`);
-    const rows = page.getByRole("list", { name: "Filings" }).getByRole("link");
+    const rows = page.getByRole("list", { name: "Filings" }).getByRole("listitem");
     await rows.first().waitFor();
     check(vp.name, "index lists at least one filing", (await rows.count()) >= 1, `${await rows.count()} row(s)`);
     check(vp.name, "INDEX tab is current", (await page.getByRole("link", { name: "Index" }).getAttribute("aria-current")) === "page");
     await shot("01-index");
 
-    // Opening a filing shows page 1 in the source viewer.
-    await rows.first().click();
+    // Opening a filing shows page 1 in the source viewer (the company name opens its dossier).
+    await rows.first().getByRole("link", { name: /financial report|Issuer page/ }).click();
     await page.waitForURL(/\/documents\//);
     const image = page.getByRole("img", { name: /^Page 1 of/ });
     await image.waitFor();
@@ -157,6 +157,45 @@ try {
     check(vp.name, "a split table's result names its part", await part.isVisible(), await part.innerText());
     await shot("07-search-table-part");
 
+    // The company's dossier lists its figures by statement and year (#22 AC4).
+    await page.goto(`${base}/index`);
+    await rows.first().getByRole("link", { name: "Maroc Telecom", exact: true }).click();
+    await page.waitForURL(/\/companies\/MA0000011488/);
+    const income = page.getByRole("region", { name: "Income statement" });
+    await income.waitFor();
+    const tab = await page.getByRole("tab", { selected: true }).innerText();
+    check(vp.name, "AC4: the dossier opens on its figures", /^FIGURES · \d+$/.test(tab), tab);
+    const revenue = income.getByRole("link", { name: /^Revenue, FY2025: 36 681 MAD m, on page \d+$/ });
+    check(vp.name, "AC4: revenue FY2025 is listed as written", await revenue.isVisible());
+    const years = await page.getByRole("columnheader", { name: /^FY\d{4}$/ }).allInnerTexts();
+    check(vp.name, "years run newest first", years.length === 0 || years[0] === "FY2025", years.join(" "));
+    await shot("08-dossier");
+    await page.getByRole("button", { name: "COMPANY-ONLY · CGNC" }).click();
+    await page.getByRole("button", { name: "COMPANY-ONLY · CGNC", pressed: true }).waitFor();
+    check(vp.name, "the basis switch shows company-only figures", (await page.getByRole("table").count()) >= 1);
+    await shot("09-dossier-company-only");
+    await page.getByRole("button", { name: "CONSOLIDATED · IFRS" }).click();
+
+    // A figure opens the source viewer on its page with its cell highlighted (#22 AC4).
+    const cellPage = Number((await revenue.getAttribute("aria-label")).match(/page (\d+)$/)[1]);
+    await revenue.click();
+    await page.waitForURL(/fact=/);
+    const factImage = page.getByRole("img", { name: new RegExp(`^Page ${cellPage} of`) });
+    await factImage.waitFor();
+    await factImage.evaluate((img) => img.complete || new Promise((done) => (img.onload = done)));
+    const cell = page.locator(".paper-sheet .mark").first();
+    await cell.waitFor();
+    const cellBox = await cell.boundingBox();
+    check(
+      vp.name,
+      "AC4: the cell is highlighted, not its whole table",
+      cellBox && cellBox.width > 4 && cellBox.width < vp.width / 3 && cellBox.height < 40,
+      cellBox && `${Math.round(cellBox.width)}x${Math.round(cellBox.height)}`,
+    );
+    const bar = await page.getByRole("status").innerText();
+    check(vp.name, "the highlight bar names the figure", /CELL/.test(bar) && /Revenue · FY2025/.test(bar) && /36 681 MAD m/.test(bar), bar.replace(/\s+/g, " "));
+    await shot("10-figure-cell");
+
     // MAP, CHECKS and KPIs show their empty states.
     for (const [path, title] of [
       ["map", "The map arrives with entities and facts"],
@@ -167,7 +206,7 @@ try {
       const heading = page.getByRole("heading", { name: title });
       await heading.waitFor();
       check(vp.name, `${path.toUpperCase()} empty state`, await heading.isVisible());
-      await shot(`07-empty-${path}`);
+      await shot(`11-empty-${path}`);
     }
 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

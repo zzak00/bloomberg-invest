@@ -25,7 +25,7 @@ The user-facing surface is the web app at http://localhost:8080 (nginx serving t
      --fiscal-year 2025 --source-url https://www.ammc.ma/sites/default/files/Maroc_Telecom_RFA_2025.pdf
    ```
 
-   Ready when it prints `Parsed 90 pages, ... sections (run ...), document ...`. Expect about 10 minutes in the container (about 4 on the Mac host). The first run downloads Docling's models and the embedding model into the `models` volume. Re-ingesting the same PDF supersedes the previous parse; it does not duplicate the filing.
+   Ingest also extracts figures with Azure OpenAI: set `AZURE_OPENAI_ENDPOINT` and `AZURE_OPENAI_API_KEY` in `.env` first. Ready when it prints `Parsed 90 pages, ... sections (run ...); ...; extracted ... figures ...; document ...`. Expect about 10 minutes in the container (about 4 on the Mac host). The first run downloads Docling's models and the embedding model into the `models` volume. Re-ingesting the same PDF supersedes the previous parse; it does not duplicate the filing.
 
 The Playwright browser comes from `frontend/node_modules`: run `npm ci` in `frontend/` and `npx playwright install chromium` there once.
 
@@ -43,7 +43,7 @@ Read-only. Checks that docker is reachable, `.env` exists, neo4j, api and web ar
 node .claude/skills/verify-bloomberg-invest/scripts/journey.mjs [--base http://localhost:8080]
 ```
 
-For each viewport (1440×900, 1024×768, 390×844) it opens INDEX, opens the first filing, pages to 2, jumps to NOTE 13 from the outline (page 54 in the golden report), searches "dividende proposé" (with "/", or the search icon at 390) and opens the first result, which must be page 10 with the dividend chunk highlighted (#21 AC3), then visits MAP, CHECKS and KPIs. It checks what a user sees: rows, rendered page images, the page field, the highlighted section, the empty-state headings, no horizontal scroll and no console errors. It selects by role and accessible name (`list "Filings"`, `navigation "Sections"`, `button "NEXT →"`, `img "Page N of ..."`), not by coordinates.
+For each viewport (1440×900, 1024×768, 390×844) it opens INDEX, opens the first filing, pages to 2, jumps to NOTE 13 from the outline (page 54 in the golden report), searches "dividende proposé" (with "/", or the search icon at 390) and opens the first result, which must be page 10 with the dividend chunk highlighted (#21 AC3), opens Maroc Telecom's dossier from INDEX, switches its basis, opens revenue FY2025 with its cell highlighted (#22 AC4), then visits MAP, CHECKS and KPIs. It checks what a user sees: rows, rendered page images, the page field, the highlighted section, the empty-state headings, no horizontal scroll and no console errors. It selects by role and accessible name (`list "Filings"`, `navigation "Sections"`, `button "NEXT →"`, `img "Page N of ..."`), not by coordinates.
 
 The per-feature recipes are in [features/README.md](features/README.md). A change to a feature is proven only when its file's journey passes, not just the one convenient entry point.
 

@@ -5,7 +5,10 @@ from typing import Any
 
 from bloomberg_invest.views import (
     Box,
+    DocumentRef,
     DocumentSummary,
+    Figure,
+    Passage,
     Run,
     Section,
     TablePart,
@@ -66,3 +69,46 @@ def _table_part(node: Any) -> TablePart | None:
     if node.get("table") is None:
         return None
     return TablePart(table_id=node["table"], part=node["part"], parts=node["parts"])
+
+
+def _document_ref(d: Any, o: Any) -> DocumentRef:
+    return DocumentRef(
+        id=d["id"],
+        issuer={"isin": o["isin"], "name": o["name"]},
+        doc_type=d["doc_type"],
+        fiscal_year=d["fiscal_year"],
+    )
+
+
+def _figure(n: Any, d: Any, o: Any, passage: Any) -> Figure:
+    def day(value: Any):
+        return value.to_native() if value is not None else None
+
+    cell = "Cell" in passage.labels
+    boxes = [passage["page"], *passage["bbox"]] if cell else passage["boxes"]
+    return Figure(
+        id=n["id"],
+        line_item=n["line_item"],
+        label=n["label"],
+        value=n["value"],
+        value_as_written=n["value_as_written"],
+        unit=n["unit"],
+        scale=n["scale"],
+        currency=n.get("currency"),
+        fiscal_year=n["fiscal_year"],
+        period_start=day(n.get("period_start")),
+        period_end=day(n.get("period_end")),
+        as_of=day(n.get("as_of")),
+        basis_scope=n["basis_scope"],
+        basis_standard=n["basis_standard"],
+        breakdown=n["breakdown"],
+        recorded_at=n["recorded_at"].to_native(),
+        document=_document_ref(d, o),
+        passage=Passage(
+            kind="cell" if cell else "span",
+            page=passage["page"],
+            boxes=_boxes(boxes),
+            text=passage["text"],
+            quote=None if cell else passage["quote"],
+        ),
+    )

@@ -1,11 +1,13 @@
-"""`bloomberg ingest`: parse, chunk and embed a filing. `bloomberg chunk` and `bloomberg embed`
-redo one step for an ingested filing; re-chunking embeds the new Chunks too.
+"""`bloomberg ingest`: parse, chunk, embed and extract a filing. `bloomberg chunk`, `bloomberg
+embed` and `bloomberg extract` redo one step for an ingested filing; re-chunking embeds the new
+Chunks too. Extracting needs AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY.
 
     bloomberg ingest data/inbox/Maroc_Telecom_RFA_2025.pdf --issuer-isin MA0000011488 \
         --issuer-name "Maroc Telecom" --doc-type annual_report --fiscal-year 2025 \
         --source-url https://www.ammc.ma/sites/default/files/Maroc_Telecom_RFA_2025.pdf
     bloomberg chunk 3d18e4fa-cfca-4a67-92b4-3d6555da68e6
     bloomberg embed 3d18e4fa-cfca-4a67-92b4-3d6555da68e6
+    bloomberg extract 3d18e4fa-cfca-4a67-92b4-3d6555da68e6
 """
 
 import argparse
@@ -18,6 +20,7 @@ from bloomberg_invest import bootstrap
 from bloomberg_invest.domain.model import DocType, DocumentMeta, Organisation
 from bloomberg_invest.service_layer.chunk import Chunked, ChunkFailed, chunk_document
 from bloomberg_invest.service_layer.embed import Embedded, EmbedFailed, embed_document
+from bloomberg_invest.service_layer.extract import Extracted, ExtractFailed, extract_document
 from bloomberg_invest.service_layer.ingest import IngestFailed, ingest
 from bloomberg_invest.settings import Settings
 from bloomberg_invest.views import Section
@@ -29,6 +32,8 @@ def main(argv: list[str] | None = None) -> int:
         return _chunk(args.document_id)
     if args.command == "embed":
         return _embed(args.document_id)
+    if args.command == "extract":
+        return _extract(args.document_id)
     try:
         meta = DocumentMeta(
             issuer=Organisation(isin=args.issuer_isin, name=args.issuer_name),
@@ -44,6 +49,12 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     settings = Settings.from_env()
+    try:
+        # Before the parse: missing Azure secrets fail now, not minutes later.
+        extraction = bootstrap.extraction(settings)
+    except ValueError as error:
+        print(error, file=sys.stderr)
+        return 2
     parser = bootstrap.parser(settings)
     embedder = bootstrap.embedder(settings)
     with bootstrap.connect(settings) as deps:
@@ -57,8 +68,9 @@ def main(argv: list[str] | None = None) -> int:
                 bootstrap.token_counter(),
                 settings.caps,
                 embedder,
+                extraction,
             )
-        except (IngestFailed, ChunkFailed, EmbedFailed) as failure:
+        except (IngestFailed, ChunkFailed, EmbedFailed, ExtractFailed) as failure:
             print(_failure(failure), file=sys.stderr)
             return 1
         detail = deps.store.get_document(ingested.document_id)
@@ -66,7 +78,7 @@ def main(argv: list[str] | None = None) -> int:
     print(
         f"Parsed {detail.page_count} pages, {sections} sections (run {detail.run.id}); "
         f"{_chunks(ingested.chunked)}; {_embedded(ingested.embedded)}; "
-        f"document {ingested.document_id}"
+        f"{_extracted(ingested.extracted)}; document {ingested.document_id}"
     )
     return 0
 
@@ -107,6 +119,24 @@ def _embed(document_id: str) -> int:
     return 0
 
 
+def _extract(document_id: str) -> int:
+    settings = Settings.from_env()
+    try:
+        extraction = bootstrap.extraction(settings)
+    except ValueError as error:
+        print(error, file=sys.stderr)
+        return 2
+    parser = bootstrap.parser(settings)
+    with bootstrap.connect(settings) as deps:
+        try:
+            extracted = extract_document(document_id, deps.store, deps.files, parser, extraction)
+        except (LookupError, ValueError, ExtractFailed) as failure:
+            print(_failure(failure), file=sys.stderr)
+            return 1
+    print(f"{_extracted(extracted)}; document {document_id}")
+    return 0
+
+
 def _failure(error: Exception) -> str:
     """The error, with what caused it when a step failed and recorded a failed Run."""
     return f"{error}: {error.__cause__!r}" if error.__cause__ else str(error)
@@ -120,6 +150,13 @@ def _embedded(embedded: Embedded) -> str:
     return f"embedded {embedded.chunks} chunks (run {embedded.run_id})"
 
 
+def _extracted(extracted: Extracted) -> str:
+    return (
+        f"extracted {extracted.figures} figures from {extracted.pages} pages, "
+        f"{extracted.rejected} rejected by the check (run {extracted.run_id})"
+    )
+
+
 def _count_sections(sections: list[Section]) -> int:
     return sum(1 + _count_sections(s.children) for s in sections)
 
@@ -127,7 +164,7 @@ def _count_sections(sections: list[Section]) -> int:
 def _arguments() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="bloomberg")
     commands = parser.add_subparsers(dest="command", required=True)
-    ingest_cmd = commands.add_parser("ingest", help="parse, chunk and embed a filing")
+    ingest_cmd = commands.add_parser("ingest", help="parse, chunk, embed and extract a filing")
     ingest_cmd.add_argument("pdf", type=Path)
     ingest_cmd.add_argument("--issuer-isin", required=True)
     ingest_cmd.add_argument("--issuer-name", required=True)
@@ -140,6 +177,10 @@ def _arguments() -> argparse.ArgumentParser:
     chunk_cmd.add_argument("document_id")
     embed_cmd = commands.add_parser("embed", help="re-embed an ingested filing's chunks")
     embed_cmd.add_argument("document_id")
+    extract_cmd = commands.add_parser(
+        "extract", help="re-extract an ingested filing's financial figures from its parse"
+    )
+    extract_cmd.add_argument("document_id")
     return parser
 
 

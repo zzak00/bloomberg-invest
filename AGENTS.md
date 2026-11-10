@@ -28,6 +28,7 @@ Tests: `tests/unit/` (no Docker), `tests/integration/` (real Neo4j or Docling; o
 - **Aggregate**: an Organisation standing for a group of holders, such as "Free float" or "Treasury shares", one per company. Avoid: holder (for these).
 - **Listing**: an Organisation's listing on an exchange, with ticker, ISIN, sector and compartment. A listed company is an Organisation with a Listing. Avoid: stock, security.
 - **Fact**: one statement from one Passage, of one of nine kinds (shareholding, board seat, audit mandate, listing, financial figure, consolidation, dividend, auditor opinion, related-party agreement). Avoid: edge, relationship, claim.
+- **Rejected figure**: a financial figure the LLM proposed whose value does not equal its Cell's number or appear in its quoted text. Kept with the reason, never a Fact (#19 R6). Avoid: invalid fact, error.
 - **Conflict**: two Facts with the same key (subject, kind, object, period or as-of date, basis) and different values. Both are kept. Same key and same value means they agree. Avoid: duplicate, error.
 - **Period**: the span a flow figure covers, with real start and end dates (FY2025, H1 2026). Avoid: year.
 - **As-of date**: the date a position holds on (a shareholding, a board seat, a balance-sheet item). Avoid: date, period.

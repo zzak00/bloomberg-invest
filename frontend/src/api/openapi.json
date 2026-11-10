@@ -261,6 +261,156 @@
           }
         }
       }
+    },
+    "/api/companies/{isin}": {
+      "get": {
+        "summary": "Company Dossier",
+        "description": "The issuer's filings.",
+        "operationId": "company_dossier_api_companies__isin__get",
+        "parameters": [
+          {
+            "name": "isin",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Isin"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Company"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No filing from an issuer with this ISIN",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFound"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/companies/{isin}/figures": {
+      "get": {
+        "summary": "Figures",
+        "description": "The issuer's current financial figures on each basis, by statement, line item and\nyear, each value with the figures stating it and the Passage each was checked against.",
+        "operationId": "figures_api_companies__isin__figures_get",
+        "parameters": [
+          {
+            "name": "isin",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Isin"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FigureGrid"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No filing from an issuer with this ISIN",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFound"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/facts/{fact_id}": {
+      "get": {
+        "summary": "Fact",
+        "description": "One financial figure, current or not, so a link to it keeps working after a re-run.",
+        "operationId": "fact_api_facts__fact_id__get",
+        "parameters": [
+          {
+            "name": "fact_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Fact Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FigureDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such financial figure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFound"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -364,6 +514,27 @@
         ],
         "title": "Chunk",
         "description": "A Chunk with where to find it: what search returns and the source viewer highlights."
+      },
+      "Company": {
+        "properties": {
+          "issuer": {
+            "$ref": "#/components/schemas/Organisation"
+          },
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentSummary"
+            },
+            "type": "array",
+            "title": "Documents"
+          }
+        },
+        "type": "object",
+        "required": [
+          "issuer",
+          "documents"
+        ],
+        "title": "Company",
+        "description": "An issuer's dossier: its filings."
       },
       "DocType": {
         "type": "string",
@@ -533,6 +704,378 @@
         ],
         "title": "DocumentSummary"
       },
+      "Figure": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "line_item": {
+            "type": "string",
+            "title": "Line Item"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "value_as_written": {
+            "type": "string",
+            "title": "Value As Written"
+          },
+          "unit": {
+            "type": "string",
+            "title": "Unit"
+          },
+          "scale": {
+            "type": "integer",
+            "title": "Scale"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "fiscal_year": {
+            "type": "integer",
+            "title": "Fiscal Year"
+          },
+          "period_start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Start"
+          },
+          "period_end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period End"
+          },
+          "as_of": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "basis_scope": {
+            "$ref": "#/components/schemas/Scope"
+          },
+          "basis_standard": {
+            "type": "string",
+            "title": "Basis Standard"
+          },
+          "breakdown": {
+            "type": "string",
+            "title": "Breakdown"
+          },
+          "recorded_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Recorded At"
+          },
+          "document": {
+            "$ref": "#/components/schemas/DocumentRef"
+          },
+          "passage": {
+            "$ref": "#/components/schemas/Passage"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "line_item",
+          "label",
+          "value",
+          "value_as_written",
+          "unit",
+          "scale",
+          "currency",
+          "fiscal_year",
+          "period_start",
+          "period_end",
+          "as_of",
+          "basis_scope",
+          "basis_standard",
+          "breakdown",
+          "recorded_at",
+          "document",
+          "passage"
+        ],
+        "title": "Figure",
+        "description": "A financial figure Fact (#19 R5, R6): checked against its Passage before it was stored."
+      },
+      "FigureDetail": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "line_item": {
+            "type": "string",
+            "title": "Line Item"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "value_as_written": {
+            "type": "string",
+            "title": "Value As Written"
+          },
+          "unit": {
+            "type": "string",
+            "title": "Unit"
+          },
+          "scale": {
+            "type": "integer",
+            "title": "Scale"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "fiscal_year": {
+            "type": "integer",
+            "title": "Fiscal Year"
+          },
+          "period_start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Start"
+          },
+          "period_end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period End"
+          },
+          "as_of": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "basis_scope": {
+            "$ref": "#/components/schemas/Scope"
+          },
+          "basis_standard": {
+            "type": "string",
+            "title": "Basis Standard"
+          },
+          "breakdown": {
+            "type": "string",
+            "title": "Breakdown"
+          },
+          "recorded_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Recorded At"
+          },
+          "document": {
+            "$ref": "#/components/schemas/DocumentRef"
+          },
+          "passage": {
+            "$ref": "#/components/schemas/Passage"
+          },
+          "line_item_title": {
+            "type": "string",
+            "title": "Line Item Title"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "line_item",
+          "label",
+          "value",
+          "value_as_written",
+          "unit",
+          "scale",
+          "currency",
+          "fiscal_year",
+          "period_start",
+          "period_end",
+          "as_of",
+          "basis_scope",
+          "basis_standard",
+          "breakdown",
+          "recorded_at",
+          "document",
+          "passage",
+          "line_item_title"
+        ],
+        "title": "FigureDetail",
+        "description": "A figure with its line item's title in the current label map, as the viewer names it."
+      },
+      "FigureGrid": {
+        "properties": {
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "scopes": {
+            "items": {
+              "$ref": "#/components/schemas/ScopeFigures"
+            },
+            "type": "array",
+            "title": "Scopes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "count",
+          "scopes"
+        ],
+        "title": "FigureGrid",
+        "description": "An issuer's current figures as the dossier lists them, on each basis."
+      },
+      "FigureRow": {
+        "properties": {
+          "line_item": {
+            "type": "string",
+            "title": "Line Item"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "breakdown": {
+            "type": "string",
+            "title": "Breakdown"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency"
+          },
+          "unit": {
+            "type": "string",
+            "title": "Unit"
+          },
+          "scale": {
+            "type": "integer",
+            "title": "Scale"
+          },
+          "years": {
+            "items": {
+              "$ref": "#/components/schemas/FigureYear"
+            },
+            "type": "array",
+            "title": "Years"
+          }
+        },
+        "type": "object",
+        "required": [
+          "line_item",
+          "title",
+          "breakdown",
+          "currency",
+          "unit",
+          "scale",
+          "years"
+        ],
+        "title": "FigureRow",
+        "description": "A line item, or one breakdown of it, in one currency, by fiscal year."
+      },
+      "FigureValue": {
+        "properties": {
+          "shown": {
+            "$ref": "#/components/schemas/Figure"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/Figure"
+            },
+            "type": "array",
+            "title": "Sources"
+          }
+        },
+        "type": "object",
+        "required": [
+          "shown",
+          "sources"
+        ],
+        "title": "FigureValue",
+        "description": "One value a line item takes in a year, and every figure stating it, rounded or not."
+      },
+      "FigureYear": {
+        "properties": {
+          "fiscal_year": {
+            "type": "integer",
+            "title": "Fiscal Year"
+          },
+          "values": {
+            "items": {
+              "$ref": "#/components/schemas/FigureValue"
+            },
+            "type": "array",
+            "title": "Values"
+          }
+        },
+        "type": "object",
+        "required": [
+          "fiscal_year",
+          "values"
+        ],
+        "title": "FigureYear"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -605,6 +1148,53 @@
           "height"
         ],
         "title": "PageInfo"
+      },
+      "Passage": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "cell",
+              "span"
+            ],
+            "title": "Kind"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "boxes": {
+            "items": {
+              "$ref": "#/components/schemas/Box"
+            },
+            "type": "array",
+            "title": "Boxes"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "quote": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quote"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "page",
+          "boxes",
+          "text"
+        ],
+        "title": "Passage",
+        "description": "The exact span a Fact cites: a table cell, or a quoted range of a paragraph."
       },
       "Run": {
         "properties": {
@@ -692,10 +1282,47 @@
         "enum": [
           "parse",
           "chunk",
-          "embed"
+          "embed",
+          "extract"
         ],
         "title": "RunStep",
         "description": "The processing steps a Run records (AGENTS.md); later steps add theirs."
+      },
+      "Scope": {
+        "type": "string",
+        "enum": [
+          "consolidated",
+          "company-only"
+        ],
+        "title": "Scope"
+      },
+      "ScopeFigures": {
+        "properties": {
+          "scope": {
+            "$ref": "#/components/schemas/Scope"
+          },
+          "years": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Years"
+          },
+          "statements": {
+            "items": {
+              "$ref": "#/components/schemas/StatementFigures"
+            },
+            "type": "array",
+            "title": "Statements"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scope",
+          "years",
+          "statements"
+        ],
+        "title": "ScopeFigures"
       },
       "Section": {
         "properties": {
@@ -760,6 +1387,32 @@
           "bbox"
         ],
         "title": "Section"
+      },
+      "StatementFigures": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/FigureRow"
+            },
+            "type": "array",
+            "title": "Rows"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "title",
+          "rows"
+        ],
+        "title": "StatementFigures"
       },
       "TablePart": {
         "properties": {

@@ -1,0 +1,283 @@
+# Label map v1: the line items the extractor may assign (#19 R6), from the #10 bake-off.
+#
+# Each line item has:
+# - title: how the app names it;
+# - definition: what the LLM reads to pick it, unchanged from the bake-off;
+# - statement: where the dossier lists it;
+# - kind: "flow" covers a period (a fiscal year), "stock" holds on a date (its last day).
+#
+# Never edit a released version: add v2 and point `LABEL_MAP` in `config/__init__.py` at it. Runs
+# record the version and this file's SHA-256.
+
+version = "v1"
+
+[statements]
+income_statement = "Income statement"
+balance_sheet = "Balance sheet"
+cash_flow = "Cash flow"
+per_share = "Per share and dividends"
+reported = "Company-reported measures"
+
+[line_items.revenue]
+title = "Revenue"
+definition = "Revenue (chiffre d'affaires), including segment revenue and inter-segment eliminations"
+statement = "income_statement"
+kind = "flow"
+
+[line_items.ebitda]
+title = "EBITDA"
+definition = "EBITDA, as reported by the company (not an IFRS line)"
+statement = "reported"
+kind = "flow"
+
+[line_items.ebita_adjusted]
+title = "Adjusted EBITA"
+definition = "Adjusted EBITA, as reported by the company"
+statement = "reported"
+kind = "flow"
+
+[line_items.operating_income_ebit]
+title = "Operating income"
+definition = "Operating income (résultat opérationnel, résultat d'exploitation)"
+statement = "income_statement"
+kind = "flow"
+
+[line_items.depreciation_amortisation]
+title = "Depreciation and amortisation"
+definition = "Depreciation and amortisation of fixed assets"
+statement = "income_statement"
+kind = "flow"
+
+[line_items.depreciation_amortisation_provisions]
+title = "Depreciation, amortisation and provisions"
+definition = "Net depreciation, amortisation, impairment and provisions, as one income statement line"
+statement = "income_statement"
+kind = "flow"
+
+[line_items.interest_income]
+title = "Interest income"
+definition = "Interest and similar financial income, including income from cash and cash equivalents"
+statement = "income_statement"
+kind = "flow"
+
+[line_items.interest_expense]
+title = "Interest expense"
+definition = "Interest expense; gross cost of debt"
+statement = "income_statement"
+kind = "flow"
+
+[line_items.net_finance_cost]
+title = "Net cost of debt"
+definition = "Net cost of debt (coût de l'endettement financier net)"
+statement = "income_statement"
+kind = "flow"
+
+[line_items.dividend_income]
+title = "Dividend income"
+definition = "Dividends received from equity investments (produits des titres de participation)"
+statement = "income_statement"
+kind = "flow"
+
+[line_items.pre_tax_income]
+title = "Income before tax"
+definition = "Income before tax"
+statement = "income_statement"
+kind = "flow"
+
+[line_items.tax_expense]
+title = "Income tax"
+definition = "Income tax expense"
+statement = "income_statement"
+kind = "flow"
+
+[line_items.tax_rate]
+title = "Tax rate"
+definition = "Tax rate, effective or statutory (say which in breakdown)"
+statement = "income_statement"
+kind = "flow"
+
+[line_items.net_income]
+title = "Net income"
+definition = "Net income, total (before splitting group share and minorities)"
+statement = "income_statement"
+kind = "flow"
+
+[line_items.net_income_group_share]
+title = "Net income, group share"
+definition = "Net income attributable to owners of the parent (part du groupe)"
+statement = "income_statement"
+kind = "flow"
+
+[line_items.net_income_group_share_adjusted]
+title = "Adjusted net income, group share"
+definition = "Adjusted net income attributable to owners of the parent, as reported"
+statement = "reported"
+kind = "flow"
+
+[line_items.net_income_minority]
+title = "Net income, minority interests"
+definition = "Net income attributable to minority interests"
+statement = "income_statement"
+kind = "flow"
+
+[line_items.eps]
+title = "Earnings per share"
+definition = "Earnings per share"
+statement = "per_share"
+kind = "flow"
+
+[line_items.shares_outstanding]
+title = "Number of shares"
+definition = "Number of shares"
+statement = "per_share"
+kind = "stock"
+
+[line_items.total_assets]
+title = "Total assets"
+definition = "Total assets"
+statement = "balance_sheet"
+kind = "stock"
+
+[line_items.current_assets]
+title = "Current assets"
+definition = "Total current assets"
+statement = "balance_sheet"
+kind = "stock"
+
+[line_items.cash_and_equivalents]
+title = "Cash and cash equivalents"
+definition = "Cash and cash equivalents (trésorerie actif)"
+statement = "balance_sheet"
+kind = "stock"
+
+[line_items.short_term_investments]
+title = "Short-term investments"
+definition = "Short-term investments, marketable securities (titres et valeurs de placement)"
+statement = "balance_sheet"
+kind = "stock"
+
+[line_items.receivables]
+title = "Receivables"
+definition = "Trade and other operating receivables"
+statement = "balance_sheet"
+kind = "stock"
+
+[line_items.equity]
+title = "Total equity"
+definition = "Total equity"
+statement = "balance_sheet"
+kind = "stock"
+
+[line_items.equity_group_share]
+title = "Equity, group share"
+definition = "Equity attributable to owners of the parent"
+statement = "balance_sheet"
+kind = "stock"
+
+[line_items.minority_interests]
+title = "Minority interests"
+definition = "Equity attributable to minority interests (balance sheet)"
+statement = "balance_sheet"
+kind = "stock"
+
+[line_items.share_capital]
+title = "Share capital"
+definition = "Share capital"
+statement = "balance_sheet"
+kind = "stock"
+
+[line_items.non_current_liabilities]
+title = "Non-current liabilities"
+definition = "Total non-current liabilities"
+statement = "balance_sheet"
+kind = "stock"
+
+[line_items.current_liabilities]
+title = "Current liabilities"
+definition = "Total current liabilities"
+statement = "balance_sheet"
+kind = "stock"
+
+[line_items.long_term_debt]
+title = "Long-term debt"
+definition = "Long-term borrowings and financial liabilities, including bonds and lease liabilities due after one year"
+statement = "balance_sheet"
+kind = "stock"
+
+[line_items.short_term_debt]
+title = "Short-term debt"
+definition = "Short-term borrowings and financial liabilities, including bank overdrafts and lease liabilities due within one year"
+statement = "balance_sheet"
+kind = "stock"
+
+[line_items.interest_bearing_debt_total]
+title = "Total borrowings"
+definition = "Total borrowings and financial debt"
+statement = "balance_sheet"
+kind = "stock"
+
+[line_items.net_debt]
+title = "Net debt"
+definition = "Net debt, or net cash, as reported"
+statement = "reported"
+kind = "stock"
+
+[line_items.operating_cash_flow]
+title = "Cash from operations"
+definition = "Net cash from operating activities"
+statement = "cash_flow"
+kind = "flow"
+
+[line_items.cffo]
+title = "CFFO"
+definition = "CFFO (cash flow from operations as defined by the company)"
+statement = "reported"
+kind = "flow"
+
+[line_items.capex]
+title = "Capex"
+definition = "Capital expenditure as reported by the company (CAPEX, investissements)"
+statement = "reported"
+kind = "flow"
+
+[line_items.capex_cash]
+title = "Capex paid"
+definition = "Cash paid for property, plant, equipment and intangible assets (cash flow statement)"
+statement = "cash_flow"
+kind = "flow"
+
+[line_items.tax_paid]
+title = "Income tax paid"
+definition = "Income tax paid (cash flow statement)"
+statement = "cash_flow"
+kind = "flow"
+
+[line_items.interest_paid]
+title = "Interest paid"
+definition = "Interest paid (cash flow statement)"
+statement = "cash_flow"
+kind = "flow"
+
+[line_items.dividends_paid]
+title = "Dividends paid"
+definition = "Dividends paid in cash, to parent shareholders or to minority shareholders of subsidiaries"
+statement = "cash_flow"
+kind = "flow"
+
+[line_items.dividend_per_share]
+title = "Dividend per share"
+definition = "Dividend per share, declared or proposed"
+statement = "per_share"
+kind = "flow"
+
+[line_items.dividend_total_declared]
+title = "Dividend declared"
+definition = "Total dividend declared or proposed"
+statement = "per_share"
+kind = "flow"
+
+[line_items.treasury_shares_movement]
+title = "Treasury shares bought or sold"
+definition = "Purchases and sales of treasury shares"
+statement = "cash_flow"
+kind = "flow"

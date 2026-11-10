@@ -14,14 +14,42 @@ from bloomberg_invest.domain.model import (
     Organisation,
     PageInfo,
     ParsedDocument,
+    ParsedTable,
     RunInfo,
     RunStep,
     SectionNode,
+    TableCell,
 )
+from bloomberg_invest.settings import Settings
 
 FIXTURES = Path(__file__).parent / "fixtures"
 # The SHA-256 the store tests record their parse under.
 SHA = "90e8b73c7f11bfde45d0c7ddb3ce506d162bac2030244d48d9ca2f641ddd4214"
+# The golden report (Maroc Telecom RFA 2025), not committed: `golden` tests skip without it.
+GOLDEN_PDF = Path(
+    os.environ.get(
+        "GOLDEN_PDF", Path(__file__).parents[2] / "data" / "inbox" / "Maroc_Telecom_RFA_2025.pdf"
+    )
+)
+GOLDEN_SHA = SHA
+GOLDEN = Path(__file__).parents[2] / "golden" / "maroc-telecom-rfa-2025"
+
+
+def azure_settings() -> Settings:
+    """Settings for the live Azure OpenAI model, from the environment; skips without secrets."""
+    settings = Settings(
+        neo4j_uri="",
+        neo4j_user="",
+        neo4j_password="",
+        data_dir=Path("."),
+        azure_openai_endpoint=os.environ.get("AZURE_OPENAI_ENDPOINT"),
+        azure_openai_api_key=os.environ.get("AZURE_OPENAI_API_KEY"),
+        extract_deployment=os.environ.get("EXTRACT_DEPLOYMENT", "gpt-5.6-sol"),
+    )
+    if not (settings.azure_openai_endpoint and settings.azure_openai_api_key):
+        pytest.skip("needs AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY")
+    pytest.importorskip("openai", reason="needs the ingest extra")
+    return settings
 
 
 @pytest.fixture(scope="session")
@@ -71,7 +99,34 @@ def parsed() -> ParsedDocument:
             ),
             SectionNode(title="2. VUE D'ENSEMBLE", level=1, page=3, bbox=(50, 400, 300, 420)),
         ],
+        tables=[ParsedTable(page=2, bbox=(50, 120, 545, 200), cells=INCOME_CELLS)],
     )
+
+
+def _cell(row: int, col: int, text: str) -> TableCell:
+    top = 120 + 20 * row
+    return TableCell(
+        row=row,
+        col=col,
+        text=text,
+        page=2,
+        bbox=(50 + 165 * col, top, 210 + 165 * col, top + 16),
+        column_header=row == 0,
+    )
+
+
+# An income statement extract: the table the store tests record on page 2.
+INCOME_CELLS = [
+    _cell(r, c, text)
+    for r, row in enumerate(
+        [
+            ("(En millions MAD)", "31-déc.-24", "31-déc.-25"),
+            ("Chiffre d'affaires", "36 699", "36 681"),
+            ("Résultat net", "6 968", "7 112"),
+        ]
+    )
+    for c, text in enumerate(row)
+]
 
 
 def make_run(minute: int = 0) -> RunInfo:

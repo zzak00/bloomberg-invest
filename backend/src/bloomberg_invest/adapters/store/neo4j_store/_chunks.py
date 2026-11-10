@@ -7,8 +7,8 @@ from neo4j import ManagedTransaction
 
 from bloomberg_invest.adapters.store.neo4j_store._cypher import (
     CURRENT,
-    SUPERSEDE,
     _create_run,
+    _supersede_step,
 )
 from bloomberg_invest.adapters.store.neo4j_store._embed import _supersede_embed_runs
 from bloomberg_invest.domain.chunking import ChunkDraft
@@ -27,18 +27,7 @@ def _record_chunks(
     if run.status != RunStatus.succeeded:
         return run_id
 
-    # Only earlier chunk Runs' outputs: the parse's Pages and Sections stay current.
-    tx.run(
-        f"""
-        MATCH (r:Run {{id: $run_id}})-[:PROCESSED]->(d)
-        MATCH (n)-[:PRODUCED_BY]->(earlier:Run {{step: $step}})-[:PROCESSED]->(d)
-        WHERE earlier <> r AND {CURRENT}
-        {SUPERSEDE}
-        CREATE (n)-[:SUPERSEDED_BY]->(r)
-        """,
-        run_id=run_id,
-        step=RunStep.chunk.value,
-    )
+    _supersede_step(tx, run_id, RunStep.chunk.value)
     _supersede_embed_runs(tx, run_id)
     table_ids = {c.table: str(uuid.uuid4()) for c in chunks if c.table is not None}
     tx.run(

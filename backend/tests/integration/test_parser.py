@@ -62,6 +62,21 @@ def test_section_boxes_are_top_left_points_inside_the_page(parsed):
     assert top < 200, "the first heading sits near the top of page 1"
 
 
+def test_tables_keep_every_cell_with_its_row_column_page_and_box(parsed):
+    [table] = parsed.tables
+    assert table.page == 1
+    grid = {(c.row, c.col): c.text for c in table.cells}
+    assert grid[(1, 0)] == "Chiffre d'affaires"
+    assert (grid[(1, 1)], grid[(1, 2)]) == ("36 699", "36 681")
+    assert grid[(0, 2)] == "31-déc.-25"
+    revenue = next(c for c in table.cells if c.text == "36 681")
+    left, top, right, bottom = revenue.bbox
+    t_left, t_top, t_right, t_bottom = table.bbox
+    assert revenue.page == 1
+    assert t_left <= left < right <= t_right + 1, "the cell sits inside its table"
+    assert t_top <= top < bottom <= t_bottom + 1
+
+
 def test_the_parser_names_its_tool_version_and_configuration(parser):
     assert parser.tool and parser.tool_version and parser.config
 

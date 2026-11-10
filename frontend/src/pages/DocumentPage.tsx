@@ -2,8 +2,9 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
 
 import { ApiError } from "../ApiError";
-import { api, pageImageUrl, type Chunk } from "../api/client";
+import { api, pageImageUrl, type Box, type Chunk, type FigureDetail } from "../api/client";
 import { useApi } from "../api/useApi";
+import { periodLabel, unitLabel } from "../figures";
 import { DOC_TYPE_LABELS, formatDateTime, pagesLabel } from "../format";
 
 /** What the outline needs from a section. */
@@ -16,26 +17,35 @@ export function DocumentPage() {
   const document = useApi(`document:${documentId}`, () =>
     api.GET("/api/documents/{document_id}", { params: { path: { document_id: documentId } } }),
   );
-  // The chunk a search result opened, highlighted on its pages.
+  // What a link asked to highlight: a search result's chunk, or a figure's cell or quote.
   const chunkId = params.get("chunk");
+  const factId = chunkId ? null : params.get("fact");
   const chunk = useApi(
     `chunk:${chunkId}`,
     chunkId
       ? () => api.GET("/api/chunks/{chunk_id}", { params: { path: { chunk_id: chunkId } } })
       : null,
   );
+  const fact = useApi(
+    `fact:${factId}`,
+    factId ? () => api.GET("/api/facts/{fact_id}", { params: { path: { fact_id: factId } } }) : null,
+  );
+  const target = chunkId ? chunk : fact;
   const firstMark = useRef<HTMLSpanElement>(null);
   // Bring the highlight into view once it is drawn: the page's size is known before its image
   // loads, so the position is already right.
-  const drawn = document.state === "ready" && chunk.state === "ready" ? `${chunkId}:${params.get("page")}` : "";
+  const drawn =
+    document.state === "ready" && target.state === "ready"
+      ? `${chunkId ?? factId}:${params.get("page")}`
+      : "";
   useEffect(() => {
     if (drawn) firstMark.current?.scrollIntoView({ block: "center" });
   }, [drawn]);
 
-  // A link to a chunk with no page: its page comes with the chunk, so wait for it rather than
-  // show page 1 first.
-  const pageFromChunk = chunkId !== null && !params.has("page") && chunk.state === "loading";
-  if (document.state === "loading" || pageFromChunk) {
+  // A link to a chunk or a figure with no page: its page comes with it, so wait for it rather
+  // than show page 1 first.
+  const pageFromTarget = target.state === "loading" && !params.has("page");
+  if (document.state === "loading" || pageFromTarget) {
     return (
       <div className="state" aria-busy="true">
         <div className="micro">LOADING THE FILING…</div>
@@ -58,13 +68,18 @@ export function DocumentPage() {
   }
 
   const doc = document.data;
-  const highlighted = chunk.state === "ready" && chunk.data.document.id === doc.id ? chunk.data : null;
+  const highlighted =
+    chunk.state === "ready" && chunk.data.document.id === doc.id
+      ? chunkHighlight(chunk.data)
+      : fact.state === "ready" && fact.data.document.id === doc.id
+        ? factHighlight(fact.data)
+        : null;
   const requested = Number(params.get("page") ?? highlighted?.pages[0] ?? "1");
   const page = Number.isInteger(requested) ? clamp(requested, 1, doc.page_count) : 1;
-  // Paging keeps the highlighted chunk; picking a section leaves it.
+  // Paging keeps the highlight; picking a section leaves it.
   const goTo = (target: number) => {
     const next = String(clamp(target, 1, doc.page_count));
-    setParams(chunkId ? { page: next, chunk: chunkId } : { page: next });
+    setParams(highlighted ? { page: next, [highlighted.param]: highlighted.id } : { page: next });
   };
   const pick = (section: Section) => setParams({ page: String(section.page), section: section.id });
   const size = doc.pages[page - 1];
@@ -125,25 +140,64 @@ export function DocumentPage() {
   );
 }
 
-/** The highlighted chunk: where it is, a way back to it, and a way to clear it. */
+/** What the viewer highlights, from a chunk or a figure, and the link parameter that names it. */
+interface Highlight {
+  param: "chunk" | "fact";
+  id: string;
+  pages: number[];
+  boxes: Box[];
+  tag: string; // what kind of source it is
+  name: string; // what it is
+  detail?: string; // its value, for a figure
+  title?: string; // the full section path, on hover
+}
+
+function chunkHighlight(chunk: Chunk): Highlight {
+  const path = chunk.section_path;
+  return {
+    param: "chunk",
+    id: chunk.id,
+    pages: chunk.pages,
+    boxes: chunk.boxes,
+    tag: "HIGHLIGHTED",
+    name: path[path.length - 1] ?? "Before the first section",
+    title: path.join(" › "),
+  };
+}
+
+function factHighlight(figure: FigureDetail): Highlight {
+  const name = figure.breakdown ? `${figure.line_item_title}, ${figure.breakdown}` : figure.line_item_title;
+  return {
+    param: "fact",
+    id: figure.id,
+    pages: [figure.passage.page],
+    boxes: figure.passage.boxes,
+    tag: figure.passage.kind === "cell" ? "CELL" : "QUOTE",
+    name: `${name} · ${periodLabel(figure)}`,
+    detail: `${figure.value_as_written} ${unitLabel(figure)}`,
+    title: figure.label,
+  };
+}
+
+/** The highlight: what and where it is, a way back to it, and a way to clear it. */
 function HighlightBar({
   highlighted,
   onPage,
   onGo,
   onClear,
 }: {
-  highlighted: Chunk;
+  highlighted: Highlight;
   onPage: boolean;
   onGo: () => void;
   onClear: () => void;
 }) {
-  const path = highlighted.section_path;
   return (
     <div className="highlight-bar" role="status">
       <span className="highlight-bar-swatch" aria-hidden="true" />
       <span className="highlight-bar-where">
-        <span className="paper-label">HIGHLIGHTED</span>{" "}
-        <span title={path.join(" › ")}>{path[path.length - 1] ?? "Before the first section"}</span>{" "}
+        <span className="paper-label">{highlighted.tag}</span>{" "}
+        <span title={highlighted.title}>{highlighted.name}</span>{" "}
+        {highlighted.detail && <span className="num nowrap highlight-bar-value">{highlighted.detail}</span>}{" "}
         <span className="num nowrap highlight-bar-pages">{pagesLabel(highlighted.pages)}</span>
       </span>
       {!onPage && (

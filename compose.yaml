@@ -60,6 +60,10 @@ services:
       CHUNK_CAP: ${CHUNK_CAP:-2000}
       TABLE_CAP: ${TABLE_CAP:-1500}
       EMBEDDER: ${EMBEDDER:-qwen3-0.6b}
+      # Azure OpenAI extracts financial figures; ingest stops before parsing without them.
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      EXTRACT_DEPLOYMENT: ${EXTRACT_DEPLOYMENT:-gpt-5.6-sol}
       # tiktoken's encoding files, kept with Docling's models.
       TIKTOKEN_CACHE_DIR: /root/.cache/tiktoken
     volumes:
@@ -78,6 +82,11 @@ services:
   embed:
     extends: { service: ingest }
     entrypoint: ["bloomberg", "embed"]
+
+  # Re-extract an ingested filing's financial figures: docker compose run --rm extract <document id>
+  extract:
+    extends: { service: ingest }
+    entrypoint: ["bloomberg", "extract"]
 
   # Throwaway database for the backend tests; its data lives in memory and goes with it.
   neo4j-test:

@@ -394,6 +394,343 @@ a {
   }
 }
 
+/* A row that opens its filing anywhere, with the company name a link of its own. */
+.row-link {
+  position: relative;
+}
+
+.row-link:hover {
+  background: var(--row-hover);
+}
+
+.row-link-target {
+  text-decoration: none;
+}
+
+.row-link-target::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.row-link-target:focus-visible {
+  outline: none;
+}
+
+.row-link-target:focus-visible::after {
+  outline: 2px solid var(--signal);
+  outline-offset: -2px;
+}
+
+/* The company name opens its dossier: underlined like every link to a source, so it reads as a
+   target of its own inside the row. */
+.cell-link {
+  position: relative;
+  z-index: 1;
+  text-decoration: underline;
+  text-decoration-color: var(--rule-strong);
+  text-underline-offset: 3px;
+}
+
+.cell-link:hover {
+  color: var(--signal);
+  text-decoration-color: currentColor;
+}
+
+/* ---------- Company dossier ---------- */
+
+.dossier-id {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: var(--space-2);
+}
+
+.chip {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  border: 1px solid var(--border-control);
+  padding: 1px 6px;
+}
+
+.dossier-id-note {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.dossier-title {
+  margin: 6px 0 0;
+  font-size: 32px;
+  letter-spacing: -0.015em;
+  line-height: 1.1;
+}
+
+.tabs {
+  display: flex;
+  gap: 2px;
+  margin-top: 14px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.tabs button {
+  height: 34px;
+  padding: 0 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.tabs button:hover {
+  color: var(--text-primary);
+}
+
+.tabs button[aria-selected="true"] {
+  color: var(--text-primary);
+  border-bottom-color: var(--signal);
+}
+
+.figures-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  margin: var(--space-4) 0 0;
+}
+
+.segmented {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.segmented button {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.segmented button:hover {
+  background: var(--hover);
+}
+
+.segmented button[aria-pressed="true"] {
+  border-color: var(--border-control);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+
+.figures-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.statement {
+  margin-top: var(--space-6);
+}
+
+.statement-title {
+  margin: 0 0 var(--space-2);
+  font-weight: 400;
+}
+
+.figures {
+  width: 100%;
+  border-collapse: collapse;
+  border-top: 1px solid var(--rule-strong);
+  font-size: 13px;
+}
+
+.figures th,
+.figures td {
+  padding: 7px var(--space-2);
+  border-bottom: 1px solid var(--rule);
+  font-weight: 400;
+  text-align: left;
+  vertical-align: top;
+}
+
+.figures thead th {
+  padding: 6px var(--space-2);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+}
+
+.figures tbody tr:hover {
+  background: var(--row-hover);
+}
+
+.figures tr[data-breakdown] th {
+  padding-left: var(--space-6);
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.figures .figures-unit {
+  width: 1%;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.figures .figures-year {
+  width: 128px;
+  text-align: right;
+}
+
+.figure-values {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.figure-value {
+  display: block;
+  text-align: right;
+}
+
+.figure-value a {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  text-decoration: underline;
+  text-decoration-color: var(--rule-strong);
+  text-underline-offset: 3px;
+}
+
+.figure-value a:hover {
+  color: var(--signal);
+  text-decoration-color: currentColor;
+}
+
+.figure-unit-inline,
+.figure-sources {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+}
+
+.figure-sources {
+  display: block;
+}
+
+.figure-conflict {
+  margin-right: var(--space-1);
+  font-family: var(--font-mono);
+  color: var(--signal);
+  cursor: help;
+}
+
+.figures-none {
+  font-family: var(--font-mono);
+  color: var(--text-disabled);
+}
+
+.figures-skeleton {
+  height: 240px;
+  margin-top: var(--space-4);
+}
+
+.filings {
+  list-style: none;
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  border-top: 1px solid var(--rule-strong);
+}
+
+.filings a {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 80px 70px 150px;
+  gap: var(--space-2);
+  align-items: center;
+  min-height: 44px;
+  padding: 6px var(--space-2);
+  border-bottom: 1px solid var(--rule);
+  text-decoration: none;
+}
+
+.filings a:hover {
+  background: var(--row-hover);
+}
+
+@media (max-width: 640px) {
+  .dossier-title {
+    font-size: 28px;
+  }
+
+  .figures thead {
+    display: none;
+  }
+
+  .figures,
+  .figures tbody {
+    display: block;
+  }
+
+  .figures tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .figures th,
+  .figures td {
+    padding: 2px var(--space-2);
+    border-bottom: 0;
+  }
+
+  .figures .figures-unit {
+    width: auto;
+    align-self: center;
+  }
+
+  .figures .figures-year {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: var(--space-3);
+    width: auto;
+  }
+
+  .figures .figures-year::before {
+    content: attr(data-year);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-tertiary);
+  }
+
+
+  .figures tr[data-breakdown] th {
+    padding-left: var(--space-4);
+  }
+
+  .filings a {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .filings .filings-ingested {
+    grid-column: 1 / -1;
+  }
+}
+
 /* ---------- Empty, loading and error states ---------- */
 
 .state {
@@ -680,6 +1017,11 @@ a {
 .highlight-bar-where {
   flex: 1 1 200px;
   min-width: 0;
+}
+
+.highlight-bar-value {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
 }
 
 .highlight-bar-pages {

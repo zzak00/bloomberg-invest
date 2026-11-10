@@ -2,7 +2,7 @@
 
 import pytest
 from conftest import FIXTURES
-from fakes import BrokenParser, FakeEmbedder, WordCounter
+from fakes import BrokenParser, FakeEmbedder, WordCounter, fake_extraction
 
 from bloomberg_invest.adapters.files import DocumentFiles
 from bloomberg_invest.domain.chunking import Caps
@@ -29,6 +29,7 @@ def test_a_failed_parse_records_a_failed_run_and_raises(store, meta, tmp_path, d
             WordCounter(),
             Caps(text=2000, table=1500),
             FakeEmbedder(),
+            fake_extraction(),
         )
 
     assert failed_runs(driver, failure.value.document_id) == [
@@ -51,6 +52,7 @@ def test_a_parse_that_fails_after_saving_its_output_points_the_failed_run_to_it(
             WordCounter(),
             Caps(text=2000, table=1500),
             FakeEmbedder(),
+            fake_extraction(),
         )
 
     [(status, _, _, output)] = failed_runs(driver, failure.value.document_id)
