@@ -1,6 +1,7 @@
 """Which figures need a check, how a correction is read, and when a check carries over
 (#19 R4, R9, R10)."""
 
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -9,17 +10,22 @@ from bloomberg_invest import config
 from bloomberg_invest.domain.kpis import Input, Kpi, KpiRules
 from bloomberg_invest.domain.label_map import LabelMap
 from bloomberg_invest.domain.review import (
+    CheckStatus,
     InvalidCorrection,
-    Number,
     Reading,
     Verdict,
     around,
     carried,
+    check_of,
+    check_status,
     correction,
     correction_in_force,
+    counts_in_dossier,
+    fact_key,
     needs_check,
     numbers_in,
-    occurrence,
+    refusal,
+    rejected_key,
 )
 
 RULES = config.kpi_rules(config.label_map())
@@ -76,11 +82,70 @@ def test_only_a_correction_gives_a_value_in_force():
     assert correction_in_force(None) is None
 
 
-def test_a_picked_number_knows_which_time_it_is_written():
-    paragraph = "au 31 décembre 2024 et au 31 décembre 2025"
-    first, _, second, _ = numbers_in(paragraph)
-    assert (occurrence(paragraph, first), occurrence(paragraph, second)) == (0, 1)
-    assert occurrence(paragraph, Number("31", 1)) is None  # not where it says
+def test_a_value_is_checked_once_every_figure_stating_it_is():
+    early = SimpleNamespace(reviewed_at=datetime(2026, 11, 10, 9, tzinfo=UTC))
+    late = SimpleNamespace(reviewed_at=datetime(2026, 11, 10, 10, tzinfo=UTC))
+    assert check_of([early, late]) is late
+    assert check_of([early, None]) is None  # a re-extract kept only one check
+    assert check_of([]) is None
+
+
+def test_a_row_s_status_follows_its_check():
+    accepted = SimpleNamespace(verdict=Verdict.accepted)
+    corrected = SimpleNamespace(verdict=Verdict.corrected)
+    assert check_status(None, rejected=False) == CheckStatus.to_check
+    assert check_status(None, rejected=True) == CheckStatus.rejected
+    assert check_status(accepted, rejected=False) == CheckStatus.accepted
+    assert check_status(corrected, rejected=True) == CheckStatus.corrected
+
+
+def test_a_rejected_figure_counts_in_the_dossier_only_once_corrected():
+    corrected = SimpleNamespace(verdict=Verdict.corrected, correction=correction("1", "MAD"))
+    assert counts_in_dossier(None, rejected=False)
+    assert not counts_in_dossier(None, rejected=True)
+    assert not counts_in_dossier(SimpleNamespace(verdict=Verdict.accepted), rejected=True)
+    assert counts_in_dossier(corrected, rejected=True)
+
+
+def fact(value: str = "36 681", **changes):
+    fields = {
+        "document": SimpleNamespace(id="d1"),
+        "line_item": "revenue",
+        "fiscal_year": 2025,
+        "basis_scope": "consolidated",
+        "breakdown": "",
+        "value_as_written": value,
+        "value": str(int(value.replace(" ", "")) * 1_000_000),
+        "scale": 1_000_000,
+        "unit": "MAD",
+        "currency": "MAD",
+    } | changes
+    return SimpleNamespace(**fields)
+
+
+def test_one_check_covers_a_line_item_year_basis_and_currency_of_one_filing():
+    assert fact_key(fact()) == fact_key(fact(value="36 681"))
+    assert fact_key(fact()) != fact_key(fact(currency="EUR"))
+    assert fact_key(fact(currency=None, unit="%")).currency == "%"
+    assert rejected_key(fact()).currency == ""
+
+
+@pytest.mark.parametrize(
+    ("facts", "rejected", "verdict", "reason"),
+    [
+        ([], [], Verdict.accepted, "names the figures"),
+        ([fact(line_item="share_capital")], [], Verdict.accepted, "needs no check"),
+        ([fact(), fact(fiscal_year=2024)], [], Verdict.accepted, "One check covers"),
+        ([], [fact(), fact()], Verdict.corrected, "checked on its own"),
+        ([fact(), fact("36 680")], [], Verdict.accepted, "different values"),
+        ([], [fact()], Verdict.accepted, "can only be corrected"),
+        ([fact(), fact()], [], Verdict.accepted, None),
+        ([], [fact()], Verdict.corrected, None),
+    ],
+)
+def test_a_check_is_refused_with_why(facts, rejected, verdict, reason):
+    found = refusal(facts, rejected, verdict, RULES)
+    assert found is None if reason is None else reason in found
 
 
 def test_a_correction_is_parsed_like_an_extracted_value():

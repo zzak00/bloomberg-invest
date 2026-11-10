@@ -255,7 +255,7 @@ class CheckQueue(BaseModel):
 
     reviewer: str | None  # who checks on this app; None until REVIEWER is set
     counts: CheckCounts  # for the company asked
-    companies: list[Organisation]  # every company with something to check
+    companies: list[Organisation]  # every company with a figure to check or checked
     groups: list[CheckGroup]  # one per filing
 
 

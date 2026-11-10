@@ -183,8 +183,8 @@ export interface paths {
         };
         /**
          * Checks Queue
-         * @description CHECKS: the figures that feed a KPI or screen, by filing, problems first, whatever
-         *     their status; of one company or all.
+         * @description CHECKS: the figures that feed a KPI or screen, checked or not, by filing, problems
+         *     first; of one company or all.
          */
         get: operations["checks_queue_api_checks_get"];
         put?: never;

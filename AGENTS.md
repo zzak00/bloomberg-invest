@@ -13,7 +13,7 @@ Run, test and develop: see `README.md`. To prove a change in the running app, fo
 `backend/src/bloomberg_invest/` follows Architecture Patterns with Python (cosmicpython.com). Dependencies point inward: `entrypoints` -> `service_layer` -> `domain`.
 
 - `domain/`: write models and their rules; imports no other layer.
-- `service_layer/`: one module per use case (`ingest.py`); receives its adapters as arguments.
+- `service_layer/`: one module per use case (`ingest.py`); receives its adapters as arguments, and builds the read models it returns from domain rules.
 - `adapters/`: each port is a `typing.Protocol` (`Parser`, `GraphStore`, `Embedder`, `LLM`, `TokenCounter`) that real adapters inherit.
 - `entrypoints/`: the CLI and the FastAPI app; they translate input and call a service.
 - `views.py`: the read models the store returns and the API serves.

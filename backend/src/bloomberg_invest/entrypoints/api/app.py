@@ -195,8 +195,8 @@ def create_app(
 
     @app.get("/api/checks")
     def checks_queue(isin: str | None = None) -> CheckQueue:
-        """CHECKS: the figures that feed a KPI or screen, by filing, problems first, whatever
-        their status; of one company or all."""
+        """CHECKS: the figures that feed a KPI or screen, checked or not, by filing, problems
+        first; of one company or all."""
         return check_queue(get_store(), app.state.label_map, app.state.checks, isin)
 
     @app.post(

@@ -415,7 +415,7 @@
     "/api/checks": {
       "get": {
         "summary": "Checks Queue",
-        "description": "CHECKS: the figures that feed a KPI or screen, by filing, problems first, whatever\ntheir status; of one company or all.",
+        "description": "CHECKS: the figures that feed a KPI or screen, checked or not, by filing, problems\nfirst; of one company or all.",
         "operationId": "checks_queue_api_checks_get",
         "parameters": [
           {

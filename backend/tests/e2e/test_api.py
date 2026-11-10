@@ -628,3 +628,24 @@ def test_a_checked_value_is_shown_first_in_the_dossier(client, store, document_i
     [revenue] = grid["scopes"][0]["statements"][0]["rows"]
     year = next(y for y in revenue["years"] if y["fiscal_year"] == 2025)
     assert [v["shown"]["value_as_written"] for v in year["values"]] == ["7 112", "36 681"]
+
+
+def test_a_value_whose_check_carried_over_only_in_part_is_not_checked(client, store, document_id):
+    def income(text: str, minute: int):
+        paragraph = SourceParagraph(page=2, text=text, boxes=((2, 50.0, 220.0, 545.0, 240.0),))
+        answer = [INCOME_ANSWER[0], ("revenue", 2025, "p2.0", "36 681")]
+        extract_income(store, document_id, answer, minute=minute, paragraphs=(paragraph,))
+
+    income("Le chiffre d'affaires atteint 36 681 MDH.", minute=10)
+    [row] = rows_of(queue(client))
+    assert row["sources"] == 2
+    assert review(client, row).status_code == 201
+
+    # Re-extracted: the cell reads the same, the paragraph does not, so one check carries over.
+    income("Le chiffre d'affaires consolidé atteint 36 681 MDH.", minute=20)
+    [row] = rows_of(queue(client))
+    assert (row["status"], row["review"]) == ("to_check", None)
+    grid = client.get("/api/companies/MA0000011488/figures").json()
+    [revenue] = grid["scopes"][0]["statements"][0]["rows"]
+    [value] = revenue["years"][0]["values"]
+    assert value["shown"]["needs_review"] is True

@@ -2,13 +2,14 @@
 read, and when a check carries over to a re-extracted figure."""
 
 import re
-from collections.abc import Hashable, Iterable
+from collections.abc import Hashable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 from typing import Protocol
 
 from bloomberg_invest.domain.chunking import Box
+from bloomberg_invest.domain.dossier import Stated, agreeing
 from bloomberg_invest.domain.figures import (
     Scope,
     parse_unit,
@@ -48,7 +49,7 @@ class Gated(Protocol):
     """What decides whether a figure needs a check: a Fact, or a rejected figure."""
 
     @property
-    def basis_scope(self) -> Scope | str | None: ...
+    def basis_scope(self) -> Scope | None: ...
     @property
     def line_item(self) -> str: ...
     @property
@@ -112,6 +113,108 @@ def correction_in_force(check: Checked | None) -> Correction | None:
     return check.correction
 
 
+class Dated(Protocol):
+    @property
+    def reviewed_at(self) -> datetime: ...
+
+
+def check_of[C: Dated](checks: Sequence[C | None]) -> C | None:
+    """The check in force on a value from the checks of the figures stating it: the latest, once
+    every figure is checked. A re-extract may keep the check of some figures and not others, and
+    until a person checks the rest the value is not checked."""
+    done = [c for c in checks if c is not None]
+    if not done or len(done) != len(checks):
+        return None
+    return max(done, key=lambda c: c.reviewed_at)
+
+
+def check_status(check: Checked | None, rejected: bool) -> CheckStatus:
+    """Where a CHECKS row stands, from its check in force (never a reopening)."""
+    if check is None:
+        return CheckStatus.rejected if rejected else CheckStatus.to_check
+    statuses = {Verdict.accepted: CheckStatus.accepted, Verdict.corrected: CheckStatus.corrected}
+    return statuses[check.verdict]
+
+
+def counts_in_dossier(check: Checked | None, rejected: bool) -> bool:
+    """A Fact counts in the dossier; a rejected figure only once a person corrected it."""
+    return not rejected or correction_in_force(check) is not None
+
+
+class Identified(Protocol):
+    @property
+    def id(self) -> str: ...
+
+
+class Keyed(Gated, Protocol):
+    """A figure as a check groups it: a Fact, or a rejected figure."""
+
+    @property
+    def document(self) -> Identified: ...
+    @property
+    def fiscal_year(self) -> int: ...
+
+
+class KeyedFact(Keyed, Stated, Protocol):
+    @property
+    def unit(self) -> str: ...
+    @property
+    def currency(self) -> str | None: ...
+
+
+@dataclass(frozen=True)
+class CheckKey:
+    """What one check covers: a line item, or one breakdown of it, in one fiscal year, on one
+    basis and in one currency, as one filing states it."""
+
+    document_id: str
+    line_item: str
+    fiscal_year: int
+    basis_scope: Scope | None
+    breakdown: str
+    currency: str  # a Fact's currency, or its unit when it has none (`%`, `shares`)
+
+
+def fact_key(fact: KeyedFact) -> CheckKey:
+    return _key(fact, fact.currency or fact.unit)
+
+
+def rejected_key(figure: Keyed) -> CheckKey:
+    """A rejected figure has no parsed currency: it is checked on its own."""
+    return _key(figure, "")
+
+
+def _key(figure: Keyed, currency: str) -> CheckKey:
+    return CheckKey(
+        figure.document.id,
+        figure.line_item,
+        figure.fiscal_year,
+        figure.basis_scope,
+        figure.breakdown,
+        currency,
+    )
+
+
+def refusal(
+    facts: Sequence[KeyedFact], rejected: Sequence[Keyed], verdict: Verdict, rules: KpiRules
+) -> str | None:
+    """Why a check of these figures, one CHECKS row's, is refused; None when it fits them."""
+    figures: list[Keyed] = [*facts, *rejected]
+    if not figures:
+        return "A check names the figures it covers"
+    if not all(needs_check(f, rules) for f in figures):
+        return "A figure that feeds no KPI or screen needs no check"
+    if len({fact_key(f) for f in facts} | {rejected_key(r) for r in rejected}) > 1:
+        return "One check covers one line item, year, basis and currency of one filing"
+    if rejected and len(figures) > 1:
+        return "A rejected figure is checked on its own"
+    if len(agreeing(facts)) > 1:
+        return "These figures state different values: check each value on its own"
+    if rejected and verdict == Verdict.accepted:
+        return "A rejected figure can only be corrected"
+    return None
+
+
 @dataclass(frozen=True)
 class QuotedSource:
     """A number a correction picked in the figure's paragraph: a new Span the Review cites.
@@ -159,13 +262,6 @@ def numbers_in(paragraph: str) -> list[Number]:
         for m in NUMBER.finditer(paragraph)
         if stands_alone(paragraph, m.start(), m.end())
     ]
-
-
-def occurrence(paragraph: str, number: Number) -> int | None:
-    """Which time the number is written in the paragraph, from 0; None when the paragraph does
-    not write that number where it says."""
-    same = [n.start for n in numbers_in(paragraph) if n.text == number.text]
-    return same.index(number.start) if number.start in same else None
 
 
 def around(paragraph: str, number: Number) -> str:
