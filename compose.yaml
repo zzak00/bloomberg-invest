@@ -64,6 +64,8 @@ services:
       AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
       AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
       EXTRACT_DEPLOYMENT: ${EXTRACT_DEPLOYMENT:-gpt-5.6-sol}
+      EXTRACT_CONCURRENCY: ${EXTRACT_CONCURRENCY:-4}
+      LLM: ${LLM:-azure-openai}
       # tiktoken's encoding files, kept with Docling's models.
       TIKTOKEN_CACHE_DIR: /root/.cache/tiktoken
     volumes:

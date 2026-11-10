@@ -32,7 +32,7 @@ const router = createBrowserRouter([
           <EmptyPage
             label="MAP"
             title="The map arrives with entities and facts"
-            body="Ownership, boards and audit links are drawn once facts are extracted from the filings. For now the graph holds the filings themselves."
+            body="Ownership, boards and audit links are drawn once those facts are extracted from the filings. For now the graph holds the filings and their financial figures."
           />
         ),
       },
@@ -42,7 +42,7 @@ const router = createBrowserRouter([
           <EmptyPage
             label="CHECKS"
             title="Nothing to check yet"
-            body="Extracted figures and new names wait here for a person to accept or correct them. Nothing has been extracted yet."
+            body="Extracted figures and new names will wait here for a person to accept or correct them. Until then, extracted figures show on each company's dossier."
           />
         ),
       },
