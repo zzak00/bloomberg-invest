@@ -1,7 +1,7 @@
 """Daily closes (#19 R11, #26): how a share's closes are fetched, checked and shown.
 
-A Price is a daily close of one Listing: market data, not a Fact. It is kept as the source gave
-it and never overwritten; a close that changes at the source is reported as drift.
+A Price is a daily close of one Listing: market data, not a Fact. A close that changes at the
+source is reported as drift, and the new one supersedes the stored one, which is kept (#19 R4).
 """
 
 import csv
@@ -105,13 +105,17 @@ def expected_sessions(start: date, end: date, holidays: list[Holiday]) -> list[d
     return [d for d in days if d.weekday() < 5 and d not in closed]
 
 
-def missing_sessions(start: date, end: date, got: set[date], holidays: list[Holiday]) -> list[date]:
+def missing_sessions(
+    start: date, end: date, given: set[date], holidays: list[Holiday]
+) -> list[date]:
     """Expected sessions the source gave no row for. Every listed share has a row each session,
     traded or not (checked 2026-11-10), so a missing row is a failure; a day that may be an
     unconfirmed holiday is not."""
     maybe_closed = {h.day for h in holidays if not h.confirmed}
     return [
-        d for d in expected_sessions(start, end, holidays) if d not in got and d not in maybe_closed
+        d
+        for d in expected_sessions(start, end, holidays)
+        if d not in given and d not in maybe_closed
     ]
 
 

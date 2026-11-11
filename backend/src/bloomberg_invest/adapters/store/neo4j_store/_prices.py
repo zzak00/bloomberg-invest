@@ -71,6 +71,9 @@ def _add_prices(
 ) -> int:
     """Store the closes that are new, or that differ from the current one and come from a later
     answer; return how many were written. Replaying older answers never undoes a newer one."""
+    # Lock the share first: two runs at once (the schedule and a manual daily) take turns, so
+    # neither reads a current close the other is replacing.
+    tx.run("MATCH (l:Listing {key: $key}) SET l.prices_written_at = $at", key=key, at=fetched_at)
     record = tx.run(
         """
         MATCH (l:Listing {key: $key})

@@ -1,6 +1,7 @@
 """The GraphStore contract for Listings and daily closes (#26 AC1, AC3)."""
 
-from datetime import UTC, date, datetime
+from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 from bloomberg_invest.domain.prices import MANUAL, XCAS, Close, ListedShare, StoredClose
@@ -99,3 +100,23 @@ def test_a_manual_close_sits_beside_the_exchange_s_and_since_filters(store):
 
 def test_a_company_with_no_listing_has_none(store, document):
     assert store.listing("MA0000011488") is None
+
+
+def test_a_company_with_two_listings_always_shows_the_first_by_key(store, document):
+    paris = ListedShare("IAM", "MAROC TELECOM", "Télécommunications", "Euronext")
+    store.upsert_listings("XPAR", [paris], {"IAM": "MA0000011488"}, AT)
+    store.upsert_listings(XCAS, [IAM], {"IAM": "MA0000011488"}, AT)
+    assert [store.listing("MA0000011488").mic for _ in range(3)] == ["XCAS"] * 3
+
+
+def test_runs_writing_one_share_at_once_leave_one_current_close(store):
+    store.upsert_listings(XCAS, [IAM], {}, AT)
+    store.add_prices("XCAS:IAM", closes((5, "88")), SOURCE, "MAD", AT)
+
+    def write(n: int) -> int:
+        later = AT + timedelta(seconds=n + 1)
+        return store.add_prices("XCAS:IAM", closes((5, f"9{n}")), SOURCE, "MAD", later)
+
+    with ThreadPoolExecutor(8) as pool:
+        list(pool.map(write, range(8)))
+    assert len(store.prices("XCAS:IAM")) == 1

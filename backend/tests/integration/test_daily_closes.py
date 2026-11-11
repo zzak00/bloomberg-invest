@@ -214,7 +214,6 @@ def test_the_dossier_shows_the_last_close_its_change_and_three_years(store, docu
 
 
 FIXTURES = Path(__file__).parents[1] / "fixtures" / "bourse"
-STAMP = "%Y%m%dT%H%M%S%fZ"
 
 
 def test_the_archive_rebuilds_the_same_closes(store, tmp_path, driver):
@@ -252,3 +251,14 @@ def test_replay_keeps_a_share_no_longer_listed_and_names_one_never_listed(store,
 def test_dates_are_one_day_apart_in_the_history_helper():
     days = list(history(date(2023, 11, 20)))
     assert days[0] == HISTORY and days[1] - days[0] == timedelta(days=1)
+
+
+def test_replay_applies_a_later_answer_s_changed_close(store, tmp_path):
+    archive = RawArchive(tmp_path)
+    earlier, later = datetime(2026, 11, 9, tzinfo=UTC), datetime(2026, 11, 10, tzinfo=UTC)
+    archive.save("listings/{at}.html", earlier, (FIXTURES / "issuers.html").read_bytes())
+    closes = (FIXTURES / "closes.json").read_bytes()
+    archive.save("ABC/{at}_2026-11-02_2026-11-09_p1.json", earlier, closes)
+    archive.save("ABC/{at}_2026-11-02_2026-11-09_p1.json", later, closes.replace(b"52.4", b"52.5"))
+    replay(store, archive, BourseCasablanca(fetch=None, pause=0), {}, now)
+    assert [c.close for c in store.prices("XCAS:ABC")][-1] == Decimal("52.5")

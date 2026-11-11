@@ -180,9 +180,9 @@ def _daily_share(
     if not fetched and expected_sessions(start, today - timedelta(days=1), holidays):
         report.errors.append(f"{ticker}: empty answer from {start} to {today}")
     else:
-        got = {c.session for c in fetched}
+        given = {c.session for c in fetched}
         missing = missing_sessions(
-            last + timedelta(days=1), today - timedelta(days=1), got, holidays
+            last + timedelta(days=1), today - timedelta(days=1), given, holidays
         )
         report.errors += [f"{ticker}: no row for {d}" for d in missing]
     stored_days = {c.session for c in kept if c.source == source.source}
@@ -237,7 +237,8 @@ def replay(
     keeps the time its answer was fetched, and a later answer supersedes an earlier one."""
     report = Report()
     shares = archive.listings()
-    store.upsert_listings(source.mic, shares, isins, now())
+    for ticker in store.upsert_listings(source.mic, shares, isins, now()):
+        report.lines.append(f"{ticker}: in no listing archived; its closes are kept")
     listed = {s.ticker for s in shares}
     added: dict[str, int] = defaultdict(int)
     unlisted: set[str] = set()

@@ -19,6 +19,7 @@ erDiagram
         String sector
         String compartment
         DateTime refreshed_at
+        DateTime prices_written_at
     }
     Price {
         String listing
@@ -402,6 +403,7 @@ A share as its exchange lists it (#26). Every share the Bourse de Casablanca lis
 | `name` | String | as the exchange lists it | `ITISSALAT AL-MAGHRIB` |
 | `sector`, `compartment` | String | as the exchange lists them | `Télécommunications`, `Principal A` |
 | `refreshed_at` | DateTime | UTC, the last price run that saw it listed | `2026-11-11T17:30:02Z` |
+| `prices_written_at` | DateTime | UTC, the last answer whose closes were written; setting it locks the share, so two runs at once take turns | `2026-11-11T17:30:04Z` |
 
 ### Price
 
