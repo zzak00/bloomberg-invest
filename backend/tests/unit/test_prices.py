@@ -10,13 +10,13 @@ from bloomberg_invest.domain.prices import (
     Close,
     Holiday,
     StoredClose,
-    change,
+    change_from_previous,
     csv_closes,
     drift,
-    earliest,
     expected_sessions,
+    history_start,
     missing_sessions,
-    shown,
+    one_per_session,
     windows,
 )
 
@@ -64,7 +64,7 @@ def close(day: int, value: str | None, month: int = 11) -> Close:
 
 
 def stored(day: int, value: str, source: str = "bourse-casablanca") -> StoredClose:
-    return StoredClose(session=date(2026, 11, day), close=Decimal(value), source=source)
+    return StoredClose(date(2026, 11, day), Decimal(value), source, "MAD")
 
 
 def test_drift_names_each_session_that_changed_vanished_or_appeared():
@@ -83,7 +83,7 @@ def test_drift_ignores_manual_closes_and_sessions_outside_the_range():
 
 def test_a_csv_gives_closes_and_says_which_lines_it_refused():
     text = 'ticker,date,close\nIAM,2026-11-05,"88,90"\nIAM,2026-11-09,89.80\nIAM,09/11/2026,1\nATW,2026-11-09,abc\n'
-    rows, refused = csv_closes(text)
+    rows, refused = csv_closes(text, "MAD")
     assert [(r.ticker, r.session, r.close, r.currency) for r in rows] == [
         ("IAM", date(2026, 11, 5), Decimal("88.90"), "MAD"),
         ("IAM", date(2026, 11, 9), Decimal("89.80"), "MAD"),
@@ -96,7 +96,7 @@ def test_a_csv_gives_closes_and_says_which_lines_it_refused():
 
 def test_a_csv_without_the_columns_is_refused_whole():
     with pytest.raises(ValueError, match="ticker,date,close"):
-        csv_closes("symbol,day,price\nIAM,2026-11-05,88.90\n")
+        csv_closes("symbol,day,price\nIAM,2026-11-05,88.90\n", "MAD")
 
 
 def test_the_bourse_close_is_shown_over_a_manual_one_on_the_same_session():
@@ -105,15 +105,15 @@ def test_the_bourse_close_is_shown_over_a_manual_one_on_the_same_session():
         stored(5, "88.90"),
         stored(4, "88.10", source=MANUAL),
     ]
-    assert [(c.session.day, c.close, c.source) for c in shown(closes)] == [
+    assert [(c.session.day, c.close, c.source) for c in one_per_session(closes)] == [
         (4, Decimal("88.10"), MANUAL),
         (5, Decimal("88.90"), "bourse-casablanca"),
     ]
 
 
 def test_the_change_is_from_the_session_before():
-    assert change([stored(9, "89.80"), stored(10, "91.70")]) == Decimal("0.0212")
-    assert change([stored(10, "91.70")]) is None
+    assert change_from_previous([stored(9, "89.80"), stored(10, "91.70")]) == Decimal("0.0212")
+    assert change_from_previous([stored(10, "91.70")]) is None
 
 
 def test_the_history_start_is_found_by_halving():
@@ -124,5 +124,5 @@ def test_the_history_start_is_found_by_halving():
         asked.append(day)
         return day >= start
 
-    assert earliest(date(2023, 10, 12), date(2023, 12, 12), has_rows) == start
+    assert history_start(date(2023, 10, 12), date(2023, 12, 12), has_rows) == start
     assert len(asked) <= 6

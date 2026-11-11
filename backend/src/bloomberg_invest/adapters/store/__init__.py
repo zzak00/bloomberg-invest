@@ -120,15 +120,17 @@ class GraphStore(Protocol):
     def add_prices(
         self, key: str, closes: list[Close], source: str, currency: str, fetched_at: datetime
     ) -> int:
-        """Store a share's closes from a source, in one transaction; return how many were new.
-        A close already stored for the session and source is kept, never overwritten; sessions
+        """Store a share's closes from a source, in one transaction; return how many were
+        written. A session and source has one current close: the same close again writes nothing,
+        and a different one from a later answer supersedes it, which is kept (#19 R4). Sessions
         with no close are skipped."""
 
     def prices(self, key: str, since: date | None = None) -> list[StoredClose]:
-        """A share's stored closes, from every source, oldest first."""
+        """A share's current closes, from every source, oldest first."""
 
     def last_session(self, key: str, source: str) -> date | None:
-        """The latest session a source gave the share a close for."""
+        """The latest session the share has a current close for from this source."""
 
     def listing(self, isin: str) -> Listing | None:
-        """The listing of the Organisation with this ISIN, if it has one."""
+        """The listing of the Organisation with this ISIN, if it has one; the first by key if
+        it has several."""

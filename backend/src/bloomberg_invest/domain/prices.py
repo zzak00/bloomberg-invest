@@ -60,7 +60,7 @@ class StoredClose:
     session: date
     close: Decimal
     source: str
-    currency: str = "MAD"
+    currency: str
 
 
 @dataclass(frozen=True)
@@ -73,7 +73,7 @@ class CsvClose:
     currency: str
 
 
-def listing_key(ticker: str, mic: str = XCAS) -> str:
+def listing_key(ticker: str, mic: str) -> str:
     """What a Price names its Listing by: `XCAS:IAM`."""
     return f"{mic}:{ticker}"
 
@@ -132,9 +132,9 @@ def drift(
     return lines
 
 
-def csv_closes(text: str) -> tuple[list[CsvClose], list[str]]:
+def csv_closes(text: str, currency: str) -> tuple[list[CsvClose], list[str]]:
     """The closes of a CSV with the columns `ticker,date,close` and an optional `currency`
-    (MAD by default), and a line for each row refused. Dates are ISO (`2026-11-05`); a close
+    (the exchange's `currency` by default), and a line for each row refused. Dates are ISO (`2026-11-05`); a close
     may be written either way (`88,90` or `88.90`)."""
     reader = csv.DictReader(io.StringIO(text))
     if not {"ticker", "date", "close"} <= set(reader.fieldnames or []):
@@ -151,12 +151,14 @@ def csv_closes(text: str) -> tuple[list[CsvClose], list[str]]:
         if value is None:
             refused.append(f"line {line}: {written!r} is not one number")
             continue
-        currency = (row.get("currency") or "MAD").strip().upper()
-        rows.append(CsvClose((row["ticker"] or "").strip().upper(), session, value, currency))
+        written_currency = (row.get("currency") or currency).strip().upper()
+        rows.append(
+            CsvClose((row["ticker"] or "").strip().upper(), session, value, written_currency)
+        )
     return rows, refused
 
 
-def shown(closes: list[StoredClose]) -> list[StoredClose]:
+def one_per_session(closes: list[StoredClose]) -> list[StoredClose]:
     """One close per session, oldest first: the exchange's over one typed in by hand."""
     best: dict[date, StoredClose] = {}
     for c in closes:
@@ -165,7 +167,7 @@ def shown(closes: list[StoredClose]) -> list[StoredClose]:
     return [best[d] for d in sorted(best)]
 
 
-def change(closes: list[StoredClose]) -> Decimal | None:
+def change_from_previous(closes: list[StoredClose]) -> Decimal | None:
     """The last close's change from the session before, as a fraction to four places."""
     if len(closes) < 2:
         return None
@@ -173,7 +175,7 @@ def change(closes: list[StoredClose]) -> Decimal | None:
     return ((last - before) / before).quantize(Decimal("0.0001"))
 
 
-def earliest(after: date, at: date, has_rows: Callable[[date], bool]) -> date:
+def history_start(after: date, at: date, has_rows: Callable[[date], bool]) -> date:
     """The earliest start from which the source answers, between `after` (where it answers
     nothing) and `at` (where it does): it answers nothing for a range starting before its
     history (#15). Halves the gap until it is one day."""

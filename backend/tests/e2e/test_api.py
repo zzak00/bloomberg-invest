@@ -1,23 +1,27 @@
 """API contract tests: FastAPI's test client against a real Neo4j and stored PDF."""
 
 import hashlib
+import os
 import shutil
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
 from conftest import FIXTURES, INCOME_ANSWER, extract_income, make_run
-from fakes import FakeEmbedder
+from fakes import BOURSE_FIXTURES, FakeEmbedder, bourse_server
 from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator
 from starlette.routing import Match
 
-from bloomberg_invest import config
+from bloomberg_invest import bootstrap, config
 from bloomberg_invest.adapters.files import DocumentFiles
+from bloomberg_invest.adapters.prices.bourse_casablanca import BourseCasablanca
 from bloomberg_invest.domain.chunking import Block, ChunkDraft
 from bloomberg_invest.domain.extraction import SourceParagraph
 from bloomberg_invest.domain.model import RunStep
 from bloomberg_invest.domain.prices import CASABLANCA, XCAS, Close, ListedShare
+from bloomberg_invest.entrypoints import cli
+from bloomberg_invest.entrypoints import prices as prices_entrypoint
 from bloomberg_invest.entrypoints.api.app import create_app
 from bloomberg_invest.service_layer.checks import Checks
 from bloomberg_invest.service_layer.embed import embed_document
@@ -310,7 +314,7 @@ def test_a_listed_company_shows_its_last_close_and_change(client, store, documen
     }
     assert company["last_close"] == {
         "session": str(today - timedelta(days=1)),
-        "close": "91.70",
+        "close": "91.7",
         "currency": "MAD",
         "change": "0.0212",
         "source": "bourse-casablanca",
@@ -318,7 +322,8 @@ def test_a_listed_company_shows_its_last_close_and_change(client, store, documen
     }
     series = client.get("/api/companies/MA0000011488/prices").json()
     # Three years back: the close of 1,200 days ago is history, not in the line.
-    assert [p["close"] for p in series["closes"]] == ["89.80", "91.70"]
+    # Closes are written without trailing zeros, so one close is written one way.
+    assert [p["close"] for p in series["closes"]] == ["89.8", "91.7"]
 
 
 def test_a_listing_with_no_closes_yet_has_no_last_close(client, store, document_id):
@@ -326,6 +331,73 @@ def test_a_listing_with_no_closes_yet_has_no_last_close(client, store, document_
     company = client.get("/api/companies/MA0000011488").json()
     assert (company["listing"]["ticker"], company["last_close"]) == ("IAM", None)
     assert client.get("/api/companies/MA0000011488/prices").json()["closes"] == []
+
+
+@pytest.fixture
+def prices_cli(monkeypatch, tmp_path, driver):
+    """`bloomberg prices ...` on the test Neo4j, the Bourse adapter reading the recorded
+    fixtures (#26 AC5) on 11/11/2026, and the made-up share ABC linked to Maroc Telecom."""
+    monkeypatch.setenv("NEO4J_URI", os.environ.get("NEO4J_TEST_URI", "bolt://localhost:7688"))
+    monkeypatch.setenv("NEO4J_PASSWORD", os.environ.get("NEO4J_TEST_PASSWORD", "test-password"))
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    server = {"fetch": bourse_server}
+    monkeypatch.setitem(
+        bootstrap.PRICE_SOURCES,
+        XCAS,
+        lambda settings: BourseCasablanca(fetch=lambda url: server["fetch"](url), pause=0),
+    )
+    monkeypatch.setattr(bootstrap.config, "listing_isins", lambda mic: {"ABC": "MA0000011488"})
+    monkeypatch.setattr(prices_entrypoint, "_today", lambda: date(2026, 11, 11))
+
+    def run(*argv: str) -> int:
+        return cli.main(["prices", *argv])
+
+    run.server = server
+    return run
+
+
+def test_a_backfill_through_the_cli_shows_in_the_api_and_a_rerun_changes_nothing(
+    client, document_id, prices_cli, capsys
+):
+    assert prices_cli("backfill", "--ticker", "ABC") == 0
+    first = client.get("/api/companies/MA0000011488/prices").json()
+    assert [(p["session"], p["close"]) for p in first["closes"]] == [
+        ("2026-11-03", "50"),
+        ("2026-11-05", "51.95"),
+        ("2026-11-09", "52.4"),
+    ]
+    capsys.readouterr()
+    assert prices_cli("backfill", "--ticker", "ABC") == 0
+    assert "0 new closes, 0 drifted, 0 errors" in capsys.readouterr().out
+    assert client.get("/api/companies/MA0000011488/prices").json() == first
+
+
+def test_an_empty_answer_through_the_cli_fails_the_run(client, document_id, prices_cli, capsys):
+    assert prices_cli("backfill", "--ticker", "ABC") == 0
+    prices_cli.server["fetch"] = lambda url: (
+        (BOURSE_FIXTURES / "empty.json").read_bytes()
+        if "stock-historical" in url
+        else bourse_server(url)
+    )
+    capsys.readouterr()
+    assert prices_cli("daily") == 1
+    assert "error: ABC: empty answer from 2026-10-12 to 2026-11-11" in capsys.readouterr().err
+
+
+def test_a_csv_through_the_cli_fills_a_gap_the_api_then_shows(
+    client, document_id, prices_cli, tmp_path, capsys
+):
+    assert prices_cli("backfill", "--ticker", "ABC") == 0
+    csv = tmp_path / "closes.csv"
+    csv.write_text("ticker,date,close\nABC,2026-11-02,49.5\nABC,2026-11-03,1\n")
+    capsys.readouterr()
+    assert prices_cli("import", str(csv)) == 0
+    assert "ABC: 1 added, 1 skipped: already closed" in capsys.readouterr().out
+    series = client.get("/api/companies/MA0000011488/prices").json()
+    assert [(p["session"], p["close"]) for p in series["closes"]][:2] == [
+        ("2026-11-02", "49.5"),
+        ("2026-11-03", "50"),
+    ]
 
 
 def test_a_company_s_figures_are_its_checked_facts_only_by_statement_and_year(client, extracted):

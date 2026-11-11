@@ -73,13 +73,17 @@ class RawArchive(PriceArchive):
             if f.parent.name not in ("listings", "holidays")
         ]
         for fetched_at, f in sorted(files):
-            yield f.parent.name, fetched_at, parse_closes(f.read_bytes(), str(f))[0]
+            sessions = parse_closes(f.read_bytes(), str(f))[0]
+            yield f.parent.name, fetched_at, sorted(sessions, key=lambda c: c.session)
 
-    def latest_listings(self) -> list[ListedShare]:
+    def listings(self) -> list[ListedShare]:
         pages = sorted((self.root / "listings").glob("*.html"))
         if not pages:
             raise PriceSourceError(f"no listings archived under {self.root}")
-        return parse_listings(pages[-1].read_bytes(), str(pages[-1]))
+        latest: dict[str, ListedShare] = {}
+        for page in pages:  # oldest first, so a later page wins
+            latest |= {s.ticker: s for s in parse_listings(page.read_bytes(), str(page))}
+        return [latest[t] for t in sorted(latest)]
 
 
 @dataclass

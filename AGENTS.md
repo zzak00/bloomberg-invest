@@ -13,11 +13,11 @@ Run, test and develop: see `README.md`. To prove a change in the running app, fo
 `backend/src/bloomberg_invest/` follows Architecture Patterns with Python (cosmicpython.com). Dependencies point inward: `entrypoints` -> `service_layer` -> `domain`.
 
 - `domain/`: write models and their rules; imports no other layer.
-- `service_layer/`: one module per use case (`ingest.py`); receives its adapters as arguments, and builds the read models it returns from domain rules.
-- `adapters/`: each port is a `typing.Protocol` (`Parser`, `GraphStore`, `Embedder`, `LLM`, `TokenCounter`) that real adapters inherit.
+- `service_layer/`: one module per use case (`ingest.py`); receives its adapters as arguments, and builds the read models it returns from domain rules. One use case commits in one transaction, except a price run (`prices.py`), which commits each share on its own so a run of minutes keeps what it wrote before a failure.
+- `adapters/`: each port is a `typing.Protocol` (`Parser`, `GraphStore`, `Embedder`, `LLM`, `TokenCounter`, `PriceSource`, `PriceArchive`) that real adapters inherit.
 - `entrypoints/`: the CLI and the FastAPI app; they translate input and call a service.
 - `views.py`: the read models the store returns and the API serves.
-- `bootstrap.py`: the only place that names concrete adapters; picks each from its setting (`PARSER`, `EMBEDDER`, `LLM`).
+- `bootstrap.py`: the only place that names concrete adapters; picks each from its setting (`PARSER`, `EMBEDDER`, `LLM`), and a price source by its exchange's MIC.
 
 Tests: `tests/unit/` (no Docker), `tests/integration/` (real Neo4j or Docling; one contract test per port, run on every implementation), `tests/e2e/` (through the API).
 

@@ -30,8 +30,10 @@ class PriceSource(Protocol):
 class PriceArchive(Protocol):
     """The answers a source gave, kept as returned, so closes can be rebuilt without asking."""
 
-    def latest_listings(self) -> list[ListedShare]:
-        """The shares of the latest listing archived."""
+    def listings(self) -> list[ListedShare]:
+        """Every share in any listing archived, each as the latest page gave it: a share no
+        longer listed keeps the closes archived for it."""
 
     def closes(self) -> Iterator[tuple[str, datetime, list[Close]]]:
-        """Every archived answer for closes, oldest fetch first: ticker, when, sessions."""
+        """Every archived answer for closes, oldest fetch first: ticker, when, and its sessions
+        oldest first."""

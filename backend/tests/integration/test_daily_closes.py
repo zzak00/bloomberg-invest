@@ -13,7 +13,7 @@ from bloomberg_invest.service_layer.prices import (
     backfill,
     daily,
     import_csv,
-    last_close,
+    listing_and_last_close,
     price_series,
     replay,
 )
@@ -31,8 +31,12 @@ ISINS = {"ABC": "MA0000011488"}
 SOURCE = "bourse-casablanca"
 
 
+_ticks = iter(range(10**9))
+
+
 def now() -> datetime:
-    return datetime(2026, 11, 11, 18, 30, tzinfo=UTC)
+    """The evening of TODAY, a second later at each call: a later answer is a newer one."""
+    return datetime(2026, 11, 11, 18, 30, tzinfo=UTC) + timedelta(seconds=next(_ticks))
 
 
 def history(until: date = TODAY, base: str = "50", no_close: tuple[date, ...] = ()):
@@ -127,20 +131,42 @@ def test_today_is_taken_if_published_and_checked_next_run(store):
     assert report.added == 1  # GAM's 11th
 
 
-def test_drift_is_reported_and_never_overwrites(store):
+def test_a_changed_close_is_reported_then_supersedes_the_stored_one(store):
     backfilled(store, date(2026, 11, 3))
+    before = {c.session: c.close for c in store.prices("XCAS:ABC", since=date(2026, 10, 30))}
     sessions = history()
     sessions[date(2026, 11, 2)] += Decimal("0.05")  # the source changed a stored close
     del sessions[date(2026, 10, 30)]  # and dropped one
     report = daily(
         store, exchange(sessions={"ABC": sessions, "GAM": history(base="600")}), {}, TODAY, now
     )
-    stored = {c.session: c.close for c in store.prices("XCAS:ABC", since=date(2026, 10, 30))}
     assert report.drift == [
-        f"ABC 2026-10-30: stored {stored[date(2026, 10, 30)]}, source has no close now",
-        f"ABC 2026-11-02: stored {stored[date(2026, 11, 2)]}, source now {sessions[date(2026, 11, 2)]}",
+        f"ABC 2026-10-30: stored {before[date(2026, 10, 30)]}, source has no close now",
+        f"ABC 2026-11-02: stored {before[date(2026, 11, 2)]}, source now {sessions[date(2026, 11, 2)]}",
     ]
-    assert stored[date(2026, 11, 2)] == history()[date(2026, 11, 2)]
+    after = {c.session: c.close for c in store.prices("XCAS:ABC", since=date(2026, 10, 30))}
+    # The new close is current (#19 R4); one the source dropped stays as it was.
+    assert after[date(2026, 11, 2)] == sessions[date(2026, 11, 2)]
+    assert after[date(2026, 10, 30)] == before[date(2026, 10, 30)]
+
+
+def test_an_empty_answer_is_an_error_for_a_share_up_to_date_yesterday(store):
+    backfilled(store, date(2026, 11, 10))
+    report = daily(store, exchange(sessions={"GAM": history(base="600")}), {}, TODAY, now)
+    assert report.errors == ["ABC: empty answer from 2026-10-12 to 2026-11-11"]
+
+
+def test_a_backfill_goes_on_past_a_share_the_source_cannot_read(store):
+    report = backfill(store, exchange(failing={"ABC"}), {}, TODAY, now)
+    assert report.errors == ["ABC: the source timed out"]
+    assert report.added == len(history())  # GAM's
+
+
+def test_a_daily_run_goes_on_past_a_share_the_source_cannot_read(store):
+    backfilled(store, date(2026, 11, 3))
+    report = daily(store, exchange(failing={"ABC"}), {}, TODAY, now)
+    assert report.errors == ["ABC: the source timed out"]
+    assert report.added == 5  # GAM's sessions since the 3rd
 
 
 def test_a_share_with_no_close_is_noted_not_failed(store):
@@ -162,7 +188,7 @@ def test_a_share_never_backfilled_is_named(store):
 def test_a_csv_fills_gaps_by_hand_and_keeps_what_is_stored(store):
     backfilled(store, date(2026, 11, 3))
     text = 'ticker,date,close\nABC,2026-11-03,1\nABC,2026-11-05,"88,90"\nXYZ,2026-11-05,2\nABC,soon,3\n'
-    report = import_csv(store, text, now)
+    report = import_csv(store, text, "XCAS", "MAD", now)
     assert report.added == 1
     assert report.lines == ["ABC: 1 added, 1 skipped: already closed"]
     assert report.errors == [
@@ -175,7 +201,7 @@ def test_a_csv_fills_gaps_by_hand_and_keeps_what_is_stored(store):
 
 def test_the_dossier_shows_the_last_close_its_change_and_three_years(store, document):
     backfilled(store, date(2026, 11, 10))
-    listing, last = last_close(store, "MA0000011488")
+    listing, last = listing_and_last_close(store, "MA0000011488")
     assert (listing.ticker, listing.sector) == ("ABC", "Télécommunications")
     closes = history(date(2026, 11, 10))
     final, before = closes[date(2026, 11, 10)], closes[date(2026, 11, 9)]
@@ -184,10 +210,11 @@ def test_the_dossier_shows_the_last_close_its_change_and_three_years(store, docu
     assert last.history_start == HISTORY
     series = price_series(store, "MA0000011488", TODAY)
     assert (series.closes[0].session, series.closes[-1].session) == (HISTORY, date(2026, 11, 10))
-    assert last_close(store, "MA0000000000") == (None, None)
+    assert listing_and_last_close(store, "MA0000000000") == (None, None)
 
 
 FIXTURES = Path(__file__).parents[1] / "fixtures" / "bourse"
+STAMP = "%Y%m%dT%H%M%S%fZ"
 
 
 def test_the_archive_rebuilds_the_same_closes(store, tmp_path, driver):
@@ -206,6 +233,20 @@ def test_the_archive_rebuilds_the_same_closes(store, tmp_path, driver):
     assert report.lines == [f"ABC: {len(before)} new"]
     assert store.prices("XCAS:ABC") == before
     assert replay(store, archive, source, {}, now).added == 0
+
+
+def test_replay_keeps_a_share_no_longer_listed_and_names_one_never_listed(store, tmp_path):
+    archive = RawArchive(tmp_path)
+    earlier, later = datetime(2026, 11, 2, tzinfo=UTC), datetime(2026, 11, 9, tzinfo=UTC)
+    issuers = (FIXTURES / "issuers.html").read_bytes()
+    archive.save("listings/{at}.html", earlier, issuers)  # ABC and GAM
+    archive.save("listings/{at}.html", later, issuers.replace(b'"GAM"', b'"ZZZ"'))  # GAM gone
+    closes = (FIXTURES / "closes.json").read_bytes()
+    archive.save("GAM/{at}_2026-11-02_2026-11-09_p1.json", earlier, closes)
+    archive.save("XYZ/{at}_2026-11-02_2026-11-09_p1.json", earlier, closes)
+    report = replay(store, archive, BourseCasablanca(fetch=None, pause=0), {}, now)
+    assert report.lines == ["GAM: 3 new"]
+    assert report.errors == ["XYZ: closes archived, but in no listing archived"]
 
 
 def test_dates_are_one_day_apart_in_the_history_helper():

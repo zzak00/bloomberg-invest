@@ -1,7 +1,7 @@
 """Listings and daily closes (#26): market data, kept beside the graph (ADR 0003).
 
-A Price is keyed by (listing, date, source), so a re-run writes nothing new, and a close already
-stored is never overwritten.
+A share has one current close per session and source. A re-run that reads the same close writes
+nothing; a newer answer with a different close supersedes the stored one, which is kept (#19 R4).
 """
 
 from datetime import datetime
@@ -12,11 +12,15 @@ from neo4j import ManagedTransaction
 from bloomberg_invest.domain.prices import Close, ListedShare, StoredClose, listing_key
 from bloomberg_invest.views import Listing
 
-# Uniqueness over several properties, which Neo4j Community enforces too.
+# Uniqueness over several properties, which Neo4j Community enforces too. "One current close per
+# session and source" needs a partial constraint Community lacks: `_add_prices` keeps it, in the
+# share's transaction.
 PRICE_CONSTRAINTS = [
+    # Before supersession, a Price was unique on (listing, date, source).
+    "DROP CONSTRAINT price_key IF EXISTS",
     "CREATE CONSTRAINT listing_ticker IF NOT EXISTS FOR (n:Listing) REQUIRE (n.mic, n.ticker) IS UNIQUE",
     "CREATE CONSTRAINT listing_key IF NOT EXISTS FOR (n:Listing) REQUIRE n.key IS UNIQUE",
-    "CREATE CONSTRAINT price_key IF NOT EXISTS FOR (n:Price) REQUIRE (n.listing, n.date, n.source) IS UNIQUE",
+    "CREATE CONSTRAINT price_fetch IF NOT EXISTS FOR (n:Price) REQUIRE (n.listing, n.date, n.source, n.fetched_at) IS UNIQUE",
 ]
 
 
@@ -65,23 +69,43 @@ def _add_prices(
     currency: str,
     fetched_at: datetime,
 ) -> int:
-    summary = tx.run(
+    """Store the closes that are new, or that differ from the current one and come from a later
+    answer; return how many were written. Replaying older answers never undoes a newer one."""
+    record = tx.run(
         """
         MATCH (l:Listing {key: $key})
         UNWIND $closes AS c
-        MERGE (p:Price {listing: $key, date: c.session, source: $source})
-        ON CREATE SET p.close = c.close, p.currency = $currency, p.fetched_at = $at
-        MERGE (l)-[:HAS_PRICE]->(p)
+        OPTIONAL MATCH (old:Price {listing: $key, date: c.session, source: $source})
+        WHERE NOT coalesce(old.superseded, false)
+        WITH l, c, old
+        WHERE (old IS NULL OR (old.close <> c.close AND old.fetched_at < $at))
+          AND NOT EXISTS {
+            MATCH (:Price {listing: $key, date: c.session, source: $source, fetched_at: $at})
+          }
+        CREATE (p:Price {listing: $key, date: c.session, source: $source, close: c.close,
+                         currency: $currency, fetched_at: $at})
+        CREATE (l)-[:HAS_PRICE]->(p)
+        FOREACH (_ IN CASE WHEN old IS NULL THEN [] ELSE [1] END |
+            SET old.superseded = true
+            CREATE (old)-[:SUPERSEDED_BY]->(p))
+        RETURN count(p) AS written
         """,
         key=key,
         source=source,
         currency=currency,
         at=fetched_at,
         closes=[
-            {"session": c.session, "close": str(c.close)} for c in closes if c.close is not None
+            {"session": c.session, "close": decimal_text(c.close)}
+            for c in closes
+            if c.close is not None
         ],
-    ).consume()
-    return summary.counters.nodes_created
+    ).single()
+    return record["written"] if record else 0
+
+
+def decimal_text(value: Decimal) -> str:
+    """One way to write a close, so `88.90` and `88.9` are the same: no trailing zeros."""
+    return format(value.normalize(), "f")
 
 
 def _stored(record) -> StoredClose:

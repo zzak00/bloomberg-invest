@@ -1,4 +1,5 @@
-"""The PriceSource contract (#26 AC5): each source, on answers recorded in its own shape.
+"""The Bourse de Casablanca adapter beyond the PriceSource contract (`test_price_contract.py`):
+paging, unknown shapes, failures, its raw archive, TLS and pacing.
 
 The Bourse fixtures are made-up closes in the Bourse's exact format (#26 D4): its data may not
 be republished, and this repo is public. `test_bourse_replays_its_real_answers` reads the real
@@ -8,7 +9,6 @@ answers a backfill keeps in the gitignored `data/prices/raw/`, and skips without
 import json
 import ssl
 from datetime import UTC, date, datetime
-from decimal import Decimal
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -20,7 +20,6 @@ from bloomberg_invest.adapters.prices.bourse_casablanca import (
     RawArchive,
     tls_context,
 )
-from bloomberg_invest.domain.prices import Close, Holiday, ListedShare
 
 FIXTURES = Path(__file__).parents[1] / "fixtures" / "bourse"
 RECORDED = Path(__file__).parents[3] / "data" / "prices" / "raw"
@@ -51,35 +50,12 @@ def bourse(fetch, **kwargs) -> BourseCasablanca:
     return BourseCasablanca(fetch=fetch, pause=0, clock=lambda: AT, **kwargs)
 
 
-def test_shares_come_from_the_issuer_list_with_their_sector():
-    assert bourse(serve()).listings() == [
-        ListedShare("ABC", "ALPHA BETA", "Télécommunications", "Principal A"),
-        ListedShare("GAM", "GAMMA", "Banques", "Principal B"),
-    ]
-
-
-def test_holidays_say_whether_they_are_confirmed():
-    assert bourse(serve()).holidays() == [
-        Holiday(date(2026, 11, 6), confirmed=True),
-        Holiday(date(2026, 5, 27), confirmed=False),
-    ]
-
-
-def test_closes_are_read_oldest_first_and_a_session_may_have_none():
+def test_the_bourse_is_asked_for_the_range_given():
     fetch = serve(ABC="closes.json")
-    closes = bourse(fetch).closes("ABC", date(2026, 11, 2), date(2026, 11, 9))
-    assert closes == [
-        Close(date(2026, 11, 3), Decimal(50)),
-        Close(date(2026, 11, 4), None),
-        Close(date(2026, 11, 5), Decimal("51.95")),
-        Close(date(2026, 11, 9), Decimal("52.4")),
-    ]
+    bourse(fetch).closes("ABC", date(2026, 11, 2), date(2026, 11, 9))
     query = parse_qs(urlparse(fetch.asked[0]).query)
     assert (query["startDate"], query["endDate"]) == (["2026-11-02"], ["2026-11-09"])
-
-
-def test_an_empty_answer_is_no_sessions():
-    assert bourse(serve()).closes("ABC", date(2026, 11, 2), date(2026, 11, 9)) == []
+    assert (query["instrument"], query["pageSize"]) == (["ABC"], ["1000"])
 
 
 def test_a_long_answer_is_read_page_by_page():
@@ -112,10 +88,8 @@ def test_every_answer_is_archived_as_given_and_reads_back(tmp_path):
     [saved] = (tmp_path / "ABC").iterdir()
     assert saved.name == "20261110T183000000000Z_2026-11-02_2026-11-09_p1.json"
     assert saved.read_bytes() == (FIXTURES / "closes.json").read_bytes()
-    assert [(t, at, sorted(c, key=lambda c: c.session)) for t, at, c in archive.closes()] == [
-        ("ABC", AT, closes)
-    ]
-    assert [s.ticker for s in archive.latest_listings()] == ["ABC", "GAM"]
+    assert list(archive.closes()) == [("ABC", AT, closes)]
+    assert [s.ticker for s in archive.listings()] == ["ABC", "GAM"]
 
 
 def test_the_bourse_s_missing_intermediate_is_trusted_and_checks_stay_on():
@@ -136,7 +110,7 @@ def test_requests_are_spaced_out():
 @pytest.mark.skipif(not (RECORDED / "IAM").is_dir(), reason="no real Bourse answers kept")
 def test_bourse_replays_its_real_answers():
     archive = RawArchive(RECORDED)
-    shares = archive.latest_listings()
+    shares = archive.listings()
     assert len(shares) >= 80 and any(s.ticker == "IAM" for s in shares)
     closes = [c for t, _, cs in archive.closes() if t == "IAM" for c in cs]
     assert len(closes) > 700 and all(c.close is not None for c in closes)

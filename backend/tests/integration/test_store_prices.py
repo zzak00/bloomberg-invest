@@ -57,11 +57,30 @@ def test_closes_are_stored_once_per_session_and_source(store):
     assert store.last_session("XCAS:IAM", SOURCE) == date(2026, 11, 9)
 
 
-def test_a_stored_close_is_never_overwritten(store):
+def test_a_later_different_close_supersedes_the_stored_one(store, driver):
     store.upsert_listings(XCAS, [IAM], {}, AT)
     store.add_prices("XCAS:IAM", closes((5, "88.95")), SOURCE, "MAD", AT)
+    assert store.add_prices("XCAS:IAM", closes((5, "90")), SOURCE, "MAD", LATER) == 1
+    assert store.prices("XCAS:IAM") == [StoredClose(date(2026, 11, 5), Decimal(90), SOURCE, "MAD")]
+    records, _, _ = driver.execute_query(
+        "MATCH (old:Price {close: '88.95'})-[:SUPERSEDED_BY]->(new:Price) "
+        "RETURN old.superseded AS gone, new.close AS close"
+    )
+    assert [(r["gone"], r["close"]) for r in records] == [(True, "90")]
+
+
+def test_an_older_answer_never_undoes_a_newer_close(store):
+    store.upsert_listings(XCAS, [IAM], {}, AT)
+    store.add_prices("XCAS:IAM", closes((5, "90")), SOURCE, "MAD", LATER)
+    assert store.add_prices("XCAS:IAM", closes((5, "88.95")), SOURCE, "MAD", AT) == 0
     assert store.add_prices("XCAS:IAM", closes((5, "90")), SOURCE, "MAD", LATER) == 0
-    assert store.prices("XCAS:IAM") == [StoredClose(date(2026, 11, 5), Decimal("88.95"), SOURCE)]
+    assert [c.close for c in store.prices("XCAS:IAM")] == [Decimal(90)]
+
+
+def test_the_same_close_written_another_way_is_the_same(store):
+    store.upsert_listings(XCAS, [IAM], {}, AT)
+    store.add_prices("XCAS:IAM", closes((5, "88.90")), SOURCE, "MAD", AT)
+    assert store.add_prices("XCAS:IAM", closes((5, "88.9")), SOURCE, "MAD", LATER) == 0
 
 
 def test_a_manual_close_sits_beside_the_exchange_s_and_since_filters(store):

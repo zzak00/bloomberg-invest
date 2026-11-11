@@ -27,6 +27,7 @@ erDiagram
         String currency
         String source
         DateTime fetched_at
+        Boolean superseded
     }
     Document {
         String id UK
@@ -193,6 +194,7 @@ erDiagram
     Review |o--o| Span : "CITES (a correction that picked a number in a paragraph)"
     Organisation |o--o| Listing : "LISTED_AS (when its ISIN is in config/listings/)"
     Listing ||--o{ Price : HAS_PRICE
+    Price |o--o| Price : "SUPERSEDED_BY (a later answer gave another close)"
 ```
 
 Arrows in Cypher run from the first entity to the second, for example `(:Document)-[:ISSUED_BY]->(:Organisation)` and `(:Run)-[:PROCESSED]->(:Document)`.
@@ -403,14 +405,14 @@ A share as its exchange lists it (#26). Every share the Bourse de Casablanca lis
 
 ### Price
 
-A daily close of one Listing: market data, not a Fact, so no Run (#19 R3 lists none) and never superseded. A close stored for a session and source is never overwritten; one the source changes later is reported as drift by the daily run.
+A daily close of one Listing: market data, not a Fact, so no Run (#19 R3 lists none). A session and source has one current close. The same close again writes nothing; a later answer with another close is reported as drift by the daily run and supersedes the stored one, which is kept with `superseded = true` and `SUPERSEDED_BY` the new one (#19 R4). An older answer, as a replay reads, never undoes a newer close.
 
 | Property | Type | Meaning | Example |
 | --- | --- | --- | --- |
-| `listing`, `date`, `source` | unique together | the Listing's `key`, the session, and where the close came from: `bourse-casablanca`, or `manual` from a CSV | `XCAS:IAM`, `2026-11-10`, `bourse-casablanca` |
-| `close` | String | a decimal, as the source gave it; raw, not adjusted for dividends | `91.7` |
+| `listing`, `date`, `source`, `fetched_at` | unique together | the Listing's `key`, the session, where the close came from (`bourse-casablanca`, or `manual` from a CSV), and when, in UTC | `XCAS:IAM`, `2026-11-10`, `bourse-casablanca`, `2026-11-10T17:30:04Z` |
+| `close` | String | a decimal without trailing zeros, so one close is written one way; raw, not adjusted for dividends | `91.7` |
 | `currency` | String | ISO 4217 | `MAD` |
-| `fetched_at` | DateTime | UTC, when the source gave it, or when the CSV was imported | `2026-11-10T17:30:04Z` |
+| `superseded` | Boolean | `true` once a later answer gave another close; absent while current | `true` |
 
 ## Constraints and keys
 
@@ -428,7 +430,7 @@ Neo4j Community enforces uniqueness only. Required properties are enforced by th
 | Fact, RejectedFigure, Span | `id` | always created, per extract Run |
 | Review | `id` | always created, per check; never superseded |
 | Listing | `key`; `(mic, ticker)` | `(mic, ticker)` from the exchange's list |
-| Price | `(listing, date, source)` | the same, so a re-run writes nothing new |
+| Price | `(listing, date, source, fetched_at)` | the current close of `(listing, date, source)`: the same close writes nothing, another one from a later answer supersedes it. "One current close" is kept by the write, in the share's transaction: Community has no partial uniqueness |
 
 The vector index `chunk_embedding` covers `Chunk.embedding`, cosine, at full precision: Neo4j quantizes vectors to bits by default, which would change the ranking the notebook measured.
 

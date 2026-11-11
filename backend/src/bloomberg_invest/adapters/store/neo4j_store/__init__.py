@@ -375,7 +375,8 @@ class Neo4jStore(GraphStore):
     def prices(self, key: str, since: date | None = None) -> list[StoredClose]:
         records, _, _ = self._driver.execute_query(
             """
-            MATCH (p:Price {listing: $key}) WHERE $since IS NULL OR p.date >= $since
+            MATCH (p:Price {listing: $key})
+            WHERE NOT coalesce(p.superseded, false) AND ($since IS NULL OR p.date >= $since)
             RETURN p ORDER BY p.date, p.source
             """,
             key=key,
@@ -385,7 +386,8 @@ class Neo4jStore(GraphStore):
 
     def last_session(self, key: str, source: str) -> date | None:
         records, _, _ = self._driver.execute_query(
-            "MATCH (p:Price {listing: $key, source: $source}) RETURN max(p.date) AS last",
+            "MATCH (p:Price {listing: $key, source: $source}) "
+            "WHERE NOT coalesce(p.superseded, false) RETURN max(p.date) AS last",
             key=key,
             source=source,
         )
@@ -394,7 +396,8 @@ class Neo4jStore(GraphStore):
 
     def listing(self, isin: str) -> Listing | None:
         records, _, _ = self._driver.execute_query(
-            "MATCH (:Organisation {isin: $isin})-[:LISTED_AS]->(l:Listing) RETURN l LIMIT 1",
+            "MATCH (:Organisation {isin: $isin})-[:LISTED_AS]->(l:Listing) "
+            "RETURN l ORDER BY l.key LIMIT 1",
             isin=isin,
         )
         return _listing(records[0]["l"]) if records else None

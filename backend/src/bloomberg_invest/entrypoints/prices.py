@@ -15,17 +15,22 @@ import time
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
-from neo4j.exceptions import Neo4jError
+from neo4j.exceptions import DriverError, Neo4jError
 
 from bloomberg_invest import bootstrap
 from bloomberg_invest.adapters.prices import PriceSourceError
-from bloomberg_invest.domain.prices import CASABLANCA
+from bloomberg_invest.adapters.store import GraphStore
+from bloomberg_invest.domain.prices import CASABLANCA, XCAS
 from bloomberg_invest.service_layer.prices import Report, backfill, daily, import_csv, replay
 from bloomberg_invest.settings import Settings
+
+# What stops a run before it reports: the source, the input, the disk or the database.
+FAILURES = (PriceSourceError, ValueError, OSError, Neo4jError, DriverError)
 
 
 def add_arguments(commands: argparse._SubParsersAction) -> None:
     prices = commands.add_parser("prices", help="daily closes from the Bourse de Casablanca")
+    prices.add_argument("--mic", default=XCAS, help="the exchange (ISO 10383), default XCAS")
     steps = prices.add_subparsers(dest="step", required=True)
     backfill_cmd = steps.add_parser("backfill", help="three years of closes per listed share")
     backfill_cmd.add_argument("--ticker", action="append", help="only this share (repeatable)")
@@ -34,33 +39,39 @@ def add_arguments(commands: argparse._SubParsersAction) -> None:
     import_cmd.add_argument("csv", type=Path)
     steps.add_parser("replay", help="rebuild the stored closes from the raw answers kept")
     schedule_cmd = steps.add_parser("schedule", help="run `daily` now, then every day")
-    schedule_cmd.add_argument("--at", default="18:30", help="Casablanca time, HH:MM")
+    schedule_cmd.add_argument(
+        "--at", type=clock_time, default="18:30", help="Casablanca time, HH:MM"
+    )
 
 
 def run(args: argparse.Namespace) -> int:
     if args.step == "schedule":
-        return _schedule(args.at)
+        return _schedule(args)
+    return _run(args)
+
+
+def _run(args: argparse.Namespace) -> int:
     settings = Settings.from_env()
     try:
         with bootstrap.connect(settings) as deps:
-            report = _step(args, settings, deps.store)
-    except (PriceSourceError, ValueError, OSError) as error:
-        print(error, file=sys.stderr)
+            report = _call(args, deps.store, bootstrap.prices(settings, args.mic))
+    except FAILURES as error:
+        print(f"error: {error}", file=sys.stderr)
         return 1
     return _print(report)
 
 
-def _step(args: argparse.Namespace, settings: Settings, store) -> Report:
-    today = _today()
-    if args.step == "import":
-        return import_csv(store, args.csv.read_text(encoding="utf-8"), _now)
-    source = bootstrap.price_source(settings)
-    isins = bootstrap.listing_isins(source.mic)
+def _call(args: argparse.Namespace, store: GraphStore, prices: bootstrap.Prices) -> Report:
+    """The one service function the step names."""
+    source, isins = prices.source, prices.isins
     if args.step == "backfill":
-        return backfill(store, source, isins, today, _now, tickers=args.ticker)
+        return backfill(store, source, isins, _today(), _now, tickers=args.ticker)
     if args.step == "daily":
-        return daily(store, source, isins, today, _now)
-    return replay(store, bootstrap.price_archive(settings), source, isins, _now)
+        return daily(store, source, isins, _today(), _now)
+    if args.step == "import":
+        text = args.csv.read_text(encoding="utf-8")
+        return import_csv(store, text, source.mic, source.currency, _now)
+    return replay(store, prices.archive, source, isins, _now)
 
 
 def _print(report: Report) -> int:
@@ -82,23 +93,27 @@ def _count(n: int, thing: str) -> str:
     return f"{n} {thing}" if n == 1 else f"{n} {thing}s"
 
 
-def _schedule(at: str) -> int:
-    """`daily` now, then every day at `at` Casablanca time, for as long as the process runs. A
+def _schedule(args: argparse.Namespace) -> int:
+    """`daily` now, then every day at `--at` Casablanca time, for as long as the process runs. A
     failed run is printed and the next one goes ahead: it catches up from the last session."""
-    hour, minute = (int(part) for part in at.split(":"))
+    hour, minute = args.at
+    daily_args = argparse.Namespace(step="daily", mic=args.mic)
     while True:
         print(f"{datetime.now(CASABLANCA):%Y-%m-%d %H:%M} daily closes", flush=True)
-        settings = Settings.from_env()
-        try:
-            with bootstrap.connect(settings) as deps:
-                source = bootstrap.price_source(settings)
-                _print(
-                    daily(deps.store, source, bootstrap.listing_isins(source.mic), _today(), _now)
-                )
-        except (PriceSourceError, ValueError, OSError, Neo4jError) as error:
-            print(f"error: {error}", file=sys.stderr)
+        _run(daily_args)
         sys.stdout.flush()
         time.sleep(_until(datetime.now(CASABLANCA), hour, minute).total_seconds())
+
+
+def clock_time(text: str) -> tuple[int, int]:
+    """`18:30` as (18, 30); anything else is refused with argparse's usage message."""
+    try:
+        hour, minute = (int(part) for part in text.split(":"))
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a time like 18:30") from None
+    if not (0 <= hour < 24 and 0 <= minute < 60):
+        raise argparse.ArgumentTypeError(f"{text!r} is not a time like 18:30")
+    return hour, minute
 
 
 def _until(now: datetime, hour: int, minute: int) -> timedelta:

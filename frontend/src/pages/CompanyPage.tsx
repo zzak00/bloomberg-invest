@@ -71,7 +71,7 @@ export function CompanyPage() {
       <h1 id="company-title" className="page-title dossier-title">
         {issuer.name}
       </h1>
-      {listing && <Price isin={isin} listing={listing} last={last_close ?? null} />}
+      {listing && <LastCloseBlock isin={isin} listing={listing} last={last_close ?? null} />}
 
       <div role="tablist" aria-label="Dossier sections" className="tabs">
         {tabs.map((t) => (
@@ -261,7 +261,15 @@ const SOURCES: Record<string, string> = {
 };
 
 /** The last close, its change from the session before, and three years of closes (#26). */
-function Price({ isin, listing, last }: { isin: string; listing: Listing; last: LastClose | null }) {
+function LastCloseBlock({
+  isin,
+  listing,
+  last,
+}: {
+  isin: string;
+  listing: Listing;
+  last: LastClose | null;
+}) {
   const series = useApi(`prices:${isin}`, () =>
     api.GET("/api/companies/{isin}/prices", { params: { path: { isin } } }),
   );
