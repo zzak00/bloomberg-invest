@@ -312,6 +312,56 @@
         }
       }
     },
+    "/api/companies/{isin}/prices": {
+      "get": {
+        "summary": "Prices",
+        "description": "The company's daily closes over the last three years, one per session, oldest\nfirst: the exchange's close over one typed in by hand (#26).",
+        "operationId": "prices_api_companies__isin__prices_get",
+        "parameters": [
+          {
+            "name": "isin",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Isin"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PriceSeries"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No listing for a company with this ISIN",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/companies/{isin}/figures": {
       "get": {
         "summary": "Figures",
@@ -1061,6 +1111,26 @@
             },
             "type": "array",
             "title": "Documents"
+          },
+          "listing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Listing"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_close": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LastClose"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -1069,7 +1139,7 @@
           "documents"
         ],
         "title": "Company",
-        "description": "An issuer's dossier: its filings."
+        "description": "An issuer's dossier: its filings, and its listing and last close once it has them."
       },
       "Correction": {
         "properties": {
@@ -1736,6 +1806,88 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "LastClose": {
+        "properties": {
+          "session": {
+            "type": "string",
+            "format": "date",
+            "title": "Session"
+          },
+          "close": {
+            "type": "string",
+            "title": "Close"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency"
+          },
+          "change": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "history_start": {
+            "type": "string",
+            "format": "date",
+            "title": "History Start"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session",
+          "close",
+          "currency",
+          "change",
+          "source",
+          "history_start"
+        ],
+        "title": "LastClose",
+        "description": "A share's latest close, as the dossier shows it."
+      },
+      "Listing": {
+        "properties": {
+          "ticker": {
+            "type": "string",
+            "title": "Ticker"
+          },
+          "mic": {
+            "type": "string",
+            "title": "Mic"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "sector": {
+            "type": "string",
+            "title": "Sector"
+          },
+          "compartment": {
+            "type": "string",
+            "title": "Compartment"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ticker",
+          "mic",
+          "name",
+          "sector",
+          "compartment"
+        ],
+        "title": "Listing",
+        "description": "A share's listing on an exchange (#26): what its closes are kept under."
+      },
       "Organisation": {
         "properties": {
           "isin": {
@@ -1829,6 +1981,46 @@
         ],
         "title": "Passage",
         "description": "The exact span a Fact cites: a table cell, or a quoted range of a paragraph."
+      },
+      "PricePoint": {
+        "properties": {
+          "session": {
+            "type": "string",
+            "format": "date",
+            "title": "Session"
+          },
+          "close": {
+            "type": "string",
+            "title": "Close"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session",
+          "close"
+        ],
+        "title": "PricePoint"
+      },
+      "PriceSeries": {
+        "properties": {
+          "listing": {
+            "$ref": "#/components/schemas/Listing"
+          },
+          "closes": {
+            "items": {
+              "$ref": "#/components/schemas/PricePoint"
+            },
+            "type": "array",
+            "title": "Closes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "listing",
+          "closes"
+        ],
+        "title": "PriceSeries",
+        "description": "A share's closes, oldest first: one per session, the exchange's over a manual one."
       },
       "Problem": {
         "properties": {

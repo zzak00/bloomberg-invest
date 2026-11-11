@@ -1,11 +1,13 @@
 """The graph store interface. The API and the CLI see domain models only, never Cypher."""
 
+from datetime import date, datetime
 from typing import Protocol
 
 from bloomberg_invest.domain.chunking import ChunkDraft
 from bloomberg_invest.domain.extraction import FigureDraft, SourceCell
 from bloomberg_invest.domain.indexing import EmbedInput
 from bloomberg_invest.domain.model import DocumentMeta, Organisation, ParsedDocument, RunInfo
+from bloomberg_invest.domain.prices import Close, ListedShare, StoredClose
 from bloomberg_invest.domain.review import ReviewDraft
 from bloomberg_invest.views import (
     Candidate,
@@ -13,6 +15,7 @@ from bloomberg_invest.views import (
     DocumentDetail,
     DocumentSummary,
     Figure,
+    Listing,
     RejectedFigure,
 )
 
@@ -103,3 +106,31 @@ class GraphStore(Protocol):
         """The Organisation with this ISIN, if a filing of it is shown: parsed successfully."""
 
     def get_document(self, document_id: str) -> DocumentDetail | None: ...
+
+    def upsert_listings(
+        self, mic: str, shares: list[ListedShare], isins: dict[str, str], at: datetime
+    ) -> list[str]:
+        """Store the shares an exchange lists, linking each to the Organisation whose ISIN
+        `isins` gives for its ticker. Return the tickers stored before that the exchange no
+        longer lists: they keep their Listing and closes."""
+
+    def tickers(self, mic: str) -> list[str]:
+        """Every share stored for the exchange, listed or no longer."""
+
+    def add_prices(
+        self, key: str, closes: list[Close], source: str, currency: str, fetched_at: datetime
+    ) -> int:
+        """Store a share's closes from a source, in one transaction; return how many were
+        written. A session and source has one current close: the same close again writes nothing,
+        and a different one from a later answer supersedes it, which is kept (#19 R4). Sessions
+        with no close are skipped."""
+
+    def prices(self, key: str, since: date | None = None) -> list[StoredClose]:
+        """A share's current closes, from every source, oldest first."""
+
+    def last_session(self, key: str, source: str) -> date | None:
+        """The latest session the share has a current close for from this source."""
+
+    def listing(self, isin: str) -> Listing | None:
+        """The listing of the Organisation with this ISIN, if it has one; the first by key if
+        it has several."""

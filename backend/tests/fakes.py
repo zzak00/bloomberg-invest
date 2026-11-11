@@ -1,10 +1,15 @@
 """Fakes for service tests: plain classes that pass the same contracts as the real adapters."""
 
 import html
+import json
 import re
+from datetime import date, datetime
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 from bloomberg_invest import config
+from bloomberg_invest.adapters.prices import PriceSource, PriceSourceError
+from bloomberg_invest.domain.prices import Close, Holiday, ListedShare
 from bloomberg_invest.service_layer.extract import Extraction
 
 
@@ -111,3 +116,61 @@ class PageReadingLLM:
 def fake_extraction(figures: dict[str, dict] | None = None) -> Extraction:
     """Extraction by `PageReadingLLM`, with the real label map and prompt."""
     return Extraction(PageReadingLLM(figures or {}), config.label_map(), config.extract_prompt())
+
+
+class FakePriceSource(PriceSource):
+    """An exchange that behaves as the Bourse de Casablanca does (#15): a row per share each
+    session, and nothing for a range that starts before its history. A share in `failing`
+    cannot be read, as when the source breaks halfway through a run."""
+
+    mic = "XCAS"
+    source = "bourse-casablanca"
+    currency = "MAD"
+
+    def __init__(self, shares, sessions, history_start, holidays=(), failing=()) -> None:
+        self.shares = list(shares)
+        self.sessions = sessions  # ticker -> {date: Decimal | None}
+        self.history_start = history_start
+        self.holiday_list = list(holidays)
+        self.failing = set(failing)
+        self.asked: list[tuple[str, date, date]] = []
+
+    def listings(self) -> list[ListedShare]:
+        return self.shares
+
+    def holidays(self) -> list[Holiday]:
+        return self.holiday_list
+
+    def closes(self, ticker: str, start: date, end: date) -> list[Close]:
+        self.asked.append((ticker, start, end))
+        if ticker in self.failing:
+            raise PriceSourceError("the source timed out")
+        if start < self.history_start:
+            return []
+        rows = self.sessions.get(ticker, {})
+        return [Close(d, rows[d]) for d in sorted(rows) if start <= d <= end]
+
+
+BOURSE_FIXTURES = Path(__file__).parent / "fixtures" / "bourse"
+# Where the Bourse's rolling three years start, in the made-up exchange.
+BOURSE_HISTORY = date(2023, 11, 13)
+
+
+def bourse_server(url: str) -> bytes:
+    """The Bourse's site as far as the fixtures go, behaving as its server does (#15): it
+    filters a range by date, and answers nothing for a range starting before its history."""
+    if url.endswith("/emetteurs/liste-emetteurs"):
+        return (BOURSE_FIXTURES / "issuers.html").read_bytes()
+    if url.endswith("/market-data/jours-feries"):
+        return (BOURSE_FIXTURES / "holidays.html").read_bytes()
+    query = {k: v[0] for k, v in parse_qs(urlparse(url).query).items()}
+    start, end = date.fromisoformat(query["startDate"]), date.fromisoformat(query["endDate"])
+    answer = json.loads((BOURSE_FIXTURES / "closes.json").read_bytes())
+    if query["instrument"] != "ABC" or start < BOURSE_HISTORY:
+        return (BOURSE_FIXTURES / "empty.json").read_bytes()
+    items = [
+        i
+        for i in answer["items"]
+        if start <= datetime.strptime(i["seance"], "%d/%m/%Y").date() <= end
+    ]
+    return json.dumps({"totalCount": len(items), "items": items}).encode()

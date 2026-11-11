@@ -20,6 +20,30 @@ export function formatDate(iso: string): string {
   return DATE.format(new Date(iso));
 }
 
+/** "10/11/2026" for a day written "2026-11-10": read as text, so no time zone moves it. */
+export function formatDay(iso: string): string {
+  const [year, month, day] = iso.split("-");
+  return `${day}/${month}/${year}`;
+}
+
+const PRICE = new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/** "91,70" for a close written "91.7". */
+export function formatPrice(decimal: string): string {
+  return PRICE.format(Number(decimal));
+}
+
+const PERCENT = new Intl.NumberFormat("fr-FR", {
+  minimumFractionDigits: 1,
+  maximumFractionDigits: 1,
+  signDisplay: "exceptZero",
+});
+
+/** "+2,1 %" for a change written as the fraction "0.0212". */
+export function formatChange(fraction: string): string {
+  return `${PERCENT.format(Number(fraction) * 100)} %`;
+}
+
 export const DOC_TYPE_LABELS: Record<DocumentSummary["doc_type"], string> = {
   annual_report: "Annual financial report",
   half_year_report: "Half-year financial report",

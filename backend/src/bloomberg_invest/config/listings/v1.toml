@@ -1,0 +1,7 @@
+# The ISIN of each share whose company we ingest filings for (#26). The exchange's own issuer list
+# gives every share's ticker, name and sector, but no ISIN; this map links a Listing to the
+# Organisation a filing comes from. A new company is a new version of this file (#32: ATW, LBV).
+version = "v1"
+
+[XCAS]
+IAM = "MA0000011488"

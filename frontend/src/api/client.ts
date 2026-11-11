@@ -22,6 +22,9 @@ export type CheckRow = components["schemas"]["CheckRow"];
 export type Candidate = components["schemas"]["Candidate"];
 export type CheckStatus = components["schemas"]["CheckStatus"];
 export type Verdict = components["schemas"]["Verdict"];
+export type Listing = components["schemas"]["Listing"];
+export type LastClose = components["schemas"]["LastClose"];
+export type PricePoint = components["schemas"]["PricePoint"];
 
 export function pageImageUrl(documentId: string, page: number): string {
   return `/api/documents/${encodeURIComponent(documentId)}/pages/${page}.png`;

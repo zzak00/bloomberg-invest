@@ -7,11 +7,14 @@ import {
   type FigureGrid,
   type FigureRow,
   type FigureValue,
+  type LastClose,
+  type Listing,
+  type PricePoint,
   type Scope,
 } from "../api/client";
 import { useApi } from "../api/useApi";
 import { SCOPES, capitalised, unitLabel } from "../figures";
-import { DOC_TYPE_LABELS, formatDateTime } from "../format";
+import { DOC_TYPE_LABELS, formatChange, formatDateTime, formatDay, formatPrice } from "../format";
 
 type Tab = "figures" | "filings";
 
@@ -50,7 +53,7 @@ export function CompanyPage() {
     );
   }
 
-  const { issuer, documents } = company.data;
+  const { issuer, documents, listing, last_close } = company.data;
   const count = figures.state === "ready" ? figures.data.count : undefined;
   const tabs: { id: Tab; label: string }[] = [
     { id: "figures", label: count === undefined ? "FIGURES" : `FIGURES · ${count}` },
@@ -62,11 +65,13 @@ export function CompanyPage() {
       <div className="micro">COMPANY · ISSUER</div>
       <div className="dossier-id">
         <span className="chip num">{issuer.isin}</span>
-        <span className="dossier-id-note">AMMC filings</span>
+        {listing && <span className="chip num">{listing.ticker}</span>}
+        <span className="dossier-id-note">{listing ? listing.sector : "AMMC filings"}</span>
       </div>
       <h1 id="company-title" className="page-title dossier-title">
         {issuer.name}
       </h1>
+      {listing && <LastCloseBlock isin={isin} listing={listing} last={last_close ?? null} />}
 
       <div role="tablist" aria-label="Dossier sections" className="tabs">
         {tabs.map((t) => (
@@ -247,5 +252,94 @@ function Filings({ documents }: { documents: DocumentSummary[] }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+const SOURCES: Record<string, string> = {
+  "bourse-casablanca": "Bourse de Casablanca",
+  manual: "entered by hand",
+};
+
+/** The last close, its change from the session before, and three years of closes (#26). */
+function LastCloseBlock({
+  isin,
+  listing,
+  last,
+}: {
+  isin: string;
+  listing: Listing;
+  last: LastClose | null;
+}) {
+  const series = useApi(`prices:${isin}`, () =>
+    api.GET("/api/companies/{isin}/prices", { params: { path: { isin } } }),
+  );
+  if (!last) {
+    return (
+      <div className="price" role="group" aria-label="Last close">
+        <div className="price-text">
+          <div className="price-meta">
+            No closes yet for {listing.ticker}: run <code>bloomberg prices backfill</code>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  const closes = series.state === "ready" ? series.data.closes : [];
+  return (
+    <div className="price" role="group" aria-label="Last close">
+      <div className="price-text">
+        <div className="price-line">
+          <span className="micro">CLOSE</span>
+          <span className="num price-close">
+            {formatPrice(last.close)} {last.currency}
+          </span>
+          {last.change && <span className="num price-change">{formatChange(last.change)}</span>}
+        </div>
+        <div className="price-meta">
+          <span className="keep">
+            {formatDay(last.session)} · {SOURCES[last.source] ?? last.source} ·
+          </span>{" "}
+          <span className="keep">raw close, not adjusted for dividends</span>
+        </div>
+        <div className="price-note">History from {formatDay(last.history_start)}</div>
+      </div>
+      {closes.length > 1 && <PriceLine closes={closes} currency={last.currency} />}
+    </div>
+  );
+}
+
+const LINE = { width: 98, height: 24, pad: 2 };
+
+/** Three years of closes as one line, scaled between the lowest and the highest. */
+function PriceLine({ closes, currency }: { closes: PricePoint[]; currency: string }) {
+  const values = closes.map((c) => Number(c.close));
+  const [low, high] = [Math.min(...values), Math.max(...values)];
+  const range = high - low || 1;
+  const step = (LINE.width - 2 * LINE.pad) / (values.length - 1);
+  const points = values
+    .map((v, i) => {
+      const x = LINE.pad + i * step;
+      const y = LINE.height - LINE.pad - ((v - low) / range) * (LINE.height - 2 * LINE.pad);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(" ");
+  const [first, last] = [closes[0], closes[closes.length - 1]];
+  if (!first || !last) return null;
+  const label =
+    `Closes from ${formatDay(first.session)} to ${formatDay(last.session)}: ` +
+    `${formatPrice(first.close)} to ${formatPrice(last.close)} ${currency}, ` +
+    `low ${formatPrice(String(low))}, high ${formatPrice(String(high))}`;
+  return (
+    <svg
+      className="price-chart"
+      role="img"
+      aria-label={label}
+      width={LINE.width}
+      height={LINE.height}
+      viewBox={`0 0 ${LINE.width} ${LINE.height}`}
+      preserveAspectRatio="none"
+    >
+      <polyline points={points} vectorEffect="non-scaling-stroke" />
+    </svg>
   );
 }
