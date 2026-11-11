@@ -30,6 +30,8 @@ Ingest then extracts the filing's financial figures (#22): each page with a tabl
 
 CHECKS lists the consolidated figures that feed a KPI or Sharia screen (#23; the inputs are in `backend/src/bloomberg_invest/config/kpis/`), for a person to accept or correct before they count. Set `REVIEWER` in `.env` to the name checks should carry, then `docker compose up -d api`; until then CHECKS shows the queue but refuses checks. The dossier then shows a corrected figure's right value. A re-extract keeps a check only on a figure read with the same value from the same cell or quote; any other goes back to CHECKS.
 
+Daily closes come from the Bourse de Casablanca's own site (#26) for every listed share, and the dossier shows a company's last close and three years of them. Fill the history once with `docker compose run --rm prices backfill` (about 10 minutes: one request a second, about 5 per share). The `prices` service then runs `daily` when it starts and every day at 18:30 Casablanca time, catching up from the last stored session; `docker compose logs prices` shows what it added, any drift and any error. To fill a gap by hand, put a CSV with the columns `ticker,date,close` under `data/prices/` and run `docker compose run --rm prices import /data/prices/closes.csv`. Every raw answer is kept under `data/prices/raw/`, and `docker compose run --rm prices replay` rebuilds the closes from it. A company's ticker comes from `backend/src/bloomberg_invest/config/listings/`: add its ISIN there to link it to its filings.
+
 `docker compose up --build` does not rebuild these tools, which share one image. After changing backend code, rebuild it before running them: `docker compose --profile tools build ingest`.
 
 | Part | Where | Notes |

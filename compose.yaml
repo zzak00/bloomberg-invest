@@ -92,6 +92,24 @@ services:
     extends: { service: ingest }
     entrypoint: ["bloomberg", "extract"]
 
+  # Daily closes (#26): `bloomberg prices daily` when it starts, then every day at 18:30
+  # Casablanca time; each run catches up from the last stored session. Its log is the report:
+  # docker compose logs prices. The other steps run on demand, with the same image:
+  # docker compose run --rm prices backfill | import /data/prices/closes.csv | replay
+  prices:
+    build: { context: backend, target: api }
+    entrypoint: ["bloomberg", "prices"]
+    command: ["schedule", "--at", "18:30"]
+    restart: unless-stopped
+    environment:
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD}
+    volumes:
+      # The raw answers kept from the Bourse, and CSVs to import.
+      - ./data/prices:/data/prices
+    depends_on:
+      neo4j: { condition: service_healthy }
+
   # Throwaway database for the backend tests; its data lives in memory and goes with it.
   neo4j-test:
     profiles: ["test"]

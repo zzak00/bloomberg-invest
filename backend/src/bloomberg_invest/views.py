@@ -138,11 +138,46 @@ class FigureDetail(Figure):
     line_item_title: str
 
 
+class Listing(BaseModel):
+    """A share's listing on an exchange (#26): what its closes are kept under."""
+
+    ticker: str
+    mic: str  # the exchange (ISO 10383): XCAS for the Bourse de Casablanca
+    name: str  # as the exchange lists it
+    sector: str
+    compartment: str
+
+
+class LastClose(BaseModel):
+    """A share's latest close, as the dossier shows it."""
+
+    session: date
+    close: str  # a decimal, as the source gave it
+    currency: str
+    change: str | None  # from the session before, as a fraction (`0.0212`); None for the first
+    source: str
+    history_start: date  # the first session stored
+
+
 class Company(BaseModel):
-    """An issuer's dossier: its filings."""
+    """An issuer's dossier: its filings, and its listing and last close once it has them."""
 
     issuer: Organisation
     documents: list[DocumentSummary]
+    listing: Listing | None = None
+    last_close: LastClose | None = None
+
+
+class PricePoint(BaseModel):
+    session: date
+    close: str
+
+
+class PriceSeries(BaseModel):
+    """A share's closes, oldest first: one per session, the exchange's over a manual one."""
+
+    listing: Listing
+    closes: list[PricePoint]
 
 
 class FigureValue(BaseModel):
