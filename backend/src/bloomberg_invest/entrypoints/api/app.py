@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import FastAPI, HTTPException, Path, Query, status
@@ -13,6 +14,7 @@ from bloomberg_invest.adapters.embedding import Embedder
 from bloomberg_invest.adapters.files import DocumentFiles
 from bloomberg_invest.adapters.store import GraphStore
 from bloomberg_invest.domain.label_map import LabelMap
+from bloomberg_invest.domain.prices import CASABLANCA
 from bloomberg_invest.domain.review import Verdict
 from bloomberg_invest.service_layer.checks import (
     Checks,
@@ -23,6 +25,7 @@ from bloomberg_invest.service_layer.checks import (
     record_review,
 )
 from bloomberg_invest.service_layer.company import company, company_figures, figure_detail
+from bloomberg_invest.service_layer.prices import price_series
 from bloomberg_invest.service_layer.search import search
 from bloomberg_invest.settings import Settings
 from bloomberg_invest.views import (
@@ -34,6 +37,7 @@ from bloomberg_invest.views import (
     DocumentSummary,
     FigureDetail,
     FigureGrid,
+    PriceSeries,
     Review,
 )
 
@@ -59,6 +63,7 @@ class ReviewRequest(BaseModel):
 NOT_FOUND = {404: {"model": Problem, "description": "No such document, or no such page in it"}}
 NO_CHUNK = {404: {"model": Problem, "description": "No such chunk"}}
 NO_COMPANY = {404: {"model": Problem, "description": "No filing from an issuer with this ISIN"}}
+NO_LISTING = {404: {"model": Problem, "description": "No listing for a company with this ISIN"}}
 NO_FACT = {
     404: {
         "model": Problem,
@@ -173,6 +178,15 @@ def create_app(
         found = company(isin, get_store())
         if found is None:
             raise HTTPException(404, "Company not found")
+        return found
+
+    @app.get("/api/companies/{isin}/prices", responses=NO_LISTING)
+    def prices(isin: str) -> PriceSeries:
+        """The company's daily closes over the last three years, one per session, oldest
+        first: the exchange's close over one typed in by hand (#26)."""
+        found = price_series(get_store(), isin, datetime.now(CASABLANCA).date())
+        if found is None:
+            raise HTTPException(404, "No listing for this company")
         return found
 
     @app.get("/api/companies/{isin}/figures", responses=NO_COMPANY)

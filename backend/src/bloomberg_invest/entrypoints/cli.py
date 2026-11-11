@@ -8,6 +8,8 @@ Chunks too. Extracting needs AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY.
     bloomberg chunk 3d18e4fa-cfca-4a67-92b4-3d6555da68e6
     bloomberg embed 3d18e4fa-cfca-4a67-92b4-3d6555da68e6
     bloomberg extract 3d18e4fa-cfca-4a67-92b4-3d6555da68e6
+
+`bloomberg prices ...` keeps daily closes: see `entrypoints/prices.py`.
 """
 
 import argparse
@@ -18,6 +20,7 @@ from pydantic import ValidationError
 
 from bloomberg_invest import bootstrap
 from bloomberg_invest.domain.model import DocType, DocumentMeta, Organisation
+from bloomberg_invest.entrypoints import prices
 from bloomberg_invest.service_layer.chunk import Chunked, ChunkFailed, chunk_document
 from bloomberg_invest.service_layer.embed import Embedded, EmbedFailed, embed_document
 from bloomberg_invest.service_layer.extract import Extracted, ExtractFailed, extract_document
@@ -28,6 +31,8 @@ from bloomberg_invest.views import Section
 
 def main(argv: list[str] | None = None) -> int:
     args = _arguments().parse_args(argv)
+    if args.command == "prices":
+        return prices.run(args)
     if args.command == "chunk":
         return _chunk(args.document_id)
     if args.command == "embed":
@@ -181,6 +186,7 @@ def _arguments() -> argparse.ArgumentParser:
         "extract", help="re-extract an ingested filing's financial figures from its parse"
     )
     extract_cmd.add_argument("document_id")
+    prices.add_arguments(commands)
     return parser
 
 

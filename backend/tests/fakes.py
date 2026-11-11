@@ -111,3 +111,34 @@ class PageReadingLLM:
 def fake_extraction(figures: dict[str, dict] | None = None) -> Extraction:
     """Extraction by `PageReadingLLM`, with the real label map and prompt."""
     return Extraction(PageReadingLLM(figures or {}), config.label_map(), config.extract_prompt())
+
+
+class FakePriceSource:
+    """An exchange that behaves as the Bourse de Casablanca does (#15): a row per share each
+    session, and nothing for a range that starts before its history."""
+
+    mic = "XCAS"
+    source = "bourse-casablanca"
+    currency = "MAD"
+
+    def __init__(self, shares, sessions, history_start, holidays=()) -> None:
+        self.shares = list(shares)
+        self.sessions = sessions  # ticker -> {date: Decimal | None}
+        self.history_start = history_start
+        self.holiday_list = list(holidays)
+        self.asked: list[tuple[str, object, object]] = []
+
+    def listings(self):
+        return self.shares
+
+    def holidays(self):
+        return self.holiday_list
+
+    def closes(self, ticker, start, end):
+        from bloomberg_invest.domain.prices import Close
+
+        self.asked.append((ticker, start, end))
+        if start < self.history_start:
+            return []
+        rows = self.sessions.get(ticker, {})
+        return [Close(d, rows[d]) for d in sorted(rows) if start <= d <= end]

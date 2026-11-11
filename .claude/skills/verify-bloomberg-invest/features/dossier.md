@@ -4,6 +4,7 @@ A company's figures, extracted from its filings and checked against their cells 
 
 ## Sub-features
 
+- Under the name, the company's listing and last close (#26): its ticker chip and sector beside the ISIN, then `CLOSE 91,70 MAD +2,1 %` (the change from the session before), `10/11/2026 · Bourse de Casablanca · raw close, not adjusted for dividends`, `History from …` and a three-year price line. A company with no listing shows none; a listing with no closes yet says to run `bloomberg prices backfill`.
 - `FIGURES · n` and `FILINGS · n` tabs; the dossier opens on FIGURES.
 - A basis switch, `CONSOLIDATED · IFRS` (default) or `COMPANY-ONLY · CGNC`, kept in the URL as `?basis=company-only`.
 - One table per statement (income statement, balance sheet, cash flow, per share and dividends, company-reported measures): a row per line item, its breakdowns indented under it, a column per fiscal year, newest first. Values are as written in the filing, with the unit in its own column.
@@ -22,7 +23,11 @@ On INDEX, click the company name in a row. Or open `/companies/<ISIN>`, for exam
 
 Proof: revenue FY2025 shows `36 681` under the income statement, and its link opens the page with one cell-sized mark.
 
+The price block is `getByRole("group", { name: "Last close" })`; its line is `getByRole("img", { name: /^Closes from / })`.
+
 ## Gotchas
+
+- The price block needs closes: `docker compose run --rm prices backfill` once (about 10 minutes), and `IAM = "MA0000011488"` in `backend/src/bloomberg_invest/config/listings/`.
 
 - Figures need an extract Run: ingest runs it, which needs the Azure OpenAI secrets in `.env`. Without figures the dossier shows its empty state and the journey's AC4 checks fail.
 - A filing ingested before #22 has no Cells: re-ingest it, then the figures can cite them.

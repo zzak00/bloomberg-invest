@@ -11,6 +11,23 @@ erDiagram
         String name
         String kind
     }
+    Listing {
+        String key UK
+        String mic
+        String ticker
+        String name
+        String sector
+        String compartment
+        DateTime refreshed_at
+    }
+    Price {
+        String listing
+        Date date
+        String close
+        String currency
+        String source
+        DateTime fetched_at
+    }
     Document {
         String id UK
         String sha256 UK
@@ -174,6 +191,8 @@ erDiagram
     Review }o--o{ RejectedFigure : REVIEWS
     Review }o--o| Cell : "CITES (a correction that picked a cell)"
     Review |o--o| Span : "CITES (a correction that picked a number in a paragraph)"
+    Organisation |o--o| Listing : "LISTED_AS (when its ISIN is in config/listings/)"
+    Listing ||--o{ Price : HAS_PRICE
 ```
 
 Arrows in Cypher run from the first entity to the second, for example `(:Document)-[:ISSUED_BY]->(:Organisation)` and `(:Run)-[:PROCESSED]->(:Document)`.
@@ -370,6 +389,29 @@ A person's check of figures in CHECKS (#23). One Review `REVIEWS` every figure o
 | `unit_as_written` | String, corrections | the figure's own, which the value is read in | `MAD millions` |
 | `value`, `unit`, `scale`, `currency` | corrections | parsed as on a Fact | `17920000000`, `MAD`, `1000000`, `MAD` |
 
+### Listing
+
+A share as its exchange lists it (#26). Every share the Bourse de Casablanca lists has one, refreshed from the exchange's issuer list on each price run; a share it no longer lists keeps its Listing and Prices. An Organisation is `LISTED_AS` its Listing when `config/listings/` gives the ticker's ISIN: the exchange's list has none.
+
+| Property | Type | Meaning | Example |
+| --- | --- | --- | --- |
+| `key` | String, unique | `mic:ticker`, what its Prices name it by | `XCAS:IAM` |
+| `mic`, `ticker` | String, unique together | the exchange (ISO 10383) and the share's symbol there | `XCAS`, `IAM` |
+| `name` | String | as the exchange lists it | `ITISSALAT AL-MAGHRIB` |
+| `sector`, `compartment` | String | as the exchange lists them | `Télécommunications`, `Principal A` |
+| `refreshed_at` | DateTime | UTC, the last price run that saw it listed | `2026-11-11T17:30:02Z` |
+
+### Price
+
+A daily close of one Listing: market data, not a Fact, so no Run (#19 R3 lists none) and never superseded. A close stored for a session and source is never overwritten; one the source changes later is reported as drift by the daily run.
+
+| Property | Type | Meaning | Example |
+| --- | --- | --- | --- |
+| `listing`, `date`, `source` | unique together | the Listing's `key`, the session, and where the close came from: `bourse-casablanca`, or `manual` from a CSV | `XCAS:IAM`, `2026-11-10`, `bourse-casablanca` |
+| `close` | String | a decimal, as the source gave it; raw, not adjusted for dividends | `91.7` |
+| `currency` | String | ISO 4217 | `MAD` |
+| `fetched_at` | DateTime | UTC, when the source gave it, or when the CSV was imported | `2026-11-10T17:30:04Z` |
+
 ## Constraints and keys
 
 Neo4j Community enforces uniqueness only. Required properties are enforced by the Pydantic domain models every write goes through (ADR 0003).
@@ -385,6 +427,8 @@ Neo4j Community enforces uniqueness only. Required properties are enforced by th
 | Table, Cell | `id` | always created, per parse Run |
 | Fact, RejectedFigure, Span | `id` | always created, per extract Run |
 | Review | `id` | always created, per check; never superseded |
+| Listing | `key`; `(mic, ticker)` | `(mic, ticker)` from the exchange's list |
+| Price | `(listing, date, source)` | the same, so a re-run writes nothing new |
 
 The vector index `chunk_embedding` covers `Chunk.embedding`, cosine, at full precision: Neo4j quantizes vectors to bits by default, which would change the ranking the notebook measured.
 
@@ -434,6 +478,12 @@ An extract Run carries checks over in its own transaction (#19 R4). A new figure
 - from the same source: for a Cell, the same page, table index, row and column, which survive a re-parse; for a Span, the same page, quote and paragraph.
 
 Any other new figure starts unchecked and goes back to CHECKS, and so does every figure with no Passage: its page and `source_id` are not the same Cell. Only the Run just before counts, so a check undone by a different reading does not come back when a later Run reads the first value again.
+
+## Where closes live
+
+Closes are kept in Neo4j with the graph (ADR 0003): about 60,000 Prices for three years of the 81 listed shares, and 81 more a day. Reads ask for one share between two dates, an index lookup on the Price key; averages and medians are computed in Python, as every KPI is. If price analytics outgrow it, ADR 0003 names Postgres as the way out, behind the same store methods.
+
+Every answer the Bourse gives is also kept as returned, under the gitignored `data/prices/raw/` (`<ticker>/<fetched at>_<start>_<end>_p<page>.json`, and `listings/`, `holidays/` for its pages). `bloomberg prices replay` rebuilds the Prices from them by the same rules, if a parsing mistake is ever found: the Bourse keeps only three years.
 
 ## Why a Page has width and height
 

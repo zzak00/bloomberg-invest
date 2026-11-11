@@ -13,6 +13,7 @@ from bloomberg_invest.domain.review import (
     correction_in_force,
     needs_check,
 )
+from bloomberg_invest.service_layer.prices import last_close
 from bloomberg_invest.views import (
     Company,
     Figure,
@@ -28,10 +29,14 @@ from bloomberg_invest.views import (
 
 
 def company(isin: str, store: GraphStore) -> Company | None:
+    """The issuer's filings, and its listing and last close once it has them (#26)."""
     issuer = store.issuer(isin)
     if issuer is None:
         return None
-    return Company(issuer=issuer, documents=store.list_documents(isin))
+    listing, close = last_close(store, isin)
+    return Company(
+        issuer=issuer, documents=store.list_documents(isin), listing=listing, last_close=close
+    )
 
 
 def company_figures(

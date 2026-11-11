@@ -16,10 +16,13 @@ from bloomberg_invest.adapters.files import DocumentFiles
 from bloomberg_invest.adapters.llm import LLM
 from bloomberg_invest.adapters.llm.recording import RecordingLLM, ReplayLLM
 from bloomberg_invest.adapters.parsing import Parser
+from bloomberg_invest.adapters.prices import PriceSource
+from bloomberg_invest.adapters.prices.bourse_casablanca import BourseCasablanca, RawArchive
 from bloomberg_invest.adapters.store import GraphStore
 from bloomberg_invest.adapters.store.neo4j_store import Neo4jStore
 from bloomberg_invest.adapters.tokens import TiktokenCounter, TokenCounter
 from bloomberg_invest.domain.label_map import LabelMap
+from bloomberg_invest.domain.prices import XCAS
 from bloomberg_invest.service_layer.checks import Checks
 from bloomberg_invest.service_layer.extract import Extraction
 from bloomberg_invest.settings import Settings
@@ -72,6 +75,19 @@ def _azure_openai(settings: Settings) -> LLM:
 LLMS: dict[str, Callable[[Settings], LLM]] = {"azure-openai": _azure_openai}
 
 
+def price_archive(settings: Settings) -> RawArchive:
+    """Where every raw answer of a price source is kept, as returned (gitignored `data/`)."""
+    return RawArchive(settings.data_dir / "prices" / "raw")
+
+
+def _bourse_casablanca(settings: Settings) -> PriceSource:
+    return BourseCasablanca(archive=price_archive(settings))
+
+
+# One price source per exchange, by its MIC: the Bourse de Casablanca's own site (#15).
+PRICE_SOURCES: dict[str, Callable[[Settings], PriceSource]] = {XCAS: _bourse_casablanca}
+
+
 @dataclass(frozen=True)
 class Deps:
     store: GraphStore
@@ -110,6 +126,16 @@ def llm(settings: Settings) -> LLM:
         return ReplayLLM(settings.llm_replay)
     chosen = _choose(LLMS, "llm", settings.llm)(settings)
     return RecordingLLM(chosen, settings.llm_record) if settings.llm_record else chosen
+
+
+def price_source(settings: Settings, mic: str = XCAS) -> PriceSource:
+    """The price source for the exchange `mic`, keeping its raw answers."""
+    return _choose(PRICE_SOURCES, "exchange", mic)(settings)
+
+
+def listing_isins(mic: str = XCAS) -> dict[str, str]:
+    """The ISIN of each share on `mic` whose company we ingest filings for."""
+    return config.listing_isins(mic)
 
 
 def label_map() -> LabelMap:

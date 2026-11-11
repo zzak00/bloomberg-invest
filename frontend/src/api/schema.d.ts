@@ -132,6 +132,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/companies/{isin}/prices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Prices
+         * @description The company's daily closes over the last three years, one per session, oldest
+         *     first: the exchange's close over one typed in by hand (#26).
+         */
+        get: operations["prices_api_companies__isin__prices_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/companies/{isin}/figures": {
         parameters: {
             query?: never;
@@ -389,12 +410,14 @@ export interface components {
         };
         /**
          * Company
-         * @description An issuer's dossier: its filings.
+         * @description An issuer's dossier: its filings, and its listing and last close once it has them.
          */
         Company: {
             issuer: components["schemas"]["Organisation"];
             /** Documents */
             documents: components["schemas"]["DocumentSummary"][];
+            listing?: components["schemas"]["Listing"] | null;
+            last_close?: components["schemas"]["LastClose"] | null;
         };
         /**
          * Correction
@@ -633,6 +656,46 @@ export interface components {
             detail?: components["schemas"]["ValidationError"][];
         };
         /**
+         * LastClose
+         * @description A share's latest close, as the dossier shows it.
+         */
+        LastClose: {
+            /**
+             * Session
+             * Format: date
+             */
+            session: string;
+            /** Close */
+            close: string;
+            /** Currency */
+            currency: string;
+            /** Change */
+            change: string | null;
+            /** Source */
+            source: string;
+            /**
+             * History Start
+             * Format: date
+             */
+            history_start: string;
+        };
+        /**
+         * Listing
+         * @description A share's listing on an exchange (#26): what its closes are kept under.
+         */
+        Listing: {
+            /** Ticker */
+            ticker: string;
+            /** Mic */
+            mic: string;
+            /** Name */
+            name: string;
+            /** Sector */
+            sector: string;
+            /** Compartment */
+            compartment: string;
+        };
+        /**
          * Organisation
          * @description The Organisation a filing comes from. Keyed by the ISIN the operator gives until
          *     Listings (which own the ISIN in AGENTS.md) arrive in #24.
@@ -670,6 +733,25 @@ export interface components {
             text: string;
             /** Quote */
             quote?: string | null;
+        };
+        /** PricePoint */
+        PricePoint: {
+            /**
+             * Session
+             * Format: date
+             */
+            session: string;
+            /** Close */
+            close: string;
+        };
+        /**
+         * PriceSeries
+         * @description A share's closes, oldest first: one per session, the exchange's over a manual one.
+         */
+        PriceSeries: {
+            listing: components["schemas"]["Listing"];
+            /** Closes */
+            closes: components["schemas"]["PricePoint"][];
         };
         /**
          * Problem
@@ -1057,6 +1139,46 @@ export interface operations {
                 };
             };
             /** @description No filing from an issuer with this ISIN */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    prices_api_companies__isin__prices_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                isin: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PriceSeries"];
+                };
+            };
+            /** @description No listing for a company with this ISIN */
             404: {
                 headers: {
                     [name: string]: unknown;

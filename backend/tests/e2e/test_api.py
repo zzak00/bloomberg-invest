@@ -2,6 +2,8 @@
 
 import hashlib
 import shutil
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 
 import pytest
 from conftest import FIXTURES, INCOME_ANSWER, extract_income, make_run
@@ -15,6 +17,7 @@ from bloomberg_invest.adapters.files import DocumentFiles
 from bloomberg_invest.domain.chunking import Block, ChunkDraft
 from bloomberg_invest.domain.extraction import SourceParagraph
 from bloomberg_invest.domain.model import RunStep
+from bloomberg_invest.domain.prices import CASABLANCA, XCAS, Close, ListedShare
 from bloomberg_invest.entrypoints.api.app import create_app
 from bloomberg_invest.service_layer.checks import Checks
 from bloomberg_invest.service_layer.embed import embed_document
@@ -143,6 +146,7 @@ def test_openapi_declares_the_contract(client):
         "/api/chunks/{chunk_id}",
         "/api/companies/{isin}",
         "/api/companies/{isin}/figures",
+        "/api/companies/{isin}/prices",
         "/api/facts/{fact_id}",
         "/api/checks",
         "/api/reviews",
@@ -274,6 +278,54 @@ def test_a_company_lists_its_filings(client, document_id):
 def test_an_unknown_company_is_404(client):
     assert client.get("/api/companies/MA0000000000").status_code == 404
     assert client.get("/api/companies/MA0000000000/figures").status_code == 404
+
+
+def test_a_company_with_no_listing_shows_no_close(client, document_id):
+    company = client.get("/api/companies/MA0000011488").json()
+    assert (company["listing"], company["last_close"]) == (None, None)
+    response = client.get("/api/companies/MA0000011488/prices")
+    assert response.status_code == 404
+    assert response.json()["detail"] == "No listing for this company"
+
+
+def listed(store, *closes: tuple[int, str], source: str = "bourse-casablanca") -> date:
+    """IAM listed and linked to Maroc Telecom, with closes `days` ago; returns today."""
+    today = datetime.now(CASABLANCA).date()
+    share = ListedShare("IAM", "ITISSALAT AL-MAGHRIB", "Télécommunications", "Principal A")
+    store.upsert_listings(XCAS, [share], {"IAM": "MA0000011488"}, datetime.now(UTC))
+    rows = [Close(today - timedelta(days=d), Decimal(v)) for d, v in closes]
+    store.add_prices("XCAS:IAM", rows, source, "MAD", datetime.now(UTC))
+    return today
+
+
+def test_a_listed_company_shows_its_last_close_and_change(client, store, document_id):
+    today = listed(store, (1200, "80"), (2, "89.80"), (1, "91.70"))
+    company = client.get("/api/companies/MA0000011488").json()
+    assert company["listing"] == {
+        "ticker": "IAM",
+        "mic": "XCAS",
+        "name": "ITISSALAT AL-MAGHRIB",
+        "sector": "Télécommunications",
+        "compartment": "Principal A",
+    }
+    assert company["last_close"] == {
+        "session": str(today - timedelta(days=1)),
+        "close": "91.70",
+        "currency": "MAD",
+        "change": "0.0212",
+        "source": "bourse-casablanca",
+        "history_start": str(today - timedelta(days=1200)),
+    }
+    series = client.get("/api/companies/MA0000011488/prices").json()
+    # Three years back: the close of 1,200 days ago is history, not in the line.
+    assert [p["close"] for p in series["closes"]] == ["89.80", "91.70"]
+
+
+def test_a_listing_with_no_closes_yet_has_no_last_close(client, store, document_id):
+    listed(store)
+    company = client.get("/api/companies/MA0000011488").json()
+    assert (company["listing"]["ticker"], company["last_close"]) == ("IAM", None)
+    assert client.get("/api/companies/MA0000011488/prices").json()["closes"] == []
 
 
 def test_a_company_s_figures_are_its_checked_facts_only_by_statement_and_year(client, extracted):

@@ -4,6 +4,8 @@ Neo4j Community enforces uniqueness only. Required properties are enforced by th
 which every write goes through. Reads never return Superseded nodes (ADR 0002).
 """
 
+from datetime import date, datetime
+
 from neo4j import Driver
 
 from bloomberg_invest.adapters.store import GraphStore
@@ -20,6 +22,13 @@ from bloomberg_invest.adapters.store.neo4j_store._cypher import (
 from bloomberg_invest.adapters.store.neo4j_store._embed import _record_embeddings
 from bloomberg_invest.adapters.store.neo4j_store._extract import _record_extraction
 from bloomberg_invest.adapters.store.neo4j_store._parse import _record_parse, _record_run
+from bloomberg_invest.adapters.store.neo4j_store._prices import (
+    PRICE_CONSTRAINTS,
+    _add_prices,
+    _listing,
+    _stored,
+    _upsert_listings,
+)
 from bloomberg_invest.adapters.store.neo4j_store._reads import (
     _boxes,
     _document_ref,
@@ -41,6 +50,7 @@ from bloomberg_invest.domain.model import (
     ParsedDocument,
     RunInfo,
 )
+from bloomberg_invest.domain.prices import Close, ListedShare, StoredClose
 from bloomberg_invest.domain.review import ReviewDraft
 from bloomberg_invest.views import (
     Candidate,
@@ -48,6 +58,7 @@ from bloomberg_invest.views import (
     DocumentDetail,
     DocumentSummary,
     Figure,
+    Listing,
     RejectedFigure,
 )
 
@@ -85,6 +96,8 @@ class Neo4jStore(GraphStore):
                 f"CREATE CONSTRAINT {label.lower()}_{prop} IF NOT EXISTS "
                 f"FOR (n:{label}) REQUIRE n.{prop} IS UNIQUE"
             )
+        for constraint in PRICE_CONSTRAINTS:
+            self._driver.execute_query(constraint)
         for index in INDEXES:
             self._driver.execute_query(index)
         self._driver.execute_query("CALL db.awaitIndexes(60)")
@@ -340,3 +353,48 @@ class Neo4jStore(GraphStore):
             sections=_tree(r["sections"]),
             run=_run(r["run"]),
         )
+
+    def upsert_listings(
+        self, mic: str, shares: list[ListedShare], isins: dict[str, str], at: datetime
+    ) -> list[str]:
+        with self._driver.session() as session:
+            return session.execute_write(_upsert_listings, mic, shares, isins, at)
+
+    def tickers(self, mic: str) -> list[str]:
+        records, _, _ = self._driver.execute_query(
+            "MATCH (l:Listing {mic: $mic}) RETURN l.ticker AS ticker ORDER BY ticker", mic=mic
+        )
+        return [r["ticker"] for r in records]
+
+    def add_prices(
+        self, key: str, closes: list[Close], source: str, currency: str, fetched_at: datetime
+    ) -> int:
+        with self._driver.session() as session:
+            return session.execute_write(_add_prices, key, closes, source, currency, fetched_at)
+
+    def prices(self, key: str, since: date | None = None) -> list[StoredClose]:
+        records, _, _ = self._driver.execute_query(
+            """
+            MATCH (p:Price {listing: $key}) WHERE $since IS NULL OR p.date >= $since
+            RETURN p ORDER BY p.date, p.source
+            """,
+            key=key,
+            since=since,
+        )
+        return [_stored(r) for r in records]
+
+    def last_session(self, key: str, source: str) -> date | None:
+        records, _, _ = self._driver.execute_query(
+            "MATCH (p:Price {listing: $key, source: $source}) RETURN max(p.date) AS last",
+            key=key,
+            source=source,
+        )
+        last = records[0]["last"]
+        return last.to_native() if last else None
+
+    def listing(self, isin: str) -> Listing | None:
+        records, _, _ = self._driver.execute_query(
+            "MATCH (:Organisation {isin: $isin})-[:LISTED_AS]->(l:Listing) RETURN l LIMIT 1",
+            isin=isin,
+        )
+        return _listing(records[0]["l"]) if records else None

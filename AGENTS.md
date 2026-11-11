@@ -36,7 +36,7 @@ Tests: `tests/unit/` (no Docker), `tests/integration/` (real Neo4j or Docling; o
 - **Line item**: the canonical name of a financial quantity (`revenue`, `total_assets`); the filing's own wording is its **label**. Avoid: metric, KPI.
 - **KPI value**: a number computed in Python from Facts under a rule version; never extracted. Avoid: metric, score.
 - **Screening**: a company's Sharia compliance status for one period, computed from KPI values under a standard and rule version. Avoid: rating.
-- **Price**: a daily close for one security from the market data source, with date, currency, source and fetch time. A market data record, not a Fact; market cap is computed from it. Avoid: quote.
+- **Price**: a daily close of one Listing from the market data source, with date, currency, source and fetch time. A market data record, not a Fact; market cap is computed from it. Avoid: quote.
 - **Chunk**: the search and retrieval unit: a run of one section's headings and paragraphs, never splitting a paragraph, or a table, or one part of a long table cut between rows with its header repeated (ADR 0004). Avoid: fragment, page, paragraph (paragraphs exist only inside the chunker), passage (a Passage is what a Fact cites).
 - **Passage**: the exact span a Fact cites: a table cell, a text range or an image region. In the graph, a second label on Cell and Span nodes, never a node of its own. Avoid: chunk, source.
 - **Run**: one execution of a processing step (parse, chunk, embed, extract, link, compute, answer), with its tool, model and configuration versions. Avoid: job, task.

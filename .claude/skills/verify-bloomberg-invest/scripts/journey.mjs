@@ -168,6 +168,20 @@ try {
     const figureCount = Number(tab.split("·")[1]);
     const revenue = income.getByRole("link", { name: /^Revenue, FY2025: 36 681 MAD m, on page \d+$/ });
     check(vp.name, "AC4: revenue FY2025 is listed as written", await revenue.isVisible());
+    // Its listing and last close sit under its name (#26 AC4).
+    check(vp.name, "AC4: the dossier names the ticker", await page.locator(".dossier-id .chip", { hasText: /^IAM$/ }).isVisible());
+    const price = page.getByRole("group", { name: "Last close" });
+    const priceText = (await price.innerText()).replace(/\s+/g, " ");
+    check(vp.name, "AC4: the last close and its change", /CLOSE [\d\u202f\u00a0 ]+,\d{2} MAD [+-−]?[\d,]+ %/.test(priceText), priceText);
+    check(
+      vp.name,
+      "AC4: its date and source",
+      /\d{2}\/\d{2}\/\d{4} · Bourse de Casablanca · raw close, not adjusted for dividends/.test(priceText),
+    );
+    check(vp.name, "AC4: where its history starts", /History from \d{2}\/\d{2}\/\d{4}/.test(priceText));
+    const line = price.getByRole("img", { name: /^Closes from / });
+    await line.waitFor();
+    check(vp.name, "AC4: a three-year price line", (await line.locator("polyline").getAttribute("points")).split(" ").length > 500, await line.getAttribute("aria-label"));
     const years = await page.getByRole("columnheader", { name: /^FY\d{4}$/ }).allInnerTexts();
     check(vp.name, "years run newest first", years.length === 0 || years[0] === "FY2025", years.join(" "));
     await shot("08-dossier");
@@ -250,31 +264,36 @@ try {
     check(vp.name, "a reopened figure is to check again", true);
 
     // A corrected rejected figure counts: the viewer and the dossier show the correction (#19 R8).
+    // Whichever figure needs review: the analyst may have corrected the others on this data.
     await page.goto(`${base}/checks`);
-    const rejectedRow = page.getByRole("listitem", { name: /^Total equity, FY2024: Needs review$/ }).first();
+    const rejectedRow = page.getByRole("listitem", { name: /, FY\d{4}: Needs review$/ }).first();
     await rejectedRow.scrollIntoViewIfNeeded();
+    const rejectedName = (await rejectedRow.getAttribute("aria-label")).replace(/: Needs review$/, "");
+    const asWritten = (await rejectedRow.locator(".check-number").first().innerText()).trim();
+    const rowNamed = (status) =>
+      page.getByRole("listitem", { name: `${rejectedName}: ${status}`, exact: true }).first();
     await rejectedRow.getByRole("button", { name: "CORRECT" }).click();
-    await rejectedRow.getByRole("textbox").fill("18 702");
+    await rejectedRow.getByRole("textbox").fill(asWritten);
     await rejectedRow.getByRole("button", { name: "SAVE" }).click();
-    const corrected = page.getByRole("listitem", { name: /^Total equity, FY2024: Corrected$/ }).first();
+    const corrected = rowNamed("Corrected");
     await corrected.waitFor();
-    check(vp.name, "a rejected figure is corrected", /^Corrected by .+ on \d{2}\/\d{2}\/\d{4}/.test(await corrected.locator(".check-done").innerText()));
+    check(vp.name, "a rejected figure is corrected", /^Corrected by .+ on \d{2}\/\d{2}\/\d{4}/.test(await corrected.locator(".check-done").innerText()), rejectedName);
     await shot("15-checks-corrected");
-    await corrected.getByRole("link", { name: /^Open the cell on page \d+ in the source viewer$/ }).click();
+    await corrected.getByRole("link", { name: /^Open .* in the source viewer$/ }).click();
     await page.waitForURL(/fact=/);
     const correctedBar = page.getByRole("status");
     await correctedBar.getByText(/^Corrected by /).waitFor();
     const correctedText = (await correctedBar.innerText()).replace(/\s+/g, " ");
-    check(vp.name, "the viewer shows the correction on its page", /PAGE/.test(correctedText) && /18 702 MAD m/.test(correctedText), correctedText);
+    check(vp.name, "the viewer shows the correction on its source", /PAGE|CELL|QUOTE/.test(correctedText) && correctedText.includes(`${asWritten} MAD m`), correctedText);
     await shot("16-corrected-figure");
     await page.goto(`${base}/companies/MA0000011488`);
     const counted = await page.getByRole("tab", { name: /^FIGURES · \d+$/, selected: true }).innerText();
     check(vp.name, "the dossier counts the corrected figure", Number(counted.split("·")[1]) === figureCount + 1, counted);
-    await page.getByRole("region", { name: "Balance sheet" }).getByRole("link", { name: /^Total equity, FY2024: 18 702 MAD m/ }).first().scrollIntoViewIfNeeded();
+    await page.getByRole("link", { name: `${rejectedName}: ${asWritten} MAD m`, exact: false }).first().scrollIntoViewIfNeeded();
     await shot("17-dossier-corrected");
     await page.goto(`${base}/checks?status=done`);
-    await page.getByRole("listitem", { name: /^Total equity, FY2024: Corrected$/ }).first().getByRole("button", { name: "REOPEN" }).click();
-    await page.getByRole("listitem", { name: /^Total equity, FY2024: Needs review$/ }).first().waitFor();
+    await rowNamed("Corrected").getByRole("button", { name: "REOPEN" }).click();
+    await rowNamed("Needs review").waitFor();
     check(vp.name, "a reopened correction needs review again", true);
 
     // MAP and KPIs show their empty states.
