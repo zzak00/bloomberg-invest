@@ -10,6 +10,7 @@ from pathlib import Path
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import (
     PdfPipelineOptions,
+    RapidOcrOptions,
     TableFormerMode,
     TableStructureOptions,
 )
@@ -35,6 +36,10 @@ TEXTS = {
 FURNITURE = {DocItemLabel.PAGE_HEADER, DocItemLabel.PAGE_FOOTER}
 # "1)", "a.", "(ii)", "-" or "•" opening a paragraph: a numbered point the chunker may split at.
 NUMBERED_POINT = re.compile(r"^(\(?(\d+|[a-z]|[ivx]+)[.)]|[-•–])\s", re.IGNORECASE)
+# RapidOCR keeps its models in its own install folder unless told otherwise, so every new
+# .venv or container downloaded them again from modelscope.cn (#47). Next to Hugging Face's
+# cache, they are shared by worktrees, the `models` volume in compose and the CI cache.
+OCR_MODELS = Path.home() / ".cache" / "rapidocr"
 
 
 class DoclingParser(Parser):
@@ -46,14 +51,24 @@ class DoclingParser(Parser):
         self._table_options = TableStructureOptions(
             mode=TableFormerMode.ACCURATE, do_cell_matching=True
         )
+        # The engine Docling's automatic choice picks with the ingest extra installed (RapidOCR
+        # on torch, its default language), named so its model folder can be set.
+        self._ocr_options = RapidOcrOptions(
+            backend="torch",
+            lang=[],
+            rapidocr_params={"Global.model_root_dir": str(OCR_MODELS)},
+        )
         self.config = {
             "table_structure": "TableFormer v1",
             "mode": self._table_options.mode.value,
             "do_cell_matching": str(self._table_options.do_cell_matching).lower(),
+            "ocr": f"rapidocr {self._ocr_options.backend}",
         }
 
     def parse(self, pdf: Path, output: Path) -> ParsedDocument:
-        options = PdfPipelineOptions(table_structure_options=self._table_options)
+        options = PdfPipelineOptions(
+            table_structure_options=self._table_options, ocr_options=self._ocr_options
+        )
         converter = DocumentConverter(
             format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=options)}
         )
