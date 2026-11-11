@@ -50,12 +50,16 @@ jobs:
       - uses: astral-sh/setup-uv@v10.3.3
         with:
           enable-cache: true
-      # The embedding model and Docling's models, downloaded from Hugging Face on first use.
+      # The embedding model and Docling's models, downloaded from Hugging Face on first use, and
+      # RapidOCR's, from modelscope.cn (the parser's OCR_MODELS). Change the key's prefix when
+      # the paths change: a key already saved is restored as it was and never saved again.
       - name: Cache models
         uses: actions/cache@v4
         with:
-          path: ~/.cache/huggingface
-          key: models-${{ hashFiles('backend/uv.lock') }}
+          path: |
+            ~/.cache/huggingface
+            ~/.cache/rapidocr
+          key: models-ocr-${{ hashFiles('backend/uv.lock') }}
       # The API image has the embedder but no Docling: run the API, store and embedder tests in
       # the same environment, so a dependency that only the ingest extra brings in fails here.
       - name: API, store and embedder tests (no ingest extra)

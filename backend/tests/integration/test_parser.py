@@ -91,7 +91,7 @@ def test_docling_saves_a_docling_document(parser, parsed, output):
     assert any("VUE D'ENSEMBLE" in item.text for item in document.texts)
 
 
-def test_docling_records_its_version_and_table_settings():
+def test_docling_records_its_version_table_settings_and_ocr_engine():
     parser = make_parser("docling")
     assert parser.tool == "docling"
     assert parser.tool_version == "2.145.0"
@@ -99,6 +99,7 @@ def test_docling_records_its_version_and_table_settings():
         "table_structure": "TableFormer v1",
         "mode": "accurate",
         "do_cell_matching": "true",
+        "ocr": "rapidocr torch",
     }
 
 
