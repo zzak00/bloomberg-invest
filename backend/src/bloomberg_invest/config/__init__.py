@@ -1,5 +1,5 @@
 """Versioned configuration shipped with the package: the label map, the extraction prompt, the
-KPI rules and the listings' ISINs.
+KPI rules and the listings' ISINs; the facts prompt.
 
 A released version never changes; a new one is a new file. Runs record each version with the
 SHA-256 of its file (#19 R3, R14).
@@ -16,6 +16,7 @@ from bloomberg_invest.domain.label_map import LabelMap, LineItem
 
 LABEL_MAP = "v1"
 EXTRACT_PROMPT = "v1"
+FACTS_PROMPT = "v1"
 KPI_RULES = "v1"
 LISTINGS = "v1"
 ISIN = re.compile(r"[A-Z]{2}[A-Z0-9]{9}[0-9]")
@@ -47,6 +48,12 @@ class Prompt:
 def extract_prompt(version: str = EXTRACT_PROMPT) -> Prompt:
     raw = (_HERE / "prompts" / f"extract_figures_{version}.md").read_bytes()
     return Prompt("extract-figures", version, hashlib.sha256(raw).hexdigest(), raw.decode())
+
+
+def facts_prompt(version: str = FACTS_PROMPT) -> Prompt:
+    """What the LLM is told when it extracts the eight other kinds of Fact (#24)."""
+    raw = (_HERE / "prompts" / f"extract_facts_{version}.md").read_bytes()
+    return Prompt("extract-facts", version, hashlib.sha256(raw).hexdigest(), raw.decode())
 
 
 def kpi_rules(against: LabelMap, version: str = KPI_RULES) -> KpiRules:

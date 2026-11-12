@@ -4,8 +4,8 @@ import hashlib
 import re
 
 import pytest
-from conftest import FIXTURES, GOLDEN_PDF, GOLDEN_SHA
-from fakes import FakeEmbedder, fake_extraction
+from conftest import FIXTURES, GOLDEN_PDF, GOLDEN_SHA, PARSE_CACHE, CachedParser
+from fakes import FakeEmbedder, fake_extraction, fake_fact_extraction
 
 pytestmark = pytest.mark.ingest
 pytest.importorskip("docling", reason="needs the ingest extra")
@@ -36,6 +36,7 @@ def test_ingest_stores_the_pdf_and_records_the_parse(store, meta, tmp_path):
         CAPS,
         FakeEmbedder(),
         fake_extraction(),
+        fake_fact_extraction(),
     )
     document_id = ingested.document_id
 
@@ -63,7 +64,16 @@ def test_the_golden_report_parses_into_its_outline_and_chunks_and_is_searchable(
     counter = TiktokenCounter()
     embedder = bootstrap.EMBEDDERS["qwen3-0.6b"]()
     ingested = ingest(
-        GOLDEN_PDF, meta, store, files, DoclingParser(), counter, CAPS, embedder, fake_extraction()
+        GOLDEN_PDF,
+        meta,
+        store,
+        files,
+        CachedParser(PARSE_CACHE),
+        counter,
+        CAPS,
+        embedder,
+        fake_extraction(),
+        fake_fact_extraction(),
     )
     document_id = ingested.document_id
 

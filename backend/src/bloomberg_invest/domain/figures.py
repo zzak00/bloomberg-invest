@@ -111,7 +111,15 @@ class Unit:
     currency: str | None = None
 
 
-CURRENCIES = {"mad": "MAD", "dh": "MAD", "dhs": "MAD", "dirhams": "MAD", "eur": "EUR", "usd": "USD"}
+CURRENCIES = {
+    "mad": "MAD",
+    "dh": "MAD",
+    "dhs": "MAD",
+    "dirham": "MAD",
+    "dirhams": "MAD",
+    "eur": "EUR",
+    "usd": "USD",
+}
 SCALES = {
     "thousands": 1_000,
     "thousand": 1_000,

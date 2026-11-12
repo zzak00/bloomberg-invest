@@ -21,6 +21,21 @@ from bloomberg_invest.adapters.store.neo4j_store._cypher import (
 )
 from bloomberg_invest.adapters.store.neo4j_store._embed import _record_embeddings
 from bloomberg_invest.adapters.store.neo4j_store._extract import _record_extraction
+from bloomberg_invest.adapters.store.neo4j_store._facts import (
+    FACT_BY_ID,
+    FACT_KINDS,
+    PARTIES,
+    _fact_or_rejected,
+    _record_fact_extraction,
+)
+from bloomberg_invest.adapters.store.neo4j_store._names import (
+    CURRENT_FACTS,
+    KNOWN,
+    _known,
+    _name_check,
+    _record_links,
+    _record_name_review,
+)
 from bloomberg_invest.adapters.store.neo4j_store._parse import _record_parse, _record_run
 from bloomberg_invest.adapters.store.neo4j_store._prices import (
     PRICE_CONSTRAINTS,
@@ -41,6 +56,7 @@ from bloomberg_invest.adapters.store.neo4j_store._reads import (
 from bloomberg_invest.adapters.store.neo4j_store._review import _record_review
 from bloomberg_invest.domain.chunking import ChunkDraft
 from bloomberg_invest.domain.extraction import FigureDraft, SourceCell
+from bloomberg_invest.domain.facts import FactDraft
 from bloomberg_invest.domain.figures import FINANCIAL_FIGURE
 from bloomberg_invest.domain.indexing import EmbedInput
 from bloomberg_invest.domain.model import (
@@ -50,6 +66,7 @@ from bloomberg_invest.domain.model import (
     ParsedDocument,
     RunInfo,
 )
+from bloomberg_invest.domain.names import NameReviewDraft
 from bloomberg_invest.domain.prices import Close, ListedShare, StoredClose
 from bloomberg_invest.domain.review import ReviewDraft
 from bloomberg_invest.views import (
@@ -58,8 +75,13 @@ from bloomberg_invest.views import (
     DocumentDetail,
     DocumentSummary,
     Figure,
+    KnownEntity,
     Listing,
+    NameCheck,
+    NameToLink,
+    RejectedFact,
     RejectedFigure,
+    StatedFact,
 )
 
 CONSTRAINTS = [
@@ -75,6 +97,10 @@ CONSTRAINTS = [
     ("RejectedFigure", "id"),
     ("Span", "id"),
     ("Review", "id"),
+    ("Organisation", "id"),
+    ("Person", "id"),
+    ("Alias", "key"),
+    ("RejectedFact", "id"),
 ]
 
 
@@ -91,6 +117,10 @@ class Neo4jStore(GraphStore):
         self._driver = driver
 
     def ensure_schema(self) -> None:
+        # Organisations stored before #24 were keyed by ISIN only; facts name them by id.
+        self._driver.execute_query(
+            "MATCH (o:Organisation) WHERE o.id IS NULL SET o.id = randomUUID()"
+        )
         for label, prop in CONSTRAINTS:
             self._driver.execute_query(
                 f"CREATE CONSTRAINT {label.lower()}_{prop} IF NOT EXISTS "
@@ -247,6 +277,110 @@ class Neo4jStore(GraphStore):
     def record_review(self, figure_ids: list[str], review: ReviewDraft) -> str:
         with self._driver.session() as session:
             return session.execute_write(_record_review, figure_ids, review)
+
+    def record_fact_extraction(self, document_id: str, facts: list[FactDraft], run: RunInfo) -> str:
+        with self._driver.session() as session:
+            return session.execute_write(_record_fact_extraction, document_id, facts, run)
+
+    def facts(
+        self, isin: str | None = None, ids: list[str] | None = None
+    ) -> tuple[list[StatedFact], list[RejectedFact]]:
+        records, _, _ = self._driver.execute_query(
+            f"""
+            CALL () {{
+                MATCH (n:Fact) WHERE n.kind IN $kinds RETURN n
+                UNION
+                MATCH (n:RejectedFact) RETURN n
+            }}
+            WITH n WHERE {CURRENT} AND ($ids IS NULL OR n.id IN $ids)
+            MATCH (n)-[:ABOUT]->(o:Organisation), (n)-[:FROM_DOCUMENT]->(d:Document)
+            WITH n, o, d WHERE $isin IS NULL OR o.isin = $isin OR EXISTS {{
+                (n)-[:NAMES]->(:Alias)-[:ALIAS_OF]->(:Organisation {{isin: $isin}})
+            }}
+            OPTIONAL MATCH (n)-[:CITES]->(passage:Passage)
+            {LATEST_REVIEW}
+            {PARTIES}
+            RETURN n, d, o, passage, rv, rp, parties
+            ORDER BY n.kind, coalesce(passage.page, n.page), n.id
+            """,
+            kinds=FACT_KINDS,
+            isin=isin,
+            ids=ids,
+        )
+        read = [_fact_or_rejected(r) for r in records]
+        return (
+            [f for f in read if isinstance(f, StatedFact)],
+            [f for f in read if isinstance(f, RejectedFact)],
+        )
+
+    def fact(self, fact_id: str) -> StatedFact | RejectedFact | None:
+        records, _, _ = self._driver.execute_query(
+            f"""
+            WITH $id AS id
+            {FACT_BY_ID}
+            WITH n WHERE n.kind IN $kinds
+            MATCH (n)-[:ABOUT]->(o:Organisation), (n)-[:FROM_DOCUMENT]->(d:Document)
+            OPTIONAL MATCH (n)-[:CITES]->(passage:Passage)
+            {LATEST_REVIEW}
+            {PARTIES}
+            RETURN n, d, o, passage, rv, rp, parties
+            """,
+            id=fact_id,
+            kinds=FACT_KINDS,
+        )
+        return _fact_or_rejected(records[0]) if records else None
+
+    def unlinked_names(self, document_id: str) -> list[NameToLink]:
+        records, _, _ = self._driver.execute_query(
+            f"""
+            MATCH (d:Document {{id: $id}})
+            {CURRENT_FACTS}
+            MATCH (n)-[:NAMES]->(a:Alias)
+            WHERE NOT a.key CONTAINS ':' AND NOT coalesce(a.not_an_entity, false)
+              AND NOT EXISTS {{ (a)-[:ALIAS_OF]->() }}
+            RETURN DISTINCT a.key AS key, a.name AS name, a.kind AS kind ORDER BY key
+            """,
+            id=document_id,
+        )
+        return [NameToLink(**r.data()) for r in records]
+
+    def known_entities(self) -> list[KnownEntity]:
+        records, _, _ = self._driver.execute_query(KNOWN)
+        return [KnownEntity(**k) for k in _known(records)]
+
+    def record_links(
+        self, document_id: str, links: list[tuple[str, str]], run: RunInfo
+    ) -> tuple[str, int]:
+        with self._driver.session() as session:
+            return session.execute_write(_record_links, document_id, links, run)
+
+    def names_to_check(self) -> list[NameCheck]:
+        records, _, _ = self._driver.execute_query(
+            f"""
+            MATCH (n:Fact)-[names:NAMES]->(a:Alias)
+            WHERE n.kind IN $kinds AND {CURRENT} AND NOT a.key CONTAINS ':'
+            OPTIONAL MATCH (a)-[link:ALIAS_OF]->(e)
+            WITH n, names, a, e, link
+            WHERE e IS NULL OR EXISTS {{ (:Review {{id: link.by}}) }}
+            MATCH (n)-[:FROM_DOCUMENT]->(d:Document)-[:ISSUED_BY]->(o:Organisation)
+            MATCH (n)-[:CITES]->(passage:Passage)
+            OPTIONAL CALL (a) {{
+                MATCH (rv:Review)-[:REVIEWS]->(a)
+                RETURN rv ORDER BY rv.reviewed_at DESC LIMIT 1
+            }}
+            WITH a, e, rv, n, names, d, o, passage
+            ORDER BY o.name, d.fiscal_year DESC, passage.page, n.id
+            RETURN a, e, rv, collect({{n: n, role: names.role, written: names.written, d: d,
+                                      o: o, passage: passage}}) AS sources
+            ORDER BY a.key
+            """,
+            kinds=FACT_KINDS,
+        )
+        return [_name_check(r) for r in records]
+
+    def record_name_review(self, key: str, review: NameReviewDraft) -> str:
+        with self._driver.session() as session:
+            return session.execute_write(_record_name_review, key, review)
 
     def search_vector(self, vector: list[float], limit: int) -> list[str]:
         records, _, _ = self._driver.execute_query(

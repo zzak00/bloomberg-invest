@@ -1,15 +1,28 @@
 # Graph schema
 
-The nodes and relationships that `Neo4jStore.record_parse`, `record_chunks`, `record_embeddings`, `record_extraction` and `record_review` (`backend/src/bloomberg_invest/adapters/store/neo4j_store/`) write for one ingested filing. Update this file when the store writes a new label, property or relationship.
+The nodes and relationships that `Neo4jStore.record_parse`, `record_chunks`, `record_embeddings`, `record_extraction`, `record_fact_extraction`, `record_links`, `record_review` and `record_name_review` (`backend/src/bloomberg_invest/adapters/store/neo4j_store/`) write for one ingested filing. Update this file when the store writes a new label, property or relationship.
 
 The diagram gives the shape; [Attributes](#attributes) gives every property's meaning and an example from the Maroc Telecom 2025 report.
 
 ```mermaid
 erDiagram
     Organisation {
+        String id UK
         String isin UK
         String name
         String kind
+        String aggregate
+        String aggregate_of
+    }
+    Person {
+        String id UK
+        String name
+    }
+    Alias {
+        String key UK
+        String name
+        String kind
+        Boolean not_an_entity
     }
     Listing {
         String key UK
@@ -131,6 +144,13 @@ erDiagram
         String source_id
         DateTime recorded_at
         Boolean superseded
+        String other "each kind's fields, and its quote"
+    }
+    RejectedFact {
+        String id UK
+        String reason
+        Integer page
+        String other "what the LLM proposed"
     }
     RejectedFigure {
         String id UK
@@ -149,6 +169,9 @@ erDiagram
         String unit
         Integer scale
         String currency
+        String entity_id
+        String name
+        String kind
     }
 
     Document }o--|| Organisation : ISSUED_BY
@@ -193,6 +216,16 @@ erDiagram
     Review }o--o{ RejectedFigure : REVIEWS
     Review }o--o| Cell : "CITES (a correction that picked a cell)"
     Review |o--o| Span : "CITES (a correction that picked a number in a paragraph)"
+    Fact }o--o{ Alias : "NAMES {role, written, name, kind} (each party of the eight other kinds)"
+    RejectedFact }o--o{ Alias : "NAMES {role, written, name, kind}"
+    RejectedFact }o--o| Span : CITES
+    RejectedFact }o--o| Cell : CITES
+    Alias }o--o| Organisation : "ALIAS_OF {by} (a link Run or a Review)"
+    Alias }o--o| Person : "ALIAS_OF {by}"
+    Organisation }o--o| Organisation : "AGGREGATE_OF (its free float or treasury shares)"
+    Review }o--o{ Alias : "REVIEWS (a name check)"
+    Organisation |o--o| Review : "PRODUCED_BY (created in CHECKS Names)"
+    Person |o--|| Review : "PRODUCED_BY (created in CHECKS Names)"
     Organisation |o--o| Listing : "LISTED_AS (when its ISIN is in config/listings/)"
     Listing ||--o{ Price : HAS_PRICE
     Price |o--o| Price : "SUPERSEDED_BY (a later answer gave another close)"
@@ -204,7 +237,7 @@ Arrows in Cypher run from the first entity to the second, for example `(:Documen
 
 - **Every box is a node label.** A node can carry more than one label.
 - **Passage is a second label, not a node type of its own.** Every Cell node is `:Cell:Passage` and every Span node is `:Span:Passage`. A Passage is what a Fact cites, or a correction: the table cell or the quoted sentence its value comes from. Reads match `(:Fact)-[:CITES]->(:Passage)` so they need not ask which kind it is. No node is a Passage alone.
-- **Relationships carry no properties.** Their type and direction are the whole meaning; anything worth recording, such as when or by which tool, is a property of a node, usually the Run that `PRODUCED_BY` points to.
+- **Relationships carry no properties, but two.** Their type and direction are the whole meaning; anything worth recording, such as when or by which tool, is a property of a node, usually the Run that `PRODUCED_BY` points to. The exceptions belong to one link, not to either node: `NAMES` holds the party's `role` in the fact and how that fact writes it, since an Alias is shared by every fact writing the name; `ALIAS_OF` holds `by`, the id of the link Run or the Review that made it.
 
 One figure, as stored:
 
@@ -224,9 +257,32 @@ An optional property is absent from the node when it has no value: Neo4j stores 
 
 | Property | Type | Meaning | Example |
 | --- | --- | --- | --- |
-| `isin` | String, unique | the ISIN given on the CLI | `MA0000011488` |
-| `name` | String | as given on the CLI | `Maroc Telecom` |
-| `kind` | String | `company` for now | `company` |
+| `id` | String, unique | UUID; how facts' names link to it | `0b3c…` |
+| `isin` | String, unique, optional | the ISIN given on the CLI, for an issuer | `MA0000011488` |
+| `name` | String | as given on the CLI, or in CHECKS Names | `Maroc Telecom` |
+| `kind` | String | `company`, `holding`, `state`, `pension_fund`, `insurer`, `bank`, `audit_firm`, or `aggregate` | `company` |
+| `aggregate` | String, Aggregates only | `free_float` or `treasury_shares` | `free_float` |
+| `aggregate_of` | String, Aggregates only | the `id` of the company it is `AGGREGATE_OF`; one Aggregate per company and kind | `0b3c…` |
+
+### Person
+
+A director, auditor's partner or other person a fact names, created when a person resolves the name in CHECKS Names (`new`).
+
+| Property | Type | Meaning | Example |
+| --- | --- | --- | --- |
+| `id` | String, unique | UUID | `5c2e…` |
+| `name` | String | as given in CHECKS | `Lamia Lemkecher` |
+
+### Alias
+
+A name as facts write it, shared by every fact and filing writing the same name: a person resolves it once (#19 R7). Never superseded.
+
+| Property | Type | Meaning | Example |
+| --- | --- | --- | --- |
+| `key` | String, unique | the full name normalised: lower case, no accents, punctuation or legal forms (`domain/names.py`); an aggregate's is `<kind>:<its company's key>` | `itissalat al maghrib`; `free_float:maroc telecom` |
+| `name` | String | the full name the extractor read, the first time | `Itissalat Al-Maghrib` |
+| `kind` | String | what the extractor proposed it is | `company` |
+| `not_an_entity` | Boolean, optional | a person said it is no Organisation or Person | `true` |
 
 ### Document
 
@@ -363,6 +419,28 @@ A financial figure that passed the check. Example: consolidated revenue for 2025
 | `recorded_at` | DateTime | when the extract Run stored it | `2026-11-09T22:12:43Z` |
 | `superseded` | Boolean, optional | | `true` |
 
+### Fact of the other eight kinds
+
+A shareholding, board seat, audit mandate, listing, consolidation, dividend, auditor opinion or related-party agreement that passed the check (#24). It `NAMES` each party through an Alias, with the party's `role` (`holder` and `held`, `member` and `company`, `auditor` and `company`, `company` and `exchange`, `parent` and `subsidiary`, `company`, `company`, `company` and `counterparty`). Its other properties are its kind's fields (`domain/facts.py`, `SPECS`), as the LLM copied them, plus:
+
+| Property | Type | Meaning | Example |
+| --- | --- | --- | --- |
+| `kind` | String | the kind | `shareholding` |
+| `percent`, `shares`, `interest`, `control`, `amount` | String, by kind, optional | numbers exactly as printed | `53` |
+| `rights`, `body`, `role`, `status`, `method`, `opinion`, `measure`, `nature`, `ticker`, `isin`, `compartment`, `sector`, `partner` | String, by kind | as the kind defines them | `capital`; `full`; `per_share` |
+| `emphasis` | Boolean, auditor opinions | an emphasis of matter | `true` |
+| `basis_scope` | String, mandates and opinions | `consolidated` or `company-only` | `consolidated` |
+| `unit_as_written` | String, amounts | the unit as stated | `MAD billions` |
+| `amount_value`, `scale`, `currency` | amounts | the amount in its base unit, exact, as for a figure's `value` | `3500000000`, `1000000000`, `MAD` |
+| `as_of` | Date, as-of kinds | shareholdings, board seats, listings, consolidation | `2025-12-31` |
+| `fiscal_year`, `period_start`, `period_end` | fiscal-year kinds | mandates, dividends, opinions, agreements | `2025`, `2025-01-01`, `2025-12-31` |
+| `quote` | String | the words of its paragraph, or its cell's row, that state it | `Etisalat : 53% ;` |
+| `source_id`, `recorded_at`, `superseded` | | as on a figure | |
+
+### RejectedFact
+
+A fact of the eight other kinds that failed the check, with the same properties as the Fact it would be (`as_of` stays the LLM's text), its `page`, and its `reason`: `its source id is not on the page`, `its quote is not in its source`, `a party has no name`, `it states nothing`, `a number it states is not one number`, `a number it states is not in its quote`, `its date is not a date`, `its unit names no currency`.
+
 ### RejectedFigure
 
 What the LLM proposed, kept with the reason the check refused it. It holds only what the LLM said and what was read from its source: `id`, `kind`, `line_item`, `label`, `value_as_written`, `unit_as_written`, `fiscal_year`, `basis_scope` (when valid), `breakdown`, `source_id` and `recorded_at`, as on a Fact, plus the two below. The parsed properties (`value`, `unit`, `scale`, `currency`, the period and `basis_standard`) are never set.
@@ -380,7 +458,7 @@ Examples:
 
 ### Review
 
-A person's check of figures in CHECKS (#23). One Review `REVIEWS` every figure of one CHECKS row: the Facts of one filing stating one value of a line item and year, or one RejectedFigure. A correction's properties are absent on an acceptance or a reopening.
+A person's check of figures in CHECKS (#23). One Review `REVIEWS` every figure of one CHECKS row: the Facts of one filing stating one value of a line item and year, or one RejectedFigure. A correction's properties are absent on an acceptance or a reopening. A Review of one Fact of the other kinds keeps its value in a Conflict (`accepted`) or undoes that (`reopened`, D5). A Review of an Alias records what a person decided the name stands for (`same_as` with `entity_id`, `new` with `name` and `kind`, `not_an_entity`, or `reopened`).
 
 | Property | Type | Meaning | Example |
 | --- | --- | --- | --- |
@@ -422,14 +500,16 @@ Neo4j Community enforces uniqueness only. Required properties are enforced by th
 
 | Label | Unique | Matched on when ingesting |
 | --- | --- | --- |
-| Organisation | `isin` | `isin`, given on the CLI |
+| Organisation | `id`; `isin` | `isin`, given on the CLI; an Aggregate on `(aggregate, aggregate_of)` |
+| Person | `id` | always created, in CHECKS Names |
+| Alias | `key` | `key`, from the name a fact writes |
 | Document | `id`, `sha256` | `sha256` of the PDF |
 | Run | `id` | always created |
 | Section | `id` | always created |
 | Page | none | always created, per Run |
 | Chunk | `id` | always created, per chunk Run |
 | Table, Cell | `id` | always created, per parse Run |
-| Fact, RejectedFigure, Span | `id` | always created, per extract Run |
+| Fact, RejectedFigure, RejectedFact, Span | `id` | always created, per extract or extract_facts Run |
 | Review | `id` | always created, per check; never superseded |
 | Listing | `key`; `(mic, ticker)` | `(mic, ticker)` from the exchange's list |
 | Price | `(listing, date, source, fetched_at)` | the current close of `(listing, date, source)`: the same close writes nothing, another one from a later answer supersedes it. "One current close" is kept by the write, in the share's transaction: Community has no partial uniqueness |
@@ -471,6 +551,16 @@ A Fact keeps the label map's `line_item` key only; its title and statement are r
 
 `value` is a string because Neo4j has no decimal type and a float would make `4,01` unequal to `4.01`. The extract Run's `config` names the deployment, the prompt and label map versions with their SHA-256, and the parse Run it read.
 
+## Where facts and names live
+
+The eight other kinds of Fact come from their own Run step, `extract_facts`, with its own prompt (`config/prompts/extract_facts_v1.md`), page by page over every page with text; the figure pass is untouched (#24 D1). A fact is kept when its quote is in its source, its paragraph or its cell's table row, and every number it states is in its quote (D2); it `CITES` that Cell or a Span of its quote, boxed in the PDF's text layer like a figure's.
+
+Each party is written twice by the extractor: as the page writes it (`l'Etat`, on `NAMES`) and as the full name it means there (`Royaume du Maroc`), whose key is the Alias's. A `link` Run, after every `extract_facts` Run, links each Alias with no `ALIAS_OF` to the one Organisation or Person whose name, Listing name or resolved Alias has its key; none or several leaves it for CHECKS Names (D3). An aggregate Alias (`free_float:<key>`, `treasury_shares:<key>`) links to its company's Aggregate once the company's name is linked, never through CHECKS. A person's decision is a Review of the Alias; it replaces the Alias's `ALIAS_OF`, and the company's aggregates follow it.
+
+An `extract_facts` Run supersedes earlier ones' Facts, RejectedFacts and Spans, never an Alias, an Organisation or Person, or a Review. A new Fact keeps the Review of the previous Run's Fact that read the same kind, names, values and source (#19 R4).
+
+The dossier groups Facts by kind, parties (each one's entity, or its Alias until resolved) and details (the rights, body, scope, measure or nature), one row per fiscal year for the fiscal-year kinds. A row shows a value a person kept; else the latest date's; at one date an annual report's over an issuer page's; else the first recorded (#19 R8). Values at the shown date that disagree, numbers beyond the precision they are written to, are a Conflict, and both stay visible.
+
 ## Where checks live
 
 A figure's check in force is its latest `Review` (by `reviewed_at`), unless that one reopened it. Reviews are never superseded or deleted: a mistaken check is undone by a reopening, and both stay. Only consolidated figures that feed a KPI or screen need a check; `config/kpis/` names those inputs.
@@ -482,6 +572,8 @@ An extract Run carries checks over in its own transaction (#19 R4). A new figure
 - from the same source: for a Cell, the same page, table index, row and column, which survive a re-parse; for a Span, the same page, quote and paragraph.
 
 Any other new figure starts unchecked and goes back to CHECKS, and so does every figure with no Passage: its page and `source_id` are not the same Cell. Only the Run just before counts, so a check undone by a different reading does not come back when a later Run reads the first value again.
+
+One filing's check covers the value (#24 D4): a figure of another filing stating the value in force, within the precision it is written to, counts as checked and leaves CHECKS, which names the filing checked (`checked_in`). This is read, not stored: no Review links to it, and it is reopened where the check was made.
 
 ## Where closes live
 

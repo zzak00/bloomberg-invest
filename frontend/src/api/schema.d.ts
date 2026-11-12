@@ -174,6 +174,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/companies/{isin}/facts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Facts
+         * @description The issuer's facts of the eight other kinds (#24), by section: one row per kind,
+         *     parties and details, showing the value in force, with any Conflict's other values.
+         */
+        get: operations["facts_api_companies__isin__facts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/facts/{fact_id}": {
         parameters: {
             query?: never;
@@ -183,12 +204,95 @@ export interface paths {
         };
         /**
          * Fact
-         * @description One financial figure as the dossier shows it, current or not, so a link to it keeps
-         *     working after a re-run: a corrected figure with its correction.
+         * @description One fact as the dossier shows it, current or not, so a link to it keeps working after
+         *     a re-run: a corrected figure with its correction; a fact of another kind in one sentence,
+         *     with both sides of a Conflict.
          */
         get: operations["fact_api_facts__fact_id__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/facts/{fact_id}/reviews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Fact Review
+         * @description Keep a value of a Conflict (D5): the dossier shows it. A reopening undoes that.
+         */
+        post: operations["fact_review_api_facts__fact_id__reviews_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/names": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Names
+         * @description CHECKS Names (S7b): each name no rule linked to exactly one Organisation or Person,
+         *     to check first, then those a person resolved.
+         */
+        get: operations["names_api_names_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/entities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Known Entities
+         * @description Every Organisation and Person a name can be the same as, by name.
+         */
+        get: operations["known_entities_api_entities_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/names/{key}/reviews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Name Review
+         * @description Decide what a name stands for, for every filing writing it; returns CHECKS Names as
+         *     it now stands.
+         */
+        post: operations["name_review_api_names__key__reviews_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -378,6 +482,7 @@ export interface components {
             feeds: string[];
             review: components["schemas"]["Review"] | null;
             status: components["schemas"]["CheckStatus"];
+            checked_in?: components["schemas"]["DocumentRef"] | null;
         };
         /**
          * CheckStatus
@@ -418,6 +523,18 @@ export interface components {
             documents: components["schemas"]["DocumentSummary"][];
             listing?: components["schemas"]["Listing"] | null;
             last_close?: components["schemas"]["LastClose"] | null;
+        };
+        /**
+         * CompanyFacts
+         * @description An issuer's facts of the eight kinds, as the dossier lists them under its figures.
+         */
+        CompanyFacts: {
+            /** Count */
+            count: number;
+            /** Sections */
+            sections: components["schemas"]["FactSection"][];
+            /** Unlinked */
+            unlinked: number;
         };
         /**
          * Correction
@@ -499,10 +616,140 @@ export interface components {
             ingested_at: string;
         };
         /**
+         * EntityKind
+         * @description What a name stands for. Organisation kinds follow the ontology (AGENTS.md); the two
+         *     aggregates stand for a company's own holders, never for an Organisation of their own.
+         * @enum {string}
+         */
+        EntityKind: "company" | "holding" | "state" | "pension_fund" | "insurer" | "bank" | "audit_firm" | "person" | "free_float" | "treasury_shares";
+        /**
+         * EntityRef
+         * @description An Organisation or Person a name resolves to.
+         */
+        EntityRef: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            kind: components["schemas"]["EntityKind"];
+            /** Isin */
+            isin?: string | null;
+        };
+        /**
+         * FactDetail
+         * @description A fact as the inspector shows it (S3): in one sentence, and next to every other value
+         *     stated for its key at its date when it is a Conflict.
+         */
+        FactDetail: {
+            /** Id */
+            id: string;
+            kind: components["schemas"]["FactKind"];
+            /** Parties */
+            parties: components["schemas"]["Party"][];
+            /** Values */
+            values: {
+                [key: string]: string | number | boolean | null;
+            };
+            /** Amount Value */
+            amount_value?: string | null;
+            /** Scale */
+            scale?: number | null;
+            /** Currency */
+            currency?: string | null;
+            /** As Of */
+            as_of?: string | null;
+            /** Fiscal Year */
+            fiscal_year?: number | null;
+            /** Period Start */
+            period_start?: string | null;
+            /** Period End */
+            period_end?: string | null;
+            /** Quote */
+            quote: string;
+            /**
+             * Recorded At
+             * Format: date-time
+             */
+            recorded_at: string;
+            document: components["schemas"]["DocumentRef"];
+            passage: components["schemas"]["Passage"];
+            /** Page */
+            page: number;
+            review: components["schemas"]["Review"] | null;
+            sentence: components["schemas"]["Sentence"];
+            /** Why */
+            why: ("kept" | "latest" | "annual_report" | "earliest") | null;
+            /** Sides */
+            sides: components["schemas"]["FactSide"][];
+        };
+        /**
+         * FactKind
+         * @enum {string}
+         */
+        FactKind: "shareholding" | "board_seat" | "audit_mandate" | "listing" | "consolidation" | "dividend" | "auditor_opinion" | "related_party_agreement";
+        /**
+         * FactReviewRequest
+         * @description Keep a value of a Conflict, so the dossier shows it (D5), or undo that.
+         */
+        FactReviewRequest: {
+            /**
+             * Verdict
+             * @enum {string}
+             */
+            verdict: "accepted" | "reopened";
+        };
+        /**
+         * FactRow
+         * @description One dossier row: the value shown for a kind, its parties and details (#19 R8), with every
+         *     fact stating it at its date, and each other value stated then (a Conflict).
+         */
+        FactRow: {
+            kind: components["schemas"]["FactKind"];
+            shown: components["schemas"]["StatedFact"];
+            /**
+             * Why
+             * @enum {string}
+             */
+            why: "kept" | "latest" | "annual_report" | "earliest";
+            sentence: components["schemas"]["Sentence"];
+            /** Sources */
+            sources: components["schemas"]["StatedFact"][];
+            /** Others */
+            others: components["schemas"]["StatedFact"][][];
+            /** Conflict */
+            conflict: boolean;
+        };
+        /** FactSection */
+        FactSection: {
+            /** Key */
+            key: string;
+            /** Title */
+            title: string;
+            /** Rows */
+            rows: components["schemas"]["FactRow"][];
+        };
+        /**
+         * FactSide
+         * @description One value of a Conflict, as the inspector shows it side by side (S3b).
+         */
+        FactSide: {
+            fact: components["schemas"]["StatedFact"];
+            /** Sources */
+            sources: number;
+            /** In Use */
+            in_use: boolean;
+        };
+        /**
          * Figure
          * @description A financial figure Fact (#19 R5, R6): checked against its Passage before it was stored.
          */
         Figure: {
+            /**
+             * Kind
+             * @default financial_figure
+             * @constant
+             */
+            kind: "financial_figure";
             /** Id */
             id: string;
             /** Line Item */
@@ -555,6 +802,12 @@ export interface components {
          * @description A figure with its line item's title in the current label map, as the viewer names it.
          */
         FigureDetail: {
+            /**
+             * Kind
+             * @default financial_figure
+             * @constant
+             */
+            kind: "financial_figure";
             /** Id */
             id: string;
             /** Line Item */
@@ -696,6 +949,86 @@ export interface components {
             compartment: string;
         };
         /**
+         * NameCheck
+         * @description A CHECKS Names row (S7b): a name no rule linked to exactly one Organisation or Person,
+         *     or one a person resolved.
+         */
+        NameCheck: {
+            /** Alias */
+            alias: string;
+            /** Name */
+            name: string;
+            kind: components["schemas"]["EntityKind"];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "to_check" | "resolved" | "not_an_entity";
+            entity: components["schemas"]["EntityRef"] | null;
+            review: components["schemas"]["NameReview"] | null;
+            /** Sources */
+            sources: components["schemas"]["NameSource"][];
+            /**
+             * Candidates
+             * @default []
+             */
+            candidates: components["schemas"]["EntityRef"][];
+        };
+        /**
+         * NameReview
+         * @description A person's decision about what a name stands for: the one in force on it.
+         */
+        NameReview: {
+            /** Id */
+            id: string;
+            verdict: components["schemas"]["NameVerdict"];
+            /** Reviewer */
+            reviewer: string;
+            /**
+             * Reviewed At
+             * Format: date-time
+             */
+            reviewed_at: string;
+        };
+        /**
+         * NameReviewRequest
+         * @description What a name stands for (CHECKS Names): the same as a known Organisation or Person, a new
+         *     one, or none; or undo the decision before.
+         */
+        NameReviewRequest: {
+            verdict: components["schemas"]["NameVerdict"];
+            /** Entity Id */
+            entity_id?: string | null;
+            /** Name */
+            name?: string | null;
+            kind?: components["schemas"]["EntityKind"] | null;
+        };
+        /**
+         * NameSource
+         * @description Where a filing writes a name: the fact naming it, and the Passage it was read from.
+         */
+        NameSource: {
+            /** Fact Id */
+            fact_id: string;
+            kind: components["schemas"]["FactKind"];
+            /** Role */
+            role: string;
+            /** Written */
+            written: string;
+            /** Quote */
+            quote: string;
+            document: components["schemas"]["DocumentRef"];
+            /** Page */
+            page: number;
+            passage: components["schemas"]["Passage"];
+        };
+        /**
+         * NameVerdict
+         * @description What a person decides a name stands for, in CHECKS Names.
+         * @enum {string}
+         */
+        NameVerdict: "same_as" | "new" | "not_an_entity" | "reopened";
+        /**
          * Organisation
          * @description The Organisation a filing comes from. Keyed by the ISIN the operator gives until
          *     Listings (which own the ISIN in AGENTS.md) arrive in #24.
@@ -714,6 +1047,27 @@ export interface components {
             width: number;
             /** Height */
             height: number;
+        };
+        /**
+         * Party
+         * @description A party a fact names: as written, the full name the extractor read, and what it resolves
+         *     to; `entity` is None until the name is linked or a person resolves it in CHECKS.
+         */
+        Party: {
+            /** Role */
+            role: string;
+            /** Written */
+            written: string;
+            /** Name */
+            name: string;
+            /** Alias */
+            alias: string;
+            entity: components["schemas"]["EntityRef"] | null;
+            /**
+             * Not An Entity
+             * @default false
+             */
+            not_an_entity: boolean;
         };
         /**
          * Passage
@@ -838,7 +1192,7 @@ export interface components {
          * @description The processing steps a Run records (AGENTS.md); later steps add theirs.
          * @enum {string}
          */
-        RunStep: "parse" | "chunk" | "embed" | "extract";
+        RunStep: "parse" | "chunk" | "embed" | "extract" | "extract_facts" | "link";
         /**
          * Scope
          * @enum {string}
@@ -874,6 +1228,60 @@ export interface components {
              * @default []
              */
             children: components["schemas"]["Section"][];
+        };
+        /**
+         * Sentence
+         * @description A fact in one sentence, its value marked: `Société Alpha holds` `53 %` `of Gamma`.
+         */
+        Sentence: {
+            /** Before */
+            before: string;
+            /** Value */
+            value: string;
+            /** After */
+            after: string;
+        };
+        /**
+         * StatedFact
+         * @description A Fact of one of the eight kinds other than financial figures (#24), checked against its
+         *     Passage before it was stored.
+         */
+        StatedFact: {
+            /** Id */
+            id: string;
+            kind: components["schemas"]["FactKind"];
+            /** Parties */
+            parties: components["schemas"]["Party"][];
+            /** Values */
+            values: {
+                [key: string]: string | number | boolean | null;
+            };
+            /** Amount Value */
+            amount_value?: string | null;
+            /** Scale */
+            scale?: number | null;
+            /** Currency */
+            currency?: string | null;
+            /** As Of */
+            as_of?: string | null;
+            /** Fiscal Year */
+            fiscal_year?: number | null;
+            /** Period Start */
+            period_start?: string | null;
+            /** Period End */
+            period_end?: string | null;
+            /** Quote */
+            quote: string;
+            /**
+             * Recorded At
+             * Format: date-time
+             */
+            recorded_at: string;
+            document: components["schemas"]["DocumentRef"];
+            passage: components["schemas"]["Passage"];
+            /** Page */
+            page: number;
+            review: components["schemas"]["Review"] | null;
         };
         /** StatementFigures */
         StatementFigures: {
@@ -1238,6 +1646,46 @@ export interface operations {
             };
         };
     };
+    facts_api_companies__isin__facts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                isin: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompanyFacts"];
+                };
+            };
+            /** @description No filing from an issuer with this ISIN */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     fact_api_facts__fact_id__get: {
         parameters: {
             query?: never;
@@ -1255,10 +1703,10 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FigureDetail"];
+                    "application/json": components["schemas"]["FigureDetail"] | components["schemas"]["FactDetail"];
                 };
             };
-            /** @description No such financial figure, or a rejected one nobody corrected */
+            /** @description No such fact, or a rejected figure nobody corrected */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -1274,6 +1722,170 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    fact_review_api_facts__fact_id__reviews_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                fact_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FactReviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Review"];
+                };
+            };
+            /** @description No such current figure */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The check does not fit these figures, and why */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Nobody can check: REVIEWER is not set */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    names_api_names_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NameCheck"][];
+                };
+            };
+        };
+    };
+    known_entities_api_entities_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EntityRef"][];
+                };
+            };
+        };
+    };
+    name_review_api_names__key__reviews_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NameReviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NameCheck"][];
+                };
+            };
+            /** @description No such name, or no such organisation or person */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The decision does not hold together, and why */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Nobody can check: REVIEWER is not set */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
                 };
             };
         };

@@ -412,10 +412,60 @@
         }
       }
     },
+    "/api/companies/{isin}/facts": {
+      "get": {
+        "summary": "Facts",
+        "description": "The issuer's facts of the eight other kinds (#24), by section: one row per kind,\nparties and details, showing the value in force, with any Conflict's other values.",
+        "operationId": "facts_api_companies__isin__facts_get",
+        "parameters": [
+          {
+            "name": "isin",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Isin"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyFacts"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No filing from an issuer with this ISIN",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/facts/{fact_id}": {
       "get": {
         "summary": "Fact",
-        "description": "One financial figure as the dossier shows it, current or not, so a link to it keeps\nworking after a re-run: a corrected figure with its correction.",
+        "description": "One fact as the dossier shows it, current or not, so a link to it keeps working after\na re-run: a corrected figure with its correction; a fact of another kind in one sentence,\nwith both sides of a Conflict.",
         "operationId": "fact_api_facts__fact_id__get",
         "parameters": [
           {
@@ -434,13 +484,231 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/FigureDetail"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/FigureDetail"
+                    },
+                    {
+                      "$ref": "#/components/schemas/FactDetail"
+                    }
+                  ],
+                  "title": "Response Fact Api Facts  Fact Id  Get"
                 }
               }
             }
           },
           "404": {
-            "description": "No such financial figure, or a rejected one nobody corrected",
+            "description": "No such fact, or a rejected figure nobody corrected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/facts/{fact_id}/reviews": {
+      "post": {
+        "summary": "Fact Review",
+        "description": "Keep a value of a Conflict (D5): the dossier shows it. A reopening undoes that.",
+        "operationId": "fact_review_api_facts__fact_id__reviews_post",
+        "parameters": [
+          {
+            "name": "fact_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Fact Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FactReviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Review"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such current figure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The check does not fit these figures, and why",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Nobody can check: REVIEWER is not set",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/names": {
+      "get": {
+        "summary": "Names",
+        "description": "CHECKS Names (S7b): each name no rule linked to exactly one Organisation or Person,\nto check first, then those a person resolved.",
+        "operationId": "names_api_names_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/NameCheck"
+                  },
+                  "type": "array",
+                  "title": "Response Names Api Names Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/entities": {
+      "get": {
+        "summary": "Known Entities",
+        "description": "Every Organisation and Person a name can be the same as, by name.",
+        "operationId": "known_entities_api_entities_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/EntityRef"
+                  },
+                  "type": "array",
+                  "title": "Response Known Entities Api Entities Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/names/{key}/reviews": {
+      "post": {
+        "summary": "Name Review",
+        "description": "Decide what a name stands for, for every filing writing it; returns CHECKS Names as\nit now stands.",
+        "operationId": "name_review_api_names__key__reviews_post",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NameReviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/NameCheck"
+                  },
+                  "title": "Response Name Review Api Names  Key  Reviews Post"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such name, or no such organisation or person",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The decision does not hold together, and why",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Nobody can check: REVIEWER is not set",
             "content": {
               "application/json": {
                 "schema": {
@@ -989,6 +1257,16 @@
           },
           "status": {
             "$ref": "#/components/schemas/CheckStatus"
+          },
+          "checked_in": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DocumentRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -1140,6 +1418,33 @@
         ],
         "title": "Company",
         "description": "An issuer's dossier: its filings, and its listing and last close once it has them."
+      },
+      "CompanyFacts": {
+        "properties": {
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/FactSection"
+            },
+            "type": "array",
+            "title": "Sections"
+          },
+          "unlinked": {
+            "type": "integer",
+            "title": "Unlinked"
+          }
+        },
+        "type": "object",
+        "required": [
+          "count",
+          "sections",
+          "unlinked"
+        ],
+        "title": "CompanyFacts",
+        "description": "An issuer's facts of the eight kinds, as the dossier lists them under its figures."
       },
       "Correction": {
         "properties": {
@@ -1355,8 +1660,394 @@
         ],
         "title": "DocumentSummary"
       },
+      "EntityKind": {
+        "type": "string",
+        "enum": [
+          "company",
+          "holding",
+          "state",
+          "pension_fund",
+          "insurer",
+          "bank",
+          "audit_firm",
+          "person",
+          "free_float",
+          "treasury_shares"
+        ],
+        "title": "EntityKind",
+        "description": "What a name stands for. Organisation kinds follow the ontology (AGENTS.md); the two\naggregates stand for a company's own holders, never for an Organisation of their own."
+      },
+      "EntityRef": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/EntityKind"
+          },
+          "isin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Isin"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "kind"
+        ],
+        "title": "EntityRef",
+        "description": "An Organisation or Person a name resolves to."
+      },
+      "FactDetail": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/FactKind"
+          },
+          "parties": {
+            "items": {
+              "$ref": "#/components/schemas/Party"
+            },
+            "type": "array",
+            "title": "Parties"
+          },
+          "values": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Values"
+          },
+          "amount_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Value"
+          },
+          "scale": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scale"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "as_of": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "fiscal_year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fiscal Year"
+          },
+          "period_start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Start"
+          },
+          "period_end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period End"
+          },
+          "quote": {
+            "type": "string",
+            "title": "Quote"
+          },
+          "recorded_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Recorded At"
+          },
+          "document": {
+            "$ref": "#/components/schemas/DocumentRef"
+          },
+          "passage": {
+            "$ref": "#/components/schemas/Passage"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "review": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Review"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sentence": {
+            "$ref": "#/components/schemas/Sentence"
+          },
+          "why": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "kept",
+                  "latest",
+                  "annual_report",
+                  "earliest"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Why"
+          },
+          "sides": {
+            "items": {
+              "$ref": "#/components/schemas/FactSide"
+            },
+            "type": "array",
+            "title": "Sides"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "parties",
+          "values",
+          "quote",
+          "recorded_at",
+          "document",
+          "passage",
+          "page",
+          "review",
+          "sentence",
+          "why",
+          "sides"
+        ],
+        "title": "FactDetail",
+        "description": "A fact as the inspector shows it (S3): in one sentence, and next to every other value\nstated for its key at its date when it is a Conflict."
+      },
+      "FactKind": {
+        "type": "string",
+        "enum": [
+          "shareholding",
+          "board_seat",
+          "audit_mandate",
+          "listing",
+          "consolidation",
+          "dividend",
+          "auditor_opinion",
+          "related_party_agreement"
+        ],
+        "title": "FactKind"
+      },
+      "FactReviewRequest": {
+        "properties": {
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "accepted",
+              "reopened"
+            ],
+            "title": "Verdict"
+          }
+        },
+        "type": "object",
+        "required": [
+          "verdict"
+        ],
+        "title": "FactReviewRequest",
+        "description": "Keep a value of a Conflict, so the dossier shows it (D5), or undo that."
+      },
+      "FactRow": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/FactKind"
+          },
+          "shown": {
+            "$ref": "#/components/schemas/StatedFact"
+          },
+          "why": {
+            "type": "string",
+            "enum": [
+              "kept",
+              "latest",
+              "annual_report",
+              "earliest"
+            ],
+            "title": "Why"
+          },
+          "sentence": {
+            "$ref": "#/components/schemas/Sentence"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/StatedFact"
+            },
+            "type": "array",
+            "title": "Sources"
+          },
+          "others": {
+            "items": {
+              "items": {
+                "$ref": "#/components/schemas/StatedFact"
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "title": "Others"
+          },
+          "conflict": {
+            "type": "boolean",
+            "title": "Conflict"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "shown",
+          "why",
+          "sentence",
+          "sources",
+          "others",
+          "conflict"
+        ],
+        "title": "FactRow",
+        "description": "One dossier row: the value shown for a kind, its parties and details (#19 R8), with every\nfact stating it at its date, and each other value stated then (a Conflict)."
+      },
+      "FactSection": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/FactRow"
+            },
+            "type": "array",
+            "title": "Rows"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "title",
+          "rows"
+        ],
+        "title": "FactSection"
+      },
+      "FactSide": {
+        "properties": {
+          "fact": {
+            "$ref": "#/components/schemas/StatedFact"
+          },
+          "sources": {
+            "type": "integer",
+            "title": "Sources"
+          },
+          "in_use": {
+            "type": "boolean",
+            "title": "In Use"
+          }
+        },
+        "type": "object",
+        "required": [
+          "fact",
+          "sources",
+          "in_use"
+        ],
+        "title": "FactSide",
+        "description": "One value of a Conflict, as the inspector shows it side by side (S3b)."
+      },
       "Figure": {
         "properties": {
+          "kind": {
+            "type": "string",
+            "const": "financial_figure",
+            "title": "Kind",
+            "default": "financial_figure"
+          },
           "id": {
             "type": "string",
             "title": "Id"
@@ -1518,6 +2209,12 @@
       },
       "FigureDetail": {
         "properties": {
+          "kind": {
+            "type": "string",
+            "const": "financial_figure",
+            "title": "Kind",
+            "default": "financial_figure"
+          },
           "id": {
             "type": "string",
             "title": "Id"
@@ -1888,6 +2585,208 @@
         "title": "Listing",
         "description": "A share's listing on an exchange (#26): what its closes are kept under."
       },
+      "NameCheck": {
+        "properties": {
+          "alias": {
+            "type": "string",
+            "title": "Alias"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/EntityKind"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "to_check",
+              "resolved",
+              "not_an_entity"
+            ],
+            "title": "Status"
+          },
+          "entity": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EntityRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "review": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NameReview"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/NameSource"
+            },
+            "type": "array",
+            "title": "Sources"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/EntityRef"
+            },
+            "type": "array",
+            "title": "Candidates",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "alias",
+          "name",
+          "kind",
+          "status",
+          "entity",
+          "review",
+          "sources"
+        ],
+        "title": "NameCheck",
+        "description": "A CHECKS Names row (S7b): a name no rule linked to exactly one Organisation or Person,\nor one a person resolved."
+      },
+      "NameReview": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "verdict": {
+            "$ref": "#/components/schemas/NameVerdict"
+          },
+          "reviewer": {
+            "type": "string",
+            "title": "Reviewer"
+          },
+          "reviewed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Reviewed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "verdict",
+          "reviewer",
+          "reviewed_at"
+        ],
+        "title": "NameReview",
+        "description": "A person's decision about what a name stands for: the one in force on it."
+      },
+      "NameReviewRequest": {
+        "properties": {
+          "verdict": {
+            "$ref": "#/components/schemas/NameVerdict"
+          },
+          "entity_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entity Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EntityKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "verdict"
+        ],
+        "title": "NameReviewRequest",
+        "description": "What a name stands for (CHECKS Names): the same as a known Organisation or Person, a new\none, or none; or undo the decision before."
+      },
+      "NameSource": {
+        "properties": {
+          "fact_id": {
+            "type": "string",
+            "title": "Fact Id"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/FactKind"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "written": {
+            "type": "string",
+            "title": "Written"
+          },
+          "quote": {
+            "type": "string",
+            "title": "Quote"
+          },
+          "document": {
+            "$ref": "#/components/schemas/DocumentRef"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "passage": {
+            "$ref": "#/components/schemas/Passage"
+          }
+        },
+        "type": "object",
+        "required": [
+          "fact_id",
+          "kind",
+          "role",
+          "written",
+          "quote",
+          "document",
+          "page",
+          "passage"
+        ],
+        "title": "NameSource",
+        "description": "Where a filing writes a name: the fact naming it, and the Passage it was read from."
+      },
+      "NameVerdict": {
+        "type": "string",
+        "enum": [
+          "same_as",
+          "new",
+          "not_an_entity",
+          "reopened"
+        ],
+        "title": "NameVerdict",
+        "description": "What a person decides a name stands for, in CHECKS Names."
+      },
       "Organisation": {
         "properties": {
           "isin": {
@@ -1934,6 +2833,51 @@
           "height"
         ],
         "title": "PageInfo"
+      },
+      "Party": {
+        "properties": {
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "written": {
+            "type": "string",
+            "title": "Written"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "alias": {
+            "type": "string",
+            "title": "Alias"
+          },
+          "entity": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EntityRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "not_an_entity": {
+            "type": "boolean",
+            "title": "Not An Entity",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "role",
+          "written",
+          "name",
+          "alias",
+          "entity"
+        ],
+        "title": "Party",
+        "description": "A party a fact names: as written, the full name the extractor read, and what it resolves\nto; `entity` is None until the name is linked or a person resolves it in CHECKS."
       },
       "Passage": {
         "properties": {
@@ -2238,7 +3182,9 @@
           "parse",
           "chunk",
           "embed",
-          "extract"
+          "extract",
+          "extract_facts",
+          "link"
         ],
         "title": "RunStep",
         "description": "The processing steps a Run records (AGENTS.md); later steps add theirs."
@@ -2342,6 +3288,192 @@
           "bbox"
         ],
         "title": "Section"
+      },
+      "Sentence": {
+        "properties": {
+          "before": {
+            "type": "string",
+            "title": "Before"
+          },
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "after": {
+            "type": "string",
+            "title": "After"
+          }
+        },
+        "type": "object",
+        "required": [
+          "before",
+          "value",
+          "after"
+        ],
+        "title": "Sentence",
+        "description": "A fact in one sentence, its value marked: `Société Alpha holds` `53 %` `of Gamma`."
+      },
+      "StatedFact": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/FactKind"
+          },
+          "parties": {
+            "items": {
+              "$ref": "#/components/schemas/Party"
+            },
+            "type": "array",
+            "title": "Parties"
+          },
+          "values": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Values"
+          },
+          "amount_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Value"
+          },
+          "scale": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scale"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "as_of": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "fiscal_year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fiscal Year"
+          },
+          "period_start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Start"
+          },
+          "period_end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period End"
+          },
+          "quote": {
+            "type": "string",
+            "title": "Quote"
+          },
+          "recorded_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Recorded At"
+          },
+          "document": {
+            "$ref": "#/components/schemas/DocumentRef"
+          },
+          "passage": {
+            "$ref": "#/components/schemas/Passage"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "review": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Review"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "parties",
+          "values",
+          "quote",
+          "recorded_at",
+          "document",
+          "passage",
+          "page",
+          "review"
+        ],
+        "title": "StatedFact",
+        "description": "A Fact of one of the eight kinds other than financial figures (#24), checked against its\nPassage before it was stored."
       },
       "StatementFigures": {
         "properties": {

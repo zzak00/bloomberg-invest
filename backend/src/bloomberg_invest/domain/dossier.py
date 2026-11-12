@@ -43,3 +43,10 @@ def agreeing[S: Stated](stated: Sequence[S]) -> list[list[S]]:
         else:
             group.append(figure)
     return groups
+
+
+def same_value(a: Stated, b: Stated) -> bool:
+    """Two figures state one value: equal within the coarser precision either is written to.
+    `36,7` billions states `36 681` millions; `6 969` millions does not state `6 968`."""
+    half = max(precision(a.value_as_written, a.scale), precision(b.value_as_written, b.scale)) / 2
+    return abs(Decimal(a.value) - Decimal(b.value)) <= half

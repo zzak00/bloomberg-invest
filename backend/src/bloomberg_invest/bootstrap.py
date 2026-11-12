@@ -25,6 +25,7 @@ from bloomberg_invest.domain.label_map import LabelMap
 from bloomberg_invest.domain.prices import XCAS
 from bloomberg_invest.service_layer.checks import Checks
 from bloomberg_invest.service_layer.extract import Extraction
+from bloomberg_invest.service_layer.facts import FactExtraction
 from bloomberg_invest.settings import Settings
 
 
@@ -159,6 +160,11 @@ def extraction(settings: Settings) -> Extraction:
     return Extraction(
         llm(settings), label_map(), config.extract_prompt(), settings.extract_concurrency
     )
+
+
+def fact_extraction(settings: Settings) -> FactExtraction:
+    """The LLM with the current facts prompt (#24); fails now if its secrets are missing."""
+    return FactExtraction(llm(settings), config.facts_prompt(), settings.extract_concurrency)
 
 
 def _choose[F](registry: Mapping[str, F], kind: str, name: str) -> F:

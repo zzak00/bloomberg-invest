@@ -25,7 +25,7 @@ def _record_run(
     document_id = tx.run(
         """
         MERGE (o:Organisation {isin: $isin})
-          ON CREATE SET o.name = $name, o.kind = 'company'
+          ON CREATE SET o.name = $name, o.kind = 'company', o.id = $organisation_id
         MERGE (d:Document {sha256: $sha256})
           ON CREATE SET d.id = $new_id
         SET d.doc_type = $doc_type, d.fiscal_year = $fiscal_year,
@@ -44,6 +44,7 @@ def _record_run(
         """,
         isin=meta.issuer.isin,
         name=meta.issuer.name,
+        organisation_id=str(uuid.uuid4()),
         sha256=sha256,
         new_id=str(uuid.uuid4()),
         doc_type=meta.doc_type.value,
