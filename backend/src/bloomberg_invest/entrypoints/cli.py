@@ -1,4 +1,4 @@
-"""`bloomberg ingest`: parse, chunk, embed and extract a filing. `bloomberg chunk`, `bloomberg
+"""`bloomberg ingest`: parse, chunk, embed and extract a filing, figures and other facts. `bloomberg chunk`, `bloomberg
 embed` and `bloomberg extract` redo one step for an ingested filing; re-chunking embeds the new
 Chunks too. Extracting needs AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY.
 
@@ -8,6 +8,9 @@ Chunks too. Extracting needs AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY.
     bloomberg chunk 3d18e4fa-cfca-4a67-92b4-3d6555da68e6
     bloomberg embed 3d18e4fa-cfca-4a67-92b4-3d6555da68e6
     bloomberg extract 3d18e4fa-cfca-4a67-92b4-3d6555da68e6
+    bloomberg facts 3d18e4fa-cfca-4a67-92b4-3d6555da68e6
+
+`bloomberg facts` re-extracts the other kinds of fact (#24) and links the names they write.
 
 `bloomberg prices ...` keeps daily closes: see `entrypoints/prices.py`.
 """
@@ -24,7 +27,9 @@ from bloomberg_invest.entrypoints import prices
 from bloomberg_invest.service_layer.chunk import Chunked, ChunkFailed, chunk_document
 from bloomberg_invest.service_layer.embed import Embedded, EmbedFailed, embed_document
 from bloomberg_invest.service_layer.extract import Extracted, ExtractFailed, extract_document
+from bloomberg_invest.service_layer.facts import ExtractedFacts, FactsFailed, extract_facts
 from bloomberg_invest.service_layer.ingest import IngestFailed, ingest
+from bloomberg_invest.service_layer.names import Linked, link_names
 from bloomberg_invest.settings import Settings
 from bloomberg_invest.views import Section
 
@@ -39,6 +44,8 @@ def main(argv: list[str] | None = None) -> int:
         return _embed(args.document_id)
     if args.command == "extract":
         return _extract(args.document_id)
+    if args.command == "facts":
+        return _facts(args.document_id)
     try:
         meta = DocumentMeta(
             issuer=Organisation(isin=args.issuer_isin, name=args.issuer_name),
@@ -57,6 +64,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         # Before the parse: missing Azure secrets fail now, not minutes later.
         extraction = bootstrap.extraction(settings)
+        fact_extraction = bootstrap.fact_extraction(settings)
     except ValueError as error:
         print(error, file=sys.stderr)
         return 2
@@ -74,8 +82,9 @@ def main(argv: list[str] | None = None) -> int:
                 settings.caps,
                 embedder,
                 extraction,
+                fact_extraction,
             )
-        except (IngestFailed, ChunkFailed, EmbedFailed, ExtractFailed) as failure:
+        except (IngestFailed, ChunkFailed, EmbedFailed, ExtractFailed, FactsFailed) as failure:
             print(_failure(failure), file=sys.stderr)
             return 1
         detail = deps.store.get_document(ingested.document_id)
@@ -83,7 +92,8 @@ def main(argv: list[str] | None = None) -> int:
     print(
         f"Parsed {detail.page_count} pages, {sections} sections (run {detail.run.id}); "
         f"{_chunks(ingested.chunked)}; {_embedded(ingested.embedded)}; "
-        f"{_extracted(ingested.extracted)}; document {ingested.document_id}"
+        f"{_extracted(ingested.extracted)}; {_facts_line(ingested.facts, ingested.linked)}; "
+        f"document {ingested.document_id}"
     )
     return 0
 
@@ -142,6 +152,26 @@ def _extract(document_id: str) -> int:
     return 0
 
 
+def _facts(document_id: str) -> int:
+    """Re-extract the filing's facts of the other kinds, then link the names they write."""
+    settings = Settings.from_env()
+    try:
+        extraction = bootstrap.fact_extraction(settings)
+    except ValueError as error:
+        print(error, file=sys.stderr)
+        return 2
+    parser = bootstrap.parser(settings)
+    with bootstrap.connect(settings) as deps:
+        try:
+            facts = extract_facts(document_id, deps.store, deps.files, parser, extraction)
+            linked = link_names(document_id, deps.store)
+        except (LookupError, ValueError, FactsFailed) as failure:
+            print(_failure(failure), file=sys.stderr)
+            return 1
+    print(f"{_facts_line(facts, linked)}; document {document_id}")
+    return 0
+
+
 def _failure(error: Exception) -> str:
     """The error, with what caused it when a step failed and recorded a failed Run."""
     return f"{error}: {error.__cause__!r}" if error.__cause__ else str(error)
@@ -159,6 +189,14 @@ def _extracted(extracted: Extracted) -> str:
     return (
         f"extracted {extracted.figures} figures from {extracted.pages} pages, "
         f"{extracted.rejected} rejected by the check (run {extracted.run_id})"
+    )
+
+
+def _facts_line(facts: ExtractedFacts, linked: Linked) -> str:
+    return (
+        f"extracted {facts.facts} other facts from {facts.pages} pages, {facts.rejected} rejected "
+        f"by the check (run {facts.run_id}); linked {linked.linked} names, "
+        f"{linked.to_check} to check in CHECKS (run {linked.run_id})"
     )
 
 
@@ -186,6 +224,11 @@ def _arguments() -> argparse.ArgumentParser:
         "extract", help="re-extract an ingested filing's financial figures from its parse"
     )
     extract_cmd.add_argument("document_id")
+    facts_cmd = commands.add_parser(
+        "facts",
+        help="re-extract an ingested filing's other facts from its parse and link their names",
+    )
+    facts_cmd.add_argument("document_id")
     prices.add_arguments(commands)
     return parser
 

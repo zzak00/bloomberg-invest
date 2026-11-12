@@ -1,4 +1,7 @@
+import hashlib
+import json
 import os
+import shutil
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
@@ -189,3 +192,36 @@ def extract_income(
     }
     run = make_run(minute).model_copy(update={"step": RunStep.extract, "output": None})
     return store.record_extraction(document_id, drafts(response, sources, config.label_map()), run)
+
+
+class CachedParser:
+    """Docling, reusing its saved output for a PDF it already parsed with the same version and
+    settings: the golden report takes minutes to parse. Our own reading of that output, into
+    pages, tables and blocks, runs every time; a new Docling version or setting parses again."""
+
+    def __init__(self, cache: Path) -> None:
+        from bloomberg_invest.adapters.parsing.docling_parser import DoclingParser
+
+        self._parser = DoclingParser()
+        self.tool, self.tool_version = self._parser.tool, self._parser.tool_version
+        self.config = self._parser.config
+        settings = hashlib.sha256(json.dumps(self.config, sort_keys=True).encode()).hexdigest()
+        self._cache = cache / f"{self.tool}-{self.tool_version}-{settings[:12]}"
+
+    def parse(self, pdf: Path, output: Path):
+        cached = self._cache / f"{hashlib.sha256(pdf.read_bytes()).hexdigest()}.json"
+        if not cached.exists():
+            parsed = self._parser.parse(pdf, output)
+            cached.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(output, cached)
+            return parsed
+        output.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(cached, output)
+        return self._parser.read_parsed(output)
+
+    def read_blocks(self, output: Path):
+        return self._parser.read_blocks(output)
+
+
+# Where the golden report's parses are kept between runs: next to it, never committed.
+PARSE_CACHE = GOLDEN_PDF.parents[1] / "parses" / "test-cache"

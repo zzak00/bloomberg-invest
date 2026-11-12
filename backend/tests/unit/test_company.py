@@ -7,7 +7,7 @@ from builders import BILLIONS, MILLIONS, corrected, figure, rejected, review
 from bloomberg_invest import config
 from bloomberg_invest.domain.figures import Scope
 from bloomberg_invest.service_layer.company import as_shown, figure_grid, flagged
-from bloomberg_invest.views import Figure, Passage
+from bloomberg_invest.views import DocumentRef, Figure, Passage
 
 LABEL_MAP = config.label_map()
 RULES = config.kpi_rules(LABEL_MAP)
@@ -182,3 +182,23 @@ def test_a_value_partly_checked_is_neither_first_nor_unflagged():
     [year] = consolidated([*partly, checked]).statements[0].rows[0].years
     assert [v.shown.value_as_written for v in year.values] == ["36 680", "36 681"]
     assert [v.shown.needs_review for v in year.values] == [False, True]
+
+
+def test_one_filing_s_check_covers_the_value_another_filing_states():
+    """D4: the half-year report's check of revenue 2025 covers the annual report's same value,
+    written rounded; a third filing's other value stays flagged."""
+    half_year = DocumentRef(**{**figure("1", "1").document.model_dump(), "id": "d2"})
+    other = DocumentRef(**{**figure("1", "1").document.model_dump(), "id": "d3"})
+    values = [
+        flagged(figure("36 681", "36681000000"), RULES),
+        flagged(
+            figure("36,7", "36700000000", scale=BILLIONS, document=half_year, review=review()),
+            RULES,
+        ),
+        flagged(figure("36 699", "36699000000", document=other), RULES),
+    ]
+    [year] = consolidated(values).statements[0].rows[0].years
+    assert [(v.shown.value_as_written, v.shown.needs_review) for v in year.values] == [
+        ("36,7", False),
+        ("36 699", True),
+    ]

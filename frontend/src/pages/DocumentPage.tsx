@@ -2,10 +2,11 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
 
 import { ApiError } from "../ApiError";
-import { api, pageImageUrl, type Box, type Chunk, type FigureDetail } from "../api/client";
+import { api, pageImageUrl, type Box, type Chunk, type FactDetail, type FigureDetail } from "../api/client";
 import { useApi } from "../api/useApi";
+import { FACT_KIND_LABELS, sentenceText } from "../facts";
 import { periodLabel, unitLabel } from "../figures";
-import { DOC_TYPE_LABELS, formatDate, formatDateTime, pagesLabel } from "../format";
+import { DOC_TYPE_LABELS, formatDate, formatDateTime, formatDay, pagesLabel } from "../format";
 
 /** What the outline needs from a section. */
 type Section = { id: string; title: string; page: number; children?: Section[] };
@@ -166,7 +167,30 @@ function chunkHighlight(chunk: Chunk): Highlight {
   };
 }
 
-function factHighlight(figure: FigureDetail): Highlight {
+function factHighlight(fact: FigureDetail | FactDetail): Highlight {
+  return fact.kind === "financial_figure" ? figureHighlight(fact) : statedHighlight(fact);
+}
+
+/** A fact of another kind (#24): its kind and date, its value, and the sentence it states. */
+function statedHighlight(fact: FactDetail): Highlight {
+  const when = fact.as_of ? formatDay(fact.as_of) : `FY${fact.fiscal_year}`;
+  const review = fact.review;
+  return {
+    param: "fact",
+    id: fact.id,
+    pages: [fact.page],
+    boxes: fact.passage.boxes,
+    tag: fact.passage.kind === "cell" ? "CELL" : "QUOTE",
+    name: `${FACT_KIND_LABELS[fact.kind]} · ${when}`,
+    detail: fact.sentence.value,
+    title: sentenceText(fact),
+    check: review
+      ? { text: `Kept by ${review.reviewer} on ${formatDate(review.reviewed_at)}`, done: true }
+      : undefined,
+  };
+}
+
+function figureHighlight(figure: FigureDetail): Highlight {
   const name = figure.breakdown ? `${figure.line_item_title}, ${figure.breakdown}` : figure.line_item_title;
   return {
     param: "fact",

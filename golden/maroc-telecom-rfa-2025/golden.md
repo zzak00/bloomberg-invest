@@ -152,6 +152,8 @@ Total: 55 entities (51 organisations, 4 persons). Deliberately excluded: standar
 | SH35 | Maroc Telecom group | INMARSAT | "NS" | not stated | 2025-12-31 | p. 48 |
 | SH36 | Maroc Telecom group | Hôtels de la Gare | "NS" | not stated | 2025-12-31 | p. 48 |
 
+SH4 and SH21 state no stake ("not stated" in %): the report implies them, from dividends received and a joint venture, but writes no percentage or share count, so no Fact can state them from a quote (#19 R6). The golden harness scores the other 34 (decided 2026-11-12).
+
 "Maroc Telecom group" in SH22-SH36: the table does not say which group entity holds each stake (UNCERTAIN; Moov Money entities are probably held through the subsidiaries).
 
 ### 4.2 Board seat (3)

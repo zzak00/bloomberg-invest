@@ -62,7 +62,7 @@ services:
       CHUNK_CAP: ${CHUNK_CAP:-2000}
       TABLE_CAP: ${TABLE_CAP:-1500}
       EMBEDDER: ${EMBEDDER:-qwen3-0.6b}
-      # Azure OpenAI extracts financial figures; ingest stops before parsing without them.
+      # Azure OpenAI extracts figures and other facts; ingest stops before parsing without them.
       AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
       AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
       EXTRACT_DEPLOYMENT: ${EXTRACT_DEPLOYMENT:-gpt-5.6-sol}
@@ -91,6 +91,12 @@ services:
   extract:
     extends: { service: ingest }
     entrypoint: ["bloomberg", "extract"]
+
+  # Re-extract an ingested filing's other facts (#24) and link their names:
+  # docker compose run --rm facts <document id>
+  facts:
+    extends: { service: ingest }
+    entrypoint: ["bloomberg", "facts"]
 
   # Daily closes (#26): `bloomberg prices daily` when it starts, then every day at 18:30
   # Casablanca time; each run catches up from the last stored session. Its log is the report:

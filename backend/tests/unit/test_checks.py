@@ -118,3 +118,33 @@ def test_a_row_is_done_once_every_figure_stating_it_is_checked():
         ]
     )
     assert [(r.status, r.review.reviewed_at.day) for r in done] == [("accepted", 11)]
+
+
+def test_one_filing_s_check_covers_the_same_value_in_another():
+    """D4: a filing's figure stating a value another filing checked leaves the rows to check,
+    naming that filing; one stating another value stays to check."""
+    later = DocumentRef(
+        **{**figure("1", "1").document.model_dump(), "id": "d2", "doc_type": "half_year_report"}
+    )
+    third = DocumentRef(**{**figure("1", "1").document.model_dump(), "id": "d3"})
+    queued = rows(
+        [
+            figure("36 681", "36681000000", review=review()),
+            figure("36,7", "36700000000", scale=BILLIONS, document=later),
+            figure("36 699", "36699000000", document=third),
+        ]
+    )
+    by_document = {r.document.id: r for r in queued}
+    assert (by_document["d2"].status, by_document["d2"].checked_in.id) == ("accepted", "d1")
+    assert (by_document["d3"].status, by_document["d3"].checked_in) == ("to_check", None)
+
+
+def test_a_correction_covers_the_corrected_value_not_the_misread_one():
+    later = DocumentRef(**{**figure("1", "1").document.model_dump(), "id": "d2"})
+    queued = rows(
+        [
+            figure("17 902", "17902000000", review=corrected("17 920", "17920000000")),
+            figure("17 920", "17920000000", document=later),
+        ]
+    )
+    assert [r.status for r in queued if r.document.id == "d2"] == ["corrected"]

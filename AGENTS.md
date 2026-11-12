@@ -26,6 +26,7 @@ Tests: `tests/unit/` (no Docker), `tests/integration/` (real Neo4j or Docling; o
 - **Organisation**: any company, holding, state body, pension fund, insurer, bank, audit firm or aggregate; its `kind` says which, and one Organisation can play several roles. Avoid: institution, entity, company (unless it is one).
 - **Issuer**: the role of the Organisation that files a Document (`ISSUED_BY`). Not a separate entity.
 - **Aggregate**: an Organisation standing for a group of holders, such as "Free float" or "Treasury shares", one per company. Avoid: holder (for these).
+- **Alias**: a name as facts write it (`Itissalat Al-Maghrib`, `l'Etat`), keyed by the full name it means and shared by every filing; it links to one Organisation or Person by rule or by a person's check, never by a guess. Avoid: synonym, entity.
 - **Listing**: an Organisation's listing on an exchange, with ticker, ISIN, sector and compartment. A listed company is an Organisation with a Listing. Avoid: stock, security.
 - **Fact**: one statement from one Passage, of one of nine kinds (shareholding, board seat, audit mandate, listing, financial figure, consolidation, dividend, auditor opinion, related-party agreement). Avoid: edge, relationship, claim.
 - **Rejected figure**: a financial figure the LLM proposed whose value does not equal its Cell's number or appear in its quoted text. Kept with the reason, never a Fact (#19 R6). Avoid: invalid fact, error.

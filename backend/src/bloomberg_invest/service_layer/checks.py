@@ -16,13 +16,16 @@ from bloomberg_invest.domain.label_map import LabelMap
 from bloomberg_invest.domain.review import (
     CheckKey,
     CheckStatus,
+    Correction,
     InvalidCorrection,
     QuotedSource,
     ReviewDraft,
     Verdict,
+    across_filings,
     around,
     check_of,
     correction,
+    covering,
     fact_key,
     fact_status,
     needs_check,
@@ -114,6 +117,7 @@ def queue_rows(
         for group in groups
     ]
     rows += [_rejected_row(r, label_map, rules) for r in rejected if needs_check(r, rules)]
+    rows = _covered(rows)
 
     def order(row: CheckRow) -> tuple[object, ...]:
         item = label_map.items[row.line_item]
@@ -130,6 +134,31 @@ def queue_rows(
         )
 
     return sorted(rows, key=order)
+
+
+def _covered(rows: list[CheckRow]) -> list[CheckRow]:
+    """D4: a row no one checked takes the check of another filing's row whose value in force it
+    states, of the same line item, year, basis and currency, and leaves the rows to check."""
+    done: dict[CheckKey, list[tuple[str, CheckRow | Correction, CheckRow]]] = defaultdict(list)
+    for row in rows:
+        if row.rejected is None and row.status in (CheckStatus.accepted, CheckStatus.corrected):
+            value = row.review.correction if row.review and row.review.correction else row
+            done[across_filings(fact_key(row))].append((row.document.id, value, row))
+    covered = []
+    for row in rows:
+        source = None
+        if row.status == CheckStatus.to_check:
+            source = covering(row, row.document.id, done[across_filings(fact_key(row))])
+        if source is not None:
+            row = row.model_copy(
+                update={
+                    "review": source.review,
+                    "status": source.status,
+                    "checked_in": source.document,
+                }
+            )
+        covered.append(row)
+    return covered
 
 
 def _place(row: CheckRow) -> tuple[float, float]:
@@ -275,6 +304,9 @@ def record_review(
     reason = refusal(facts, rejected, verdict, checks.rules)
     if reason is not None:
         raise ReviewRefused(reason)
+    if verdict == Verdict.reopened and all(f.review is None for f in found.values()):
+        # D4: a row another filing's check covers is reopened where that check was made.
+        raise ReviewRefused("Nobody checked these figures in this filing: there is nothing to undo")
     shown = found[ids[0]]
 
     fixed, cited, quoted = None, None, None

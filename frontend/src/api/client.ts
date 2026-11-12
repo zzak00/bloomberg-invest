@@ -9,6 +9,7 @@ export type DocumentDetail = components["schemas"]["DocumentDetail"];
 export type Chunk = components["schemas"]["Chunk"];
 export type Figure = components["schemas"]["Figure"];
 export type FigureDetail = components["schemas"]["FigureDetail"];
+export type FactDetail = components["schemas"]["FactDetail"];
 export type FigureGrid = components["schemas"]["FigureGrid"];
 export type FigureRow = components["schemas"]["FigureRow"];
 export type FigureValue = components["schemas"]["FigureValue"];

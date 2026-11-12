@@ -11,6 +11,7 @@ from bloomberg_invest import config
 from bloomberg_invest.adapters.prices import PriceSource, PriceSourceError
 from bloomberg_invest.domain.prices import Close, Holiday, ListedShare
 from bloomberg_invest.service_layer.extract import Extraction
+from bloomberg_invest.service_layer.facts import FactExtraction
 
 
 class WordCounter:
@@ -174,3 +175,33 @@ def bourse_server(url: str) -> bytes:
         if start <= datetime.strptime(i["seance"], "%d/%m/%Y").date() <= end
     ]
     return json.dumps({"totalCount": len(items), "items": items}).encode()
+
+
+class FactReadingLLM:
+    """Answers fact prompts the way the real model does, from the page it is shown: each fact in
+    `facts`, by kind, comes back citing the paragraph of the page holding its quote."""
+
+    tool = "fake-llm"
+    tool_version = "1.0"
+    model = "fake-model"
+
+    def __init__(self, facts: dict[str, list[dict]] | None = None) -> None:
+        self.config = {"deployment": "fake-model"}
+        self.facts = facts or {}
+        self.pages: list[str] = []
+
+    def complete_json(self, system: str, user: str, schema_name: str, schema: dict) -> dict:
+        self.pages.append(next(line for line in user.splitlines() if line.startswith("Page ")))
+        paragraphs = re.findall(r"^\[(p[\d.]+)\] (.*)$", user, re.MULTILINE)
+        answer: dict[str, list[dict]] = {name: [] for name in schema["properties"]}
+        for kind, items in self.facts.items():
+            for item in items:
+                for source_id, text in paragraphs:
+                    if item["quote"] in text:
+                        answer[kind].append(item | {"source_id": source_id})
+        return answer
+
+
+def fake_fact_extraction(facts: dict[str, list[dict]] | None = None) -> FactExtraction:
+    """Fact extraction by `FactReadingLLM`, with the real prompt."""
+    return FactExtraction(FactReadingLLM(facts), config.facts_prompt())

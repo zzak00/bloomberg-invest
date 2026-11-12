@@ -106,6 +106,8 @@ class RunStep(StrEnum):
     chunk = "chunk"
     embed = "embed"
     extract = "extract"
+    extract_facts = "extract_facts"
+    link = "link"
 
 
 class RunStatus(StrEnum):

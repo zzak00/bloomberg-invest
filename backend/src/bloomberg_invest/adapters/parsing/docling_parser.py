@@ -75,7 +75,11 @@ class DoclingParser(Parser):
         document = converter.convert(pdf).document
         output.parent.mkdir(parents=True, exist_ok=True)
         document.save_as_json(output)
+        return self.read_parsed(output)
 
+    def read_parsed(self, output: Path) -> ParsedDocument:
+        """Read a saved output back as pages, outline and tables, as `parse` returns them."""
+        document = DoclingDocument.load_from_json(output)
         pages = {
             number: PageInfo(number=number, width=page.size.width, height=page.size.height)
             for number, page in document.pages.items()

@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
+from builders import BILLIONS, DOCUMENT, figure, review
 
 from bloomberg_invest import config
 from bloomberg_invest.domain.kpis import Input, Kpi, KpiRules
@@ -19,6 +20,7 @@ from bloomberg_invest.domain.review import (
     check_of,
     correction,
     correction_in_force,
+    covering,
     fact_key,
     fact_status,
     needs_check,
@@ -26,6 +28,7 @@ from bloomberg_invest.domain.review import (
     refusal,
     rejected_key,
     rejected_status,
+    value_check,
 )
 
 RULES = config.kpi_rules(config.label_map())
@@ -248,3 +251,24 @@ def test_an_empty_label_map_is_not_a_kpi_source():
     empty = LabelMap("v0", "0" * 64, {}, {})
     with pytest.raises(ValueError, match="label map v0 does not have"):
         config.kpi_rules(empty)
+
+
+def test_one_filing_s_check_is_the_value_s_check_across_filings():
+    """#24 D4: a value is checked once every figure of one filing stating it is."""
+    other = DOCUMENT.model_copy(update={"id": "d2"})
+    checked = review(day=10)
+    figures = [
+        figure("36 681", "36681000000", review=checked),
+        figure("36 681", "36681000000", document=other),
+    ]
+    assert value_check(figures) == checked
+    partly = [*figures, figure("36 681", "36681000000", page=9)]
+    assert value_check(partly) is None
+
+
+def test_another_filing_s_check_covers_a_value_it_states_within_precision():
+    checked = [("d1", figure("36 681", "36681000000"), "check")]
+    assert covering(figure("36,7", "36700000000", scale=BILLIONS), "d2", checked) == "check"
+    assert covering(figure("36 699", "36699000000"), "d2", checked) is None
+    # Never its own filing's.
+    assert covering(figure("36 681", "36681000000"), "d1", checked) is None

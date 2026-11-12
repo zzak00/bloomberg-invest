@@ -1,9 +1,9 @@
 """The HTTP API. Run with `uvicorn bloomberg_invest.entrypoints.api.app:app`."""
 
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import FastAPI, HTTPException, Path, Query, status
 from fastapi.responses import FileResponse
@@ -14,6 +14,7 @@ from bloomberg_invest.adapters.embedding import Embedder
 from bloomberg_invest.adapters.files import DocumentFiles
 from bloomberg_invest.adapters.store import GraphStore
 from bloomberg_invest.domain.label_map import LabelMap
+from bloomberg_invest.domain.names import NameVerdict, PartyKind
 from bloomberg_invest.domain.prices import CASABLANCA
 from bloomberg_invest.domain.review import Verdict
 from bloomberg_invest.service_layer.checks import (
@@ -25,6 +26,13 @@ from bloomberg_invest.service_layer.checks import (
     record_review,
 )
 from bloomberg_invest.service_layer.company import company, company_figures, figure_detail
+from bloomberg_invest.service_layer.company_facts import (
+    company_facts,
+    fact_detail,
+    record_fact_review,
+    rejected_facts,
+)
+from bloomberg_invest.service_layer.names import name_checks, parties, record_name_review
 from bloomberg_invest.service_layer.prices import price_series
 from bloomberg_invest.service_layer.search import search
 from bloomberg_invest.settings import Settings
@@ -33,11 +41,16 @@ from bloomberg_invest.views import (
     CheckQueue,
     Chunk,
     Company,
+    CompanyFacts,
     DocumentDetail,
     DocumentSummary,
+    FactDetail,
     FigureDetail,
     FigureGrid,
+    NameCheck,
+    PartyRef,
     PriceSeries,
+    RejectedFact,
     Review,
 )
 
@@ -60,6 +73,22 @@ class ReviewRequest(BaseModel):
     quote_start: int | None = None  # where the number picked begins in the paragraph
 
 
+class FactReviewRequest(BaseModel):
+    """Keep a value of a Conflict, so the dossier shows it (D5), or undo that."""
+
+    verdict: Literal[Verdict.accepted, Verdict.reopened]
+
+
+class NameReviewRequest(BaseModel):
+    """What a name stands for (CHECKS Names): the same as a known Organisation or Person, a new
+    one, or none; or undo the decision before."""
+
+    verdict: NameVerdict
+    party_id: str | None = None  # same_as
+    name: str | None = None  # new
+    kind: PartyKind | None = None  # new
+
+
 NOT_FOUND = {404: {"model": Problem, "description": "No such document, or no such page in it"}}
 NO_CHUNK = {404: {"model": Problem, "description": "No such chunk"}}
 NO_COMPANY = {404: {"model": Problem, "description": "No filing from an issuer with this ISIN"}}
@@ -67,8 +96,13 @@ NO_LISTING = {404: {"model": Problem, "description": "No listing for a company w
 NO_FACT = {
     404: {
         "model": Problem,
-        "description": "No such financial figure, or a rejected one nobody corrected",
+        "description": "No such fact, or a rejected figure nobody corrected",
     }
+}
+NO_NAME = {
+    404: {"model": Problem, "description": "No such name, or no such organisation or person"},
+    409: {"model": Problem, "description": "The decision does not hold together, and why"},
+    503: {"model": Problem, "description": "Nobody can check: REVIEWER is not set"},
 }
 NO_FIGURE = {404: {"model": Problem, "description": "No such current figure"}}
 REVIEW_ERRORS = {
@@ -76,6 +110,20 @@ REVIEW_ERRORS = {
     409: {"model": Problem, "description": "The check does not fit these figures, and why"},
     503: {"model": Problem, "description": "Nobody can check: REVIEWER is not set"},
 }
+
+
+@contextmanager
+def checking() -> Iterator[None]:
+    """A check's failures as the answers its route declares: 503 with no REVIEWER, 404 for what
+    is not current, 409 for a check that does not fit, with why."""
+    try:
+        yield
+    except NoReviewer:
+        raise HTTPException(503, "Set REVIEWER in .env to record checks") from None
+    except LookupError as error:
+        raise HTTPException(404, str(error)) from None
+    except ReviewRefused as error:
+        raise HTTPException(409, str(error)) from None
 
 
 def create_app(
@@ -198,14 +246,73 @@ def create_app(
             raise HTTPException(404, "Company not found")
         return found
 
+    @app.get("/api/companies/{isin}/facts", responses=NO_COMPANY)
+    def facts(isin: str) -> CompanyFacts:
+        """The issuer's facts of the eight other kinds (#24), by section: one row per kind,
+        parties and details, showing the value in force, with any Conflict's other values."""
+        found = company_facts(isin, get_store())
+        if found is None:
+            raise HTTPException(404, "Company not found")
+        return found
+
+    @app.get("/api/rejected-facts")
+    def refused_facts(isin: str | None = None) -> list[RejectedFact]:
+        """The facts of the eight other kinds the check refused, with why (D2), of one company's
+        filings or all: for CHECKS, never for the dossier."""
+        return rejected_facts(get_store(), isin)
+
     @app.get("/api/facts/{fact_id}", responses=NO_FACT)
-    def fact(fact_id: str) -> FigureDetail:
-        """One financial figure as the dossier shows it, current or not, so a link to it keeps
-        working after a re-run: a corrected figure with its correction."""
+    def fact(fact_id: str) -> FigureDetail | FactDetail:
+        """One fact as the dossier shows it, current or not, so a link to it keeps working after
+        a re-run: a corrected figure with its correction; a fact of another kind in one sentence,
+        with both sides of a Conflict."""
         found = figure_detail(fact_id, get_store(), app.state.label_map, app.state.checks.rules)
+        if found is None:
+            found = fact_detail(fact_id, get_store())
         if found is None:
             raise HTTPException(404, "Fact not found")
         return found
+
+    @app.post(
+        "/api/facts/{fact_id}/reviews",
+        status_code=status.HTTP_201_CREATED,
+        responses=REVIEW_ERRORS,
+    )
+    def fact_review(fact_id: str, request: FactReviewRequest) -> Review:
+        """Keep a value of a Conflict (D5): the dossier shows it. A reopening undoes that."""
+        with checking():
+            return record_fact_review(fact_id, request.verdict, get_store(), app.state.checks)
+
+    @app.get("/api/names")
+    def names() -> list[NameCheck]:
+        """CHECKS Names (S7b): each name no rule linked to exactly one Organisation or Person,
+        to check first, then those a person resolved."""
+        return name_checks(get_store())
+
+    @app.get("/api/parties")
+    def known_parties() -> list[PartyRef]:
+        """Every Organisation and Person a name can be the same as, by name."""
+        return parties(get_store())
+
+    @app.post(
+        "/api/names/{key}/reviews",
+        status_code=status.HTTP_201_CREATED,
+        responses=NO_NAME,
+    )
+    def name_review(key: str, request: NameReviewRequest) -> list[NameCheck]:
+        """Decide what a name stands for, for every filing writing it; returns CHECKS Names as
+        it now stands."""
+        with checking():
+            record_name_review(
+                key,
+                request.verdict,
+                get_store(),
+                app.state.checks,
+                party_id=request.party_id,
+                name=request.name,
+                kind=request.kind,
+            )
+        return name_checks(get_store())
 
     @app.get("/api/checks")
     def checks_queue(isin: str | None = None) -> CheckQueue:
@@ -221,7 +328,7 @@ def create_app(
     def review(request: ReviewRequest) -> Review:
         """Accept, correct or reopen the figures of one CHECKS row. Checks are never deleted: a
         reopening is a check that undoes the one before."""
-        try:
+        with checking():
             return record_review(
                 request.figure_ids,
                 request.verdict,
@@ -233,12 +340,6 @@ def create_app(
                 quote=request.quote,
                 quote_start=request.quote_start,
             )
-        except NoReviewer:
-            raise HTTPException(503, "Set REVIEWER in .env to record checks") from None
-        except LookupError as error:
-            raise HTTPException(404, str(error)) from None
-        except ReviewRefused as error:
-            raise HTTPException(409, str(error)) from None
 
     @app.get("/api/figures/{figure_id}/candidates", responses=NO_FIGURE)
     def figure_candidates(figure_id: str) -> list[Candidate]:
