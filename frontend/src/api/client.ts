@@ -10,6 +10,16 @@ export type Chunk = components["schemas"]["Chunk"];
 export type Figure = components["schemas"]["Figure"];
 export type FigureDetail = components["schemas"]["FigureDetail"];
 export type FactDetail = components["schemas"]["FactDetail"];
+export type StatedFact = components["schemas"]["StatedFact"];
+export type CompanyFacts = components["schemas"]["CompanyFacts"];
+export type FactSection = components["schemas"]["FactSection"];
+export type FactRow = components["schemas"]["FactRow"];
+export type Party = components["schemas"]["Party"];
+export type PartyKind = components["schemas"]["PartyKind"];
+export type PartyRef = components["schemas"]["PartyRef"];
+export type RejectedFact = components["schemas"]["RejectedFact"];
+export type NameCheck = components["schemas"]["NameCheck"];
+export type NameVerdict = components["schemas"]["NameVerdict"];
 export type FigureGrid = components["schemas"]["FigureGrid"];
 export type FigureRow = components["schemas"]["FigureRow"];
 export type FigureValue = components["schemas"]["FigureValue"];
@@ -26,6 +36,12 @@ export type Verdict = components["schemas"]["Verdict"];
 export type Listing = components["schemas"]["Listing"];
 export type LastClose = components["schemas"]["LastClose"];
 export type PricePoint = components["schemas"]["PricePoint"];
+
+/** Why the API refused a request: its `detail`, else the HTTP status. */
+export function refusal(error: unknown, response: Response): string {
+  const detail = (error as { detail?: unknown } | undefined)?.detail;
+  return typeof detail === "string" ? detail : `${response.status} ${response.statusText}`;
+}
 
 export function pageImageUrl(documentId: string, page: number): string {
   return `/api/documents/${encodeURIComponent(documentId)}/pages/${page}.png`;

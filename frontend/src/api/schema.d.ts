@@ -740,10 +740,13 @@ export interface components {
          */
         FactSide: {
             fact: components["schemas"]["StatedFact"];
+            sentence: components["schemas"]["Sentence"];
             /** Sources */
             sources: number;
             /** In Use */
             in_use: boolean;
+            /** Why */
+            why?: ("kept" | "latest" | "annual_report" | "earliest") | null;
         };
         /**
          * Figure

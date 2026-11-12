@@ -2027,6 +2027,9 @@
           "fact": {
             "$ref": "#/components/schemas/StatedFact"
           },
+          "sentence": {
+            "$ref": "#/components/schemas/Sentence"
+          },
           "sources": {
             "type": "integer",
             "title": "Sources"
@@ -2034,11 +2037,29 @@
           "in_use": {
             "type": "boolean",
             "title": "In Use"
+          },
+          "why": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "kept",
+                  "latest",
+                  "annual_report",
+                  "earliest"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Why"
           }
         },
         "type": "object",
         "required": [
           "fact",
+          "sentence",
           "sources",
           "in_use"
         ],

@@ -924,9 +924,9 @@ def test_a_conflict_shows_both_values_and_the_one_kept(client, store, with_facts
     [[other]] = row["others"]
     detail = client.get(f"/api/facts/{other['id']}").json()
     assert detail["kind"] == "shareholding"
-    assert [(s["fact"]["values"]["percent"], s["in_use"]) for s in detail["sides"]] == [
-        ("53", True),
-        ("54", False),
+    assert [(s["sentence"]["value"], s["in_use"], s["why"]) for s in detail["sides"]] == [
+        ("53 %", True, "earliest"),
+        ("54 %", False, None),
     ]
     kept = client.post(f"/api/facts/{other['id']}/reviews", json={"verdict": "accepted"})
     assert kept.status_code == 201

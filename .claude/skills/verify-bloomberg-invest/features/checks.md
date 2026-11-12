@@ -4,6 +4,7 @@ The figures that feed a KPI or a Sharia screen, for a person to accept or correc
 
 ## Sub-features
 
+- Tabs `FIGURES · n` (this file), `NAMES · n` and `REJECTED FACTS · n` ([facts.md](facts.md)).
 - Counts: `TO CHECK`, `NEEDS REVIEW` (rejected figures, which can only be corrected) and `DONE`.
 - "Checks are recorded as <name>", from `REVIEWER` in `.env`. Without it a dashed notice says how to set it, and no buttons show.
 - Filters: `ALL COMPANIES` or one company, and `OPEN` (default), `NEEDS REVIEW`, `DONE`, `ALL`, kept in the URL as `?company=<ISIN>&status=<id>`.

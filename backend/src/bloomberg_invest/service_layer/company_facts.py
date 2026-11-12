@@ -188,7 +188,13 @@ def fact_detail(fact_id: str, store: GraphStore) -> FactDetail | None:
         if any(f.id == fact.id for group in at_date for f in group):
             why = row.why if row.fact.id == fact.id else None
             sides = [
-                FactSide(fact=by_id[group[0].id], sources=len(group), in_use=i == 0)
+                FactSide(
+                    fact=by_id[group[0].id],
+                    sentence=sentence(by_id[group[0].id]),
+                    sources=len(group),
+                    in_use=i == 0,
+                    why=row.why if i == 0 else None,
+                )
                 for i, group in enumerate(at_date)
             ]
     return FactDetail(**fact.model_dump(), sentence=sentence(fact), why=why, sides=sides)
