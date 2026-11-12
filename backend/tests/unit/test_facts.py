@@ -316,6 +316,26 @@ def test_a_value_kept_at_an_earlier_date_gives_way_to_a_later_one():
     assert (row.fact.id, row.kept_earlier) == ("new", True)
 
 
+def test_a_proposed_and_a_paid_dividend_of_one_year_are_one_row_compared_by_amount():
+    def dividend(amount: str, status: str, id: str) -> Stated:
+        return stated(
+            None,
+            id=id,
+            kind=FactKind.dividend,
+            measure="per_share",
+            amount=amount,
+            unit="MAD",
+            status=status,
+            fiscal_year=2025,
+        )
+
+    proposed, paid = dividend("4,00", "proposed", "p"), dividend("4", "paid", "q")
+    assert row_key(proposed) == row_key(paid)
+    assert shown([proposed, paid]).conflict is False
+    # The meeting changed it: that is a Conflict to see, not two dividends.
+    assert shown([proposed, dividend("3,50", "paid", "r")]).conflict is True
+
+
 def test_agreeing_facts_of_two_filings_are_one_value_shown_once():
     row = shown([stated("53", id="a", day=1), stated("53,0", id="b", day=3)])
     assert row.conflict is False
