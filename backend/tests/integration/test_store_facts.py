@@ -10,7 +10,7 @@ from conftest import make_run
 from bloomberg_invest.domain.extraction import SourceParagraph, page_sources
 from bloomberg_invest.domain.facts import FactKind, drafts
 from bloomberg_invest.domain.model import DocType, DocumentMeta, Organisation, RunStep
-from bloomberg_invest.domain.names import EntityKind, NameReviewDraft, NameVerdict
+from bloomberg_invest.domain.names import NameReviewDraft, NameVerdict, PartyKind, aggregates_of
 from bloomberg_invest.domain.review import ReviewDraft, Verdict
 
 ISIN = "MA0000011488"
@@ -71,12 +71,16 @@ def name_review(verdict: NameVerdict, minute: int = 40, **fields) -> NameReviewD
 
 
 def issuer_id(store, isin: str = ISIN) -> str:
-    return next(e.id for e in store.known_entities() if e.name == "Maroc Telecom")
+    return next(e.id for e in store.known_parties() if e.name == "Maroc Telecom")
 
 
 def link_issuer(store, document_id: str) -> None:
     """Link the issuer's own name, as the link Run would."""
-    store.record_links(document_id, [("maroc telecom", issuer_id(store))], run(RunStep.link, 30))
+    issuer = issuer_id(store)
+    free_float = aggregates_of("maroc telecom")[0]
+    store.record_links(
+        document_id, [("maroc telecom", issuer)], [(free_float, issuer)], run(RunStep.link, 30)
+    )
 
 
 @pytest.fixture
@@ -106,7 +110,7 @@ def test_facts_cite_their_passage_and_name_their_parties(store, extracted):
         3,
     )
     assert alpha.as_of.isoformat() == "2025-12-31"
-    assert [(p.role, p.written, p.alias, p.entity) for p in alpha.parties] == [
+    assert [(p.role, p.written, p.alias, p.resolved) for p in alpha.parties] == [
         ("holder", "Société Alpha", "societe alpha", None),
         ("held", "Maroc Telecom", "maroc telecom", None),
     ]
@@ -129,6 +133,7 @@ def test_one_name_written_by_two_filings_is_one_alias(store, extracted, parsed, 
 
 def test_linking_resolves_a_name_and_the_free_float_of_its_company(store, extracted):
     assert [n.key for n in store.unlinked_names(extracted)] == [
+        "free_float:maroc telecom",
         "itissalat al maghrib",
         "maroc telecom",
         "societe alpha",
@@ -141,18 +146,18 @@ def test_linking_resolves_a_name_and_the_free_float_of_its_company(store, extrac
     facts, _ = store.facts(ISIN)
     free_float = next(f for f in facts if f.values["percent"] == "45")
     holder, held = free_float.parties
-    assert (holder.entity.name, holder.entity.kind) == ("Free float", EntityKind.free_float)
-    assert held.entity.isin == ISIN
+    assert (holder.resolved.name, holder.resolved.kind) == ("Free float", PartyKind.free_float)
+    assert held.resolved.isin == ISIN
     # One Aggregate per company, however many filings write "Autres".
     link_issuer(store, extracted)
-    assert [e.name for e in store.known_entities()] == ["Maroc Telecom"]
+    assert [e.name for e in store.known_parties()] == ["Maroc Telecom"]
 
 
 def test_a_company_dossier_has_the_facts_naming_it_from_any_filing(store, extracted, parsed):
     other = other_filing(store, parsed)
     extract_facts(store, other)
-    alpha = next(e.id for e in store.known_entities() if e.name == "Société Alpha")
-    store.record_links(other, [("societe alpha", alpha)], run(RunStep.link, 30))
+    alpha = next(e.id for e in store.known_parties() if e.name == "Société Alpha")
+    store.record_links(other, [("societe alpha", alpha)], [], run(RunStep.link, 30))
     facts, _ = store.facts(OTHER_ISIN)
     # Its own filing's three, and Maroc Telecom's filing naming it as a holder.
     assert len(facts) == 4
@@ -160,7 +165,7 @@ def test_a_company_dossier_has_the_facts_naming_it_from_any_filing(store, extrac
 
 def test_names_no_rule_linked_go_to_checks(store, extracted):
     link_issuer(store, extracted)
-    names = store.names_to_check()
+    names = [n for n in store.names_to_check() if ":" not in n.alias]
     assert [(n.alias, n.status) for n in names] == [
         ("itissalat al maghrib", "to_check"),
         ("societe alpha", "to_check"),
@@ -176,55 +181,60 @@ def test_names_no_rule_linked_go_to_checks(store, extracted):
 def test_same_as_resolves_a_name_for_every_filing_writing_it(store, extracted):
     link_issuer(store, extracted)
     store.record_name_review(
-        "itissalat al maghrib", name_review(NameVerdict.same_as, entity_id=issuer_id(store))
+        "itissalat al maghrib",
+        name_review(NameVerdict.same_as, party_id=issuer_id(store)),
+        aggregates_of("itissalat al maghrib"),
     )
     [name] = [n for n in store.names_to_check() if n.alias == "itissalat al maghrib"]
-    assert (name.status, name.entity.isin, name.review.verdict) == (
+    assert (name.status, name.resolved.isin, name.review.verdict) == (
         "resolved",
         ISIN,
         NameVerdict.same_as,
     )
     # The issuer is now known by that name too.
-    known = {e.name: e.names for e in store.known_entities()}
+    known = {e.name: e.names for e in store.known_parties()}
     assert known["Maroc Telecom"] == ["Itissalat Al-Maghrib", "Maroc Telecom"]
 
 
 def test_new_creates_the_organisation_or_person_the_name_stands_for(store, extracted):
     store.record_name_review(
         "societe alpha",
-        name_review(NameVerdict.new, name="Société Alpha", kind=EntityKind.holding),
+        name_review(NameVerdict.new, name="Société Alpha", kind=PartyKind.holding),
+        [],
     )
     facts, _ = store.facts()
     alpha = next(f for f in facts if f.values["percent"] == "53")
-    assert (alpha.parties[0].entity.name, alpha.parties[0].entity.kind) == (
+    assert (alpha.parties[0].resolved.name, alpha.parties[0].resolved.kind) == (
         "Société Alpha",
-        EntityKind.holding,
+        PartyKind.holding,
     )
 
 
-def test_not_an_entity_and_reopening(store, extracted):
-    store.record_name_review("societe alpha", name_review(NameVerdict.not_an_entity))
+def test_not_a_party_and_reopening(store, extracted):
+    store.record_name_review("societe alpha", name_review(NameVerdict.not_a_party), [])
     [name] = [n for n in store.names_to_check() if n.alias == "societe alpha"]
-    assert (name.status, name.entity) == ("not_an_entity", None)
+    assert (name.status, name.resolved) == ("not_a_party", None)
     assert "societe alpha" not in [n.key for n in store.unlinked_names(extracted)]
-    store.record_name_review("societe alpha", name_review(NameVerdict.reopened, minute=50))
+    store.record_name_review("societe alpha", name_review(NameVerdict.reopened, minute=50), [])
     [name] = [n for n in store.names_to_check() if n.alias == "societe alpha"]
     assert (name.status, name.review) == ("to_check", None)
 
 
 def test_the_free_float_follows_its_company_when_a_person_resolves_it(store, extracted):
     store.record_name_review(
-        "maroc telecom", name_review(NameVerdict.same_as, entity_id=issuer_id(store))
+        "maroc telecom",
+        name_review(NameVerdict.same_as, party_id=issuer_id(store)),
+        aggregates_of("maroc telecom"),
     )
     facts, _ = store.facts(ISIN)
     free_float = next(f for f in facts if f.values["percent"] == "45")
-    assert free_float.parties[0].entity.kind == EntityKind.free_float
+    assert free_float.parties[0].resolved.kind == PartyKind.free_float
 
 
-def test_same_as_an_unknown_entity_is_refused(store, extracted):
+def test_same_as_an_unknown_party_is_refused(store, extracted):
     with pytest.raises(LookupError):
         store.record_name_review(
-            "societe alpha", name_review(NameVerdict.same_as, entity_id="nobody")
+            "societe alpha", name_review(NameVerdict.same_as, party_id="nobody"), []
         )
 
 
@@ -247,7 +257,7 @@ def test_a_re_extract_supersedes_facts_never_aliases_and_keeps_a_kept_value(stor
     assert again.id != alpha.id
     assert again.review.verdict == Verdict.accepted
     # The issuer's name stays linked: Aliases belong to the name, not to a Run.
-    assert again.parties[1].entity.isin == ISIN
+    assert again.parties[1].resolved.isin == ISIN
     assert store.fact(alpha.id).id == alpha.id
 
 
@@ -258,3 +268,26 @@ def test_every_organisation_has_an_id(store, document, driver):
         "MATCH (o:Organisation) WHERE o.id IS NULL RETURN count(o) AS missing"
     )
     assert records[0]["missing"] == 0
+
+
+def test_a_decision_supersedes_the_link_it_replaces_which_is_kept(store, extracted, driver):
+    link_issuer(store, extracted)
+    store.record_name_review(
+        "maroc telecom",
+        name_review(NameVerdict.new, name="Maroc Telecom Bis", kind=PartyKind.company),
+        aggregates_of("maroc telecom"),
+    )
+    records, _, _ = driver.execute_query(
+        """
+        MATCH (a:Alias)-[link:ALIAS_OF]->(o)
+        WHERE a.key IN ['maroc telecom', 'free_float:maroc telecom']
+        RETURN a.key AS key, o.name AS name, coalesce(link.superseded, false) AS superseded
+        ORDER BY key, superseded
+        """
+    )
+    assert [tuple(r.values()) for r in records] == [
+        ("free_float:maroc telecom", "Free float", False),
+        ("free_float:maroc telecom", "Free float", True),
+        ("maroc telecom", "Maroc Telecom Bis", False),
+        ("maroc telecom", "Maroc Telecom", True),
+    ]

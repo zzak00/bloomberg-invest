@@ -8,7 +8,7 @@ from bloomberg_invest.domain.extraction import FigureDraft, SourceCell
 from bloomberg_invest.domain.facts import FactDraft
 from bloomberg_invest.domain.indexing import EmbedInput
 from bloomberg_invest.domain.model import DocumentMeta, Organisation, ParsedDocument, RunInfo
-from bloomberg_invest.domain.names import NameReviewDraft
+from bloomberg_invest.domain.names import AggregateName, NameReviewDraft
 from bloomberg_invest.domain.prices import Close, ListedShare, StoredClose
 from bloomberg_invest.domain.review import ReviewDraft
 from bloomberg_invest.views import (
@@ -17,7 +17,7 @@ from bloomberg_invest.views import (
     DocumentDetail,
     DocumentSummary,
     Figure,
-    KnownEntity,
+    KnownParty,
     Listing,
     NameCheck,
     NameToLink,
@@ -121,26 +121,36 @@ class GraphStore(Protocol):
 
     def unlinked_names(self, document_id: str) -> list[NameToLink]:
         """The Aliases the Document's current Facts name that resolve to nothing, other than
-        aggregates and names a person said are no Organisation or Person."""
+        names a person said are no Organisation or Person."""
 
-    def known_entities(self) -> list[KnownEntity]:
+    def known_parties(self) -> list[KnownParty]:
         """Every Organisation (but Aggregates) and Person, with every name it is known by."""
 
     def record_links(
-        self, document_id: str, links: list[tuple[str, str]], run: RunInfo
+        self,
+        document_id: str,
+        links: list[tuple[str, str]],
+        aggregates: list[tuple[AggregateName, str]],
+        run: RunInfo,
     ) -> tuple[str, int]:
-        """Record a link Run of the Document: link each (Alias key, entity id) not linked yet,
-        then each aggregate whose company is known, to that company's Aggregate, created on
+        """Record a link Run of the Document: link each (Alias key, party id) not linked yet,
+        and each aggregate Alias, with its company's id, to that company's Aggregate, created on
         first use. Return the Run id and how many Aliases it linked."""
+
+    def resolved_names(self, keys: list[str]) -> dict[str, str]:
+        """The id of the Organisation each of these Alias keys resolves to now, if any."""
 
     def names_to_check(self) -> list[NameCheck]:
         """CHECKS Names: each name current Facts write that no rule linked, unresolved or
         resolved by a person, with every fact naming it."""
 
-    def record_name_review(self, key: str, review: NameReviewDraft) -> str:
+    def record_name_review(
+        self, key: str, review: NameReviewDraft, aggregates: list[AggregateName]
+    ) -> str:
         """Record what a person decides the Alias with this key stands for; return the Review
-        id. It replaces the Alias's link, and its company's aggregates follow it. Raises
-        LookupError for no such Alias or entity."""
+        id. It supersedes the Alias's link and those of `aggregates`, the company's aggregate
+        Aliases, which link again to its Aggregate when it resolves to an Organisation. Raises
+        LookupError for no such Alias, Organisation or Person."""
 
     def search_vector(self, vector: list[float], limit: int) -> list[str]:
         """Current Chunk ids whose vectors are nearest the query's, best first."""

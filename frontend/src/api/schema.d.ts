@@ -195,6 +195,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/rejected-facts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Refused Facts
+         * @description The facts of the eight other kinds the check refused, with why (D2), of one company's
+         *     filings or all: for CHECKS, never for the dossier.
+         */
+        get: operations["refused_facts_api_rejected_facts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/facts/{fact_id}": {
         parameters: {
             query?: never;
@@ -258,7 +279,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/entities": {
+    "/api/parties": {
         parameters: {
             query?: never;
             header?: never;
@@ -266,10 +287,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Known Entities
+         * Known Parties
          * @description Every Organisation and Person a name can be the same as, by name.
          */
-        get: operations["known_entities_api_entities_get"];
+        get: operations["known_parties_api_parties_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -616,26 +637,6 @@ export interface components {
             ingested_at: string;
         };
         /**
-         * EntityKind
-         * @description What a name stands for. Organisation kinds follow the ontology (AGENTS.md); the two
-         *     aggregates stand for a company's own holders, never for an Organisation of their own.
-         * @enum {string}
-         */
-        EntityKind: "company" | "holding" | "state" | "pension_fund" | "insurer" | "bank" | "audit_firm" | "person" | "free_float" | "treasury_shares";
-        /**
-         * EntityRef
-         * @description An Organisation or Person a name resolves to.
-         */
-        EntityRef: {
-            /** Id */
-            id: string;
-            /** Name */
-            name: string;
-            kind: components["schemas"]["EntityKind"];
-            /** Isin */
-            isin?: string | null;
-        };
-        /**
          * FactDetail
          * @description A fact as the inspector shows it (S3): in one sentence, and next to every other value
          *     stated for its key at its date when it is a Conflict.
@@ -718,6 +719,11 @@ export interface components {
             others: components["schemas"]["StatedFact"][][];
             /** Conflict */
             conflict: boolean;
+            /**
+             * Kept Earlier
+             * @default false
+             */
+            kept_earlier: boolean;
         };
         /** FactSection */
         FactSection: {
@@ -958,13 +964,9 @@ export interface components {
             alias: string;
             /** Name */
             name: string;
-            kind: components["schemas"]["EntityKind"];
-            /**
-             * Status
-             * @enum {string}
-             */
-            status: "to_check" | "resolved" | "not_an_entity";
-            entity: components["schemas"]["EntityRef"] | null;
+            kind: components["schemas"]["PartyKind"];
+            status: components["schemas"]["NameStatus"];
+            resolved: components["schemas"]["PartyRef"] | null;
             review: components["schemas"]["NameReview"] | null;
             /** Sources */
             sources: components["schemas"]["NameSource"][];
@@ -972,7 +974,7 @@ export interface components {
              * Candidates
              * @default []
              */
-            candidates: components["schemas"]["EntityRef"][];
+            candidates: components["schemas"]["PartyRef"][];
         };
         /**
          * NameReview
@@ -997,11 +999,11 @@ export interface components {
          */
         NameReviewRequest: {
             verdict: components["schemas"]["NameVerdict"];
-            /** Entity Id */
-            entity_id?: string | null;
+            /** Party Id */
+            party_id?: string | null;
             /** Name */
             name?: string | null;
-            kind?: components["schemas"]["EntityKind"] | null;
+            kind?: components["schemas"]["PartyKind"] | null;
         };
         /**
          * NameSource
@@ -1023,11 +1025,17 @@ export interface components {
             passage: components["schemas"]["Passage"];
         };
         /**
+         * NameStatus
+         * @description Where a CHECKS Names row stands.
+         * @enum {string}
+         */
+        NameStatus: "to_check" | "resolved" | "not_a_party";
+        /**
          * NameVerdict
          * @description What a person decides a name stands for, in CHECKS Names.
          * @enum {string}
          */
-        NameVerdict: "same_as" | "new" | "not_an_entity" | "reopened";
+        NameVerdict: "same_as" | "new" | "not_a_party" | "reopened";
         /**
          * Organisation
          * @description The Organisation a filing comes from. Keyed by the ISIN the operator gives until
@@ -1051,7 +1059,7 @@ export interface components {
         /**
          * Party
          * @description A party a fact names: as written, the full name the extractor read, and what it resolves
-         *     to; `entity` is None until the name is linked or a person resolves it in CHECKS.
+         *     to; `resolved` is None until the name is linked or a person resolves it in CHECKS.
          */
         Party: {
             /** Role */
@@ -1062,12 +1070,32 @@ export interface components {
             name: string;
             /** Alias */
             alias: string;
-            entity: components["schemas"]["EntityRef"] | null;
+            resolved: components["schemas"]["PartyRef"] | null;
             /**
-             * Not An Entity
+             * Not A Party
              * @default false
              */
-            not_an_entity: boolean;
+            not_a_party: boolean;
+        };
+        /**
+         * PartyKind
+         * @description What a name stands for. Organisation kinds follow the ontology (AGENTS.md); the two
+         *     aggregates stand for a company's own holders, never for an Organisation of their own.
+         * @enum {string}
+         */
+        PartyKind: "company" | "holding" | "state" | "pension_fund" | "insurer" | "bank" | "audit_firm" | "person" | "free_float" | "treasury_shares";
+        /**
+         * PartyRef
+         * @description An Organisation or Person a name resolves to.
+         */
+        PartyRef: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            kind: components["schemas"]["PartyKind"];
+            /** Isin */
+            isin?: string | null;
         };
         /**
          * Passage
@@ -1114,6 +1142,35 @@ export interface components {
         Problem: {
             /** Detail */
             detail: string;
+        };
+        /**
+         * RejectedFact
+         * @description A fact the LLM proposed that its quote does not state (#19 R6). Kept with the reason,
+         *     never shown in the dossier.
+         */
+        RejectedFact: {
+            /** Id */
+            id: string;
+            kind: components["schemas"]["FactKind"];
+            /** Parties */
+            parties: components["schemas"]["Party"][];
+            /** Values */
+            values: {
+                [key: string]: string | number | boolean | null;
+            };
+            /** Quote */
+            quote: string;
+            /**
+             * Recorded At
+             * Format: date-time
+             */
+            recorded_at: string;
+            /** Page */
+            page: number;
+            /** Reason */
+            reason: string;
+            document: components["schemas"]["DocumentRef"];
+            passage: components["schemas"]["Passage"] | null;
         };
         /**
          * Review
@@ -1686,6 +1743,37 @@ export interface operations {
             };
         };
     };
+    refused_facts_api_rejected_facts_get: {
+        parameters: {
+            query?: {
+                isin?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RejectedFact"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     fact_api_facts__fact_id__get: {
         parameters: {
             query?: never;
@@ -1808,7 +1896,7 @@ export interface operations {
             };
         };
     };
-    known_entities_api_entities_get: {
+    known_parties_api_parties_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -1823,7 +1911,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["EntityRef"][];
+                    "application/json": components["schemas"]["PartyRef"][];
                 };
             };
         };

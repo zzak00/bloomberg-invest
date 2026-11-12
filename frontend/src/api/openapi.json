@@ -462,6 +462,57 @@
         }
       }
     },
+    "/api/rejected-facts": {
+      "get": {
+        "summary": "Refused Facts",
+        "description": "The facts of the eight other kinds the check refused, with why (D2), of one company's\nfilings or all: for CHECKS, never for the dossier.",
+        "operationId": "refused_facts_api_rejected_facts_get",
+        "parameters": [
+          {
+            "name": "isin",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Isin"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RejectedFact"
+                  },
+                  "title": "Response Refused Facts Api Rejected Facts Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/facts/{fact_id}": {
       "get": {
         "summary": "Fact",
@@ -623,11 +674,11 @@
         }
       }
     },
-    "/api/entities": {
+    "/api/parties": {
       "get": {
-        "summary": "Known Entities",
+        "summary": "Known Parties",
         "description": "Every Organisation and Person a name can be the same as, by name.",
-        "operationId": "known_entities_api_entities_get",
+        "operationId": "known_parties_api_parties_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -635,10 +686,10 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/EntityRef"
+                    "$ref": "#/components/schemas/PartyRef"
                   },
                   "type": "array",
-                  "title": "Response Known Entities Api Entities Get"
+                  "title": "Response Known Parties Api Parties Get"
                 }
               }
             }
@@ -1660,57 +1711,6 @@
         ],
         "title": "DocumentSummary"
       },
-      "EntityKind": {
-        "type": "string",
-        "enum": [
-          "company",
-          "holding",
-          "state",
-          "pension_fund",
-          "insurer",
-          "bank",
-          "audit_firm",
-          "person",
-          "free_float",
-          "treasury_shares"
-        ],
-        "title": "EntityKind",
-        "description": "What a name stands for. Organisation kinds follow the ontology (AGENTS.md); the two\naggregates stand for a company's own holders, never for an Organisation of their own."
-      },
-      "EntityRef": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "title": "Id"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "kind": {
-            "$ref": "#/components/schemas/EntityKind"
-          },
-          "isin": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Isin"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "name",
-          "kind"
-        ],
-        "title": "EntityRef",
-        "description": "An Organisation or Person a name resolves to."
-      },
       "FactDetail": {
         "properties": {
           "id": {
@@ -1976,6 +1976,11 @@
           "conflict": {
             "type": "boolean",
             "title": "Conflict"
+          },
+          "kept_earlier": {
+            "type": "boolean",
+            "title": "Kept Earlier",
+            "default": false
           }
         },
         "type": "object",
@@ -2596,21 +2601,15 @@
             "title": "Name"
           },
           "kind": {
-            "$ref": "#/components/schemas/EntityKind"
+            "$ref": "#/components/schemas/PartyKind"
           },
           "status": {
-            "type": "string",
-            "enum": [
-              "to_check",
-              "resolved",
-              "not_an_entity"
-            ],
-            "title": "Status"
+            "$ref": "#/components/schemas/NameStatus"
           },
-          "entity": {
+          "resolved": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/EntityRef"
+                "$ref": "#/components/schemas/PartyRef"
               },
               {
                 "type": "null"
@@ -2636,7 +2635,7 @@
           },
           "candidates": {
             "items": {
-              "$ref": "#/components/schemas/EntityRef"
+              "$ref": "#/components/schemas/PartyRef"
             },
             "type": "array",
             "title": "Candidates",
@@ -2649,7 +2648,7 @@
           "name",
           "kind",
           "status",
-          "entity",
+          "resolved",
           "review",
           "sources"
         ],
@@ -2690,7 +2689,7 @@
           "verdict": {
             "$ref": "#/components/schemas/NameVerdict"
           },
-          "entity_id": {
+          "party_id": {
             "anyOf": [
               {
                 "type": "string"
@@ -2699,7 +2698,7 @@
                 "type": "null"
               }
             ],
-            "title": "Entity Id"
+            "title": "Party Id"
           },
           "name": {
             "anyOf": [
@@ -2715,7 +2714,7 @@
           "kind": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/EntityKind"
+                "$ref": "#/components/schemas/PartyKind"
               },
               {
                 "type": "null"
@@ -2776,12 +2775,22 @@
         "title": "NameSource",
         "description": "Where a filing writes a name: the fact naming it, and the Passage it was read from."
       },
+      "NameStatus": {
+        "type": "string",
+        "enum": [
+          "to_check",
+          "resolved",
+          "not_a_party"
+        ],
+        "title": "NameStatus",
+        "description": "Where a CHECKS Names row stands."
+      },
       "NameVerdict": {
         "type": "string",
         "enum": [
           "same_as",
           "new",
-          "not_an_entity",
+          "not_a_party",
           "reopened"
         ],
         "title": "NameVerdict",
@@ -2852,19 +2861,19 @@
             "type": "string",
             "title": "Alias"
           },
-          "entity": {
+          "resolved": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/EntityRef"
+                "$ref": "#/components/schemas/PartyRef"
               },
               {
                 "type": "null"
               }
             ]
           },
-          "not_an_entity": {
+          "not_a_party": {
             "type": "boolean",
-            "title": "Not An Entity",
+            "title": "Not A Party",
             "default": false
           }
         },
@@ -2874,10 +2883,61 @@
           "written",
           "name",
           "alias",
-          "entity"
+          "resolved"
         ],
         "title": "Party",
-        "description": "A party a fact names: as written, the full name the extractor read, and what it resolves\nto; `entity` is None until the name is linked or a person resolves it in CHECKS."
+        "description": "A party a fact names: as written, the full name the extractor read, and what it resolves\nto; `resolved` is None until the name is linked or a person resolves it in CHECKS."
+      },
+      "PartyKind": {
+        "type": "string",
+        "enum": [
+          "company",
+          "holding",
+          "state",
+          "pension_fund",
+          "insurer",
+          "bank",
+          "audit_firm",
+          "person",
+          "free_float",
+          "treasury_shares"
+        ],
+        "title": "PartyKind",
+        "description": "What a name stands for. Organisation kinds follow the ontology (AGENTS.md); the two\naggregates stand for a company's own holders, never for an Organisation of their own."
+      },
+      "PartyRef": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/PartyKind"
+          },
+          "isin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Isin"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "kind"
+        ],
+        "title": "PartyRef",
+        "description": "An Organisation or Person a name resolves to."
       },
       "Passage": {
         "properties": {
@@ -2979,6 +3039,89 @@
         ],
         "title": "Problem",
         "description": "Why a request failed, in words a person can act on."
+      },
+      "RejectedFact": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/FactKind"
+          },
+          "parties": {
+            "items": {
+              "$ref": "#/components/schemas/Party"
+            },
+            "type": "array",
+            "title": "Parties"
+          },
+          "values": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Values"
+          },
+          "quote": {
+            "type": "string",
+            "title": "Quote"
+          },
+          "recorded_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Recorded At"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "document": {
+            "$ref": "#/components/schemas/DocumentRef"
+          },
+          "passage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Passage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "parties",
+          "values",
+          "quote",
+          "recorded_at",
+          "page",
+          "reason",
+          "document",
+          "passage"
+        ],
+        "title": "RejectedFact",
+        "description": "A fact the LLM proposed that its quote does not state (#19 R6). Kept with the reason,\nnever shown in the dossier."
       },
       "Review": {
         "properties": {

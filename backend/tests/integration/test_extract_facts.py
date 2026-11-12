@@ -100,7 +100,7 @@ def test_the_issuer_s_name_links_to_it_and_the_run_records_what_it_used(store, f
     linked = link_names(document_id, store)
     assert (linked.linked, linked.to_check) == (1, 0)
     [fact], _ = store.facts("MA0000011488")
-    assert fact.parties[0].entity.isin == "MA0000011488"
+    assert fact.parties[0].resolved.isin == "MA0000011488"
     assert fact.parties[0].written == "le Groupe"
     records, _, _ = driver.execute_query(
         "MATCH (r:Run {id: $id}) RETURN r.config AS config", id=extracted.run_id

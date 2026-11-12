@@ -26,7 +26,7 @@ from bloomberg_invest.domain.extraction import CellPassage, SpanPassage
 from bloomberg_invest.domain.facts import SPECS, FactDraft, FactKind
 from bloomberg_invest.domain.model import RunInfo, RunStatus, RunStep
 from bloomberg_invest.domain.review import Verdict, carried
-from bloomberg_invest.views import EntityRef, Party, RejectedFact, StatedFact
+from bloomberg_invest.views import Party, PartyRef, RejectedFact, StatedFact
 
 FACT_KINDS = [k.value for k in FactKind]
 # The kind's `unit` field is the unit as the LLM read it; a Fact's `unit` is a figure's parsed one.
@@ -142,10 +142,10 @@ def _row(fact: FactDraft, recorded_at: datetime) -> dict[str, Any]:
 PARTIES = """
 CALL (n) {
     MATCH (n)-[names:NAMES]->(a:Alias)
-    OPTIONAL MATCH (a)-[:ALIAS_OF]->(e)
+    OPTIONAL MATCH (a)-[link:ALIAS_OF]->(e) WHERE coalesce(link.superseded, false) = false
     RETURN collect({role: names.role, written: names.written, name: names.name,
-                    alias: a.key, not_an_entity: coalesce(a.not_an_entity, false),
-                    entity: CASE WHEN e IS NULL THEN null ELSE
+                    alias: a.key, not_a_party: coalesce(a.not_a_party, false),
+                    resolved: CASE WHEN e IS NULL THEN null ELSE
                         {id: e.id, name: e.name, isin: e.isin,
                          kind: coalesce(e.aggregate, CASE WHEN e:Person THEN 'person'
                                                           ELSE e.kind END)} END}) AS parties
@@ -170,8 +170,8 @@ def _parties(kind: FactKind, rows: list[dict[str, Any]]) -> list[Party]:
             written=r["written"],
             name=r["name"],
             alias=r["alias"],
-            entity=EntityRef(**r["entity"]) if r["entity"] is not None else None,
-            not_an_entity=r["not_an_entity"],
+            resolved=PartyRef(**r["resolved"]) if r["resolved"] is not None else None,
+            not_a_party=r["not_a_party"],
         )
         for r in sorted(rows, key=lambda r: order.get(r["role"], len(order)))
     ]

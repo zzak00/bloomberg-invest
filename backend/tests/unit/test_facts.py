@@ -24,7 +24,7 @@ from bloomberg_invest.domain.facts import (
     shown,
     values_of,
 )
-from bloomberg_invest.domain.names import EntityKind, alias_key, name_key
+from bloomberg_invest.domain.names import PartyKind, alias_key, name_key
 
 OWNERS = SourceParagraph(
     27,
@@ -34,7 +34,8 @@ OWNERS = SourceParagraph(
 )
 DIVIDEND = SourceParagraph(
     10,
-    "Le Conseil propose la distribution d’un dividende de 4,00 dirhams par action, représentant "
+    "Au titre de l'exercice 2025, le Conseil propose la distribution d’un dividende de 4,00 "
+    "dirhams par action, représentant "
     "un montant global de 3,5 milliards de dirhams.",
     ((10, 50.0, 300.0, 540.0, 330.0),),
 )
@@ -48,7 +49,7 @@ SCOPE_TABLE = [
     cell(0, 0, "Société"),
     cell(0, 1, "% d'intérêt"),
     cell(0, 2, "% de contrôle"),
-    cell(0, 3, "Méthode"),
+    cell(0, 3, "Méthode 31-déc.-25"),
     cell(1, 0, "Beta Mobile SA"),
     cell(1, 1, "80%"),
     cell(1, 2, "80%"),
@@ -200,7 +201,7 @@ def test_names_match_whatever_their_case_accents_and_legal_form():
     assert name_key("Itissalat Al-Maghrib (IAM) S.A") == "itissalat al maghrib"
     assert name_key("Groupe Gamma") == "gamma"
     assert name_key("S.A.") == ""
-    assert alias_key("actions propres", EntityKind.treasury_shares, "gamma") == (
+    assert alias_key("actions propres", PartyKind.treasury_shares, "gamma") == (
         "treasury_shares:gamma"
     )
 
@@ -310,7 +311,7 @@ def test_a_kept_value_is_shown_whatever_its_source_and_stays_a_conflict():
 
 def test_a_value_kept_at_an_earlier_date_gives_way_to_a_later_one():
     row = shown([stated("50", date(2024, 12, 31), id="old", kept=True), stated("53", id="new")])
-    assert row.fact.id == "new"
+    assert (row.fact.id, row.kept_earlier) == ("new", True)
 
 
 def test_agreeing_facts_of_two_filings_are_one_value_shown_once():
@@ -325,6 +326,7 @@ def test_every_kind_has_roles_and_a_time():
 
 
 RELATED = [
+    cell(2, 0, "Exercice 2025"),
     cell(3, 0, "Créances"),
     cell(3, 1, "46"),
     cell(3, 2, "111"),
@@ -354,6 +356,7 @@ def test_a_quote_may_run_on_into_the_paragraphs_after_the_one_cited():
         SourceParagraph(89, "Deloitte Alpha", ()),
         SourceParagraph(89, "Jean ALPHA", ()),
         SourceParagraph(89, "Associé", ()),
+        SourceParagraph(89, "Rapport sur l'exercice clos le 31 décembre 2025", ()),
     ]
     item = {
         "auditor": party("Deloitte Alpha", kind="audit_firm"),
@@ -387,6 +390,7 @@ def test_a_dividend_in_dirham_singular_has_its_currency():
 
 
 SIGNATURES = [
+    cell(3, 0, "Exercice 2025"),
     cell(0, 0, "Deloitte Alpha"),
     cell(0, 1, "Beta Audit SA"),
     cell(1, 0, "Jean ALPHA"),
@@ -411,7 +415,7 @@ def test_a_table_states_a_fact_down_a_column_too():
 
 
 def test_a_stake_the_table_calls_not_significant_is_a_fact():
-    stakes = [cell(4, 0, "Delta Sat"), cell(4, 1, "NS")]
+    stakes = [cell(0, 1, "31/12/2025"), cell(4, 0, "Delta Sat"), cell(4, 1, "NS")]
     item = holding(party("Gamma"), "NS", "Delta Sat | NS", "t40.0.r4.c1") | {
         "held": party("Delta Sat")
     }
@@ -419,7 +423,7 @@ def test_a_stake_the_table_calls_not_significant_is_a_fact():
     assert fact.rejected is None
     # Not where the row writes a number.
     item = item | {"quote": "Delta Sat"}
-    stakes = [cell(4, 0, "Delta Sat"), cell(4, 1, "5%")]
+    stakes = [cell(0, 1, "31/12/2025"), cell(4, 0, "Delta Sat"), cell(4, 1, "5%")]
     [fact] = drafts(answer(shareholding=[item]), page_sources(40, [], stakes))
     assert fact.rejected == FactRejection.unreadable_number
 
@@ -430,3 +434,42 @@ def test_facts_one_run_recorded_at_once_are_ordered_as_the_filing_reads():
     second = replace(stated("54", id="a"), place=(27, 300.0, 50.0, 80.0))
     first = replace(stated("53", id="b"), place=(27, 300.0, 50.0, 20.0))
     assert shown([second, first]).fact.id == "b"
+
+
+def test_a_year_the_page_never_writes_is_rejected():
+    """A made-up date never decides which value the dossier shows (#19 R8)."""
+    item = holding(party("Société Alpha"), "53", "Société Alpha : 53%") | {"as_of": "2019-12-31"}
+    [fact] = drafts(answer(shareholding=[item]), page27())
+    assert fact.rejected == FactRejection.year_not_on_page
+
+
+def test_a_year_ending_a_table_date_is_on_the_page():
+    """`31-déc.-25` heads the column: the scope table's facts hold on 2025-12-31."""
+    item = {
+        "parent": party("Gamma Telecom"),
+        "subsidiary": party("Beta Mobile"),
+        "interest": "80",
+        "control": "80",
+        "method": "full",
+        "as_of": "2024-12-31",
+        "source_id": "t40.0.r1.c1",
+        "quote": "Beta Mobile SA 80% 80% IG",
+    }
+    [fact] = drafts(answer(consolidation=[item]), page_sources(40, [], SCOPE_TABLE))
+    assert fact.rejected == FactRejection.year_not_on_page
+
+
+def test_a_table_fact_s_first_number_is_in_the_cell_it_cites():
+    """Voting rights read from the interest column are refused, though the row holds both."""
+    table = [
+        cell(0, 1, "% intérêt 31-déc.-25"),
+        cell(1, 0, "Beta Mobile"),
+        cell(1, 1, "41,2%"),
+        cell(1, 2, "51,5%"),
+    ]
+    item = holding(party("Gamma"), "51,5", "Beta Mobile 41,2% 51,5%", "t40.0.r1.c1") | {
+        "held": party("Beta Mobile"),
+        "rights": "voting",
+    }
+    [fact] = drafts(answer(shareholding=[item]), page_sources(40, [], table))
+    assert fact.rejected == FactRejection.not_in_cited_cell

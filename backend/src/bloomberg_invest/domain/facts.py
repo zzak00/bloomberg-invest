@@ -7,15 +7,15 @@ full name it means there. Python keeps a fact only when its quote is in its sour
 number it states is in its quote; one that fails is kept, rejected, with the reason.
 """
 
-import unicodedata
-from collections.abc import Iterable, Sequence
-from dataclasses import dataclass, field, replace
+import re
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass, replace
 from datetime import date
 from decimal import Decimal
 from enum import StrEnum
 from typing import Any, Literal
 
-from bloomberg_invest.domain.dossier import precision
+from bloomberg_invest.domain.dossier import same_number
 from bloomberg_invest.domain.extraction import (
     CellPassage,
     PageSources,
@@ -24,7 +24,7 @@ from bloomberg_invest.domain.extraction import (
     SpanPassage,
 )
 from bloomberg_invest.domain.figures import Scope, parse_unit, parse_value, scaled
-from bloomberg_invest.domain.names import EntityKind, alias_key, name_key
+from bloomberg_invest.domain.names import PartyKind, alias_key, fold, name_key
 from bloomberg_invest.domain.review import NUMBER
 
 
@@ -218,7 +218,7 @@ SPECS: dict[FactKind, Spec] = {
 
 
 # What a table writes for a stake too small to state: a value of its own, never a number.
-NOT_SIGNIFICANT = {"ns", "n.s.", "n.s"}
+NOT_SIGNIFICANT = frozenset({"ns", "n.s.", "n.s"})
 
 
 class FactRejection(StrEnum):
@@ -230,6 +230,8 @@ class FactRejection(StrEnum):
     unreadable_number = "a number it states is not one number"
     unknown_unit = "its unit names no currency"
     unreadable_date = "its date is not a date"
+    year_not_on_page = "its year is not on its page"
+    not_in_cited_cell = "its number is not in the cell it cites"
     unnamed = "a party has no name"
     no_value = "it states nothing"
 
@@ -242,7 +244,7 @@ class NameDraft:
     role: str
     written: str
     name: str
-    kind: EntityKind
+    kind: PartyKind
     key: str
 
 
@@ -262,7 +264,7 @@ class FactDraft:
     amount_value: str | None = None
     scale: int | None = None
     currency: str | None = None
-    period: tuple[date, date] | None = field(default=None)
+    period: tuple[date, date] | None = None
 
 
 def name_schema() -> dict[str, Any]:
@@ -271,7 +273,7 @@ def name_schema() -> dict[str, Any]:
         "properties": {
             "written": {"type": "string"},
             "name": {"type": "string"},
-            "kind": {"type": "string", "enum": [k.value for k in EntityKind]},
+            "kind": {"type": "string", "enum": [k.value for k in PartyKind]},
         },
         "required": ["written", "name", "kind"],
         "additionalProperties": False,
@@ -353,26 +355,26 @@ def _draft(kind: FactKind, item: dict[str, Any], sources: PageSources) -> FactDr
     cell = sources.cells.get(source_id)
     paragraph = sources.paragraphs.get(source_id)
     passage: CellPassage | SpanPassage | None = None
-    evidence, numbers = None, set()
+    evidence, numbers, cited = None, set(), None
     if cell is not None:
         # A row's cells hold one number each, or a few the parser ran together: read them cell
         # by cell, so `46 | 111` is never the one number `46 111`.
         # A table states a fact along the cell's row, or down its column: a signature block is
         # a firm, its partner and a title, one column per firm.
         passage = CellPassage(cell.id)
+        row = row_cells(cell, sources.cells.values())
+        column = column_cells(cell, sources.cells.values())
         line = next(
             (
                 cells
-                for cells in (
-                    row_cells(cell, sources.cells.values()),
-                    column_cells(cell, sources.cells.values()),
-                )
+                for cells in (row, column)
                 if plain(quote) in plain(" ".join(c.text for c in cells))
             ),
-            row_cells(cell, sources.cells.values()),
+            row,
         )
         evidence = " ".join(c.text for c in line)
         numbers = {n for c in line for n in _numbers(c.text)}
+        cited = _numbers(cell.text)
     elif paragraph is not None:
         passage = SpanPassage(paragraph.page, quote, paragraph.text, paragraph.boxes)
         evidence = _following(source_id, sources)
@@ -381,7 +383,10 @@ def _draft(kind: FactKind, item: dict[str, Any], sources: PageSources) -> FactDr
     names = _names(spec, item)
     draft = FactDraft(kind, sources.page, source_id, quote, names, values, passage)
 
-    reason = _refusal(spec, values, names, quote, evidence, numbers)
+    page = " ".join(
+        [*(p.text for p in sources.paragraphs.values()), *(c.text for c in sources.cells.values())]
+    )
+    reason = _refusal(spec, values, names, quote, evidence, numbers, cited, page)
     if reason is not None:
         return replace(draft, rejected=reason)
     if "unit" in values and values.get("amount") is not None:
@@ -408,7 +413,7 @@ def _names(spec: Spec, item: dict[str, Any]) -> tuple[NameDraft, ...]:
     keys = {role: name_key(n["name"] or n["written"]) for role, n in given.items()}
     names = []
     for role, n in given.items():
-        kind = EntityKind(n["kind"])
+        kind = PartyKind(n["kind"])
         other = next((keys[r] for r in spec.roles if r != role), "")
         names.append(
             NameDraft(
@@ -429,7 +434,12 @@ def _refusal(
     quote: str,
     evidence: str | None,
     numbers: set[Decimal | None],
+    cited: set[Decimal | None] | None,
+    page: str,
 ) -> FactRejection | None:
+    """Why the fact is not a Fact (D2): its quote must be in its source, and every number it
+    states in its quote, or in its cell's row or column, the first in the cell it cites. Its year
+    must be on its page, written whole or in a date (`31-déc.-25`)."""
     if evidence is None:
         return FactRejection.unknown_source
     if not plain(quote) or plain(quote) not in plain(evidence):
@@ -454,7 +464,32 @@ def _refusal(
                 return FactRejection.number_not_in_quote
         if f.type == "date" and _date(value) is None:
             return FactRejection.unreadable_date
+    first = next(
+        (
+            values[f.name]
+            for f in spec.fields
+            if f.type == "number"
+            and values.get(f.name) not in (None, "")
+            and plain(values[f.name]) not in NOT_SIGNIFICANT
+        ),
+        None,
+    )
+    if cited is not None and first is not None and parse_value(first) not in cited:
+        # A table states the fact along its row: its main number is in the cell it cites, so a
+        # voting share is never read from the interest column.
+        return FactRejection.not_in_cited_cell
+    year = values["fiscal_year"] if spec.time == "fiscal_year" else _date(values["as_of"]).year
+    if not _year_on_page(year, page):
+        return FactRejection.year_not_on_page
     return None
+
+
+def _year_on_page(year: int, text: str) -> bool:
+    """Whether the page writes the year: whole (`2025`), or ending a date (`31-déc.-25`)."""
+    return bool(
+        re.search(rf"(?<!\d){year}(?!\d)", text)
+        or re.search(rf"\d[-./ ]?\D{{0,6}}[-./]{year % 100:02d}(?![\d,])", text)
+    )
 
 
 def row_cells(cell: SourceCell, cells: Iterable[SourceCell]) -> list[SourceCell]:
@@ -498,7 +533,7 @@ _QUOTES = str.maketrans(
         "“": '"',
         "”": '"',
         "–": "-",
-        "—": "-",
+        "\u2014": "-",
         "−": "-",
         "|": " ",
     }
@@ -508,9 +543,7 @@ _QUOTES = str.maketrans(
 def plain(text: str) -> str:
     """Text as a quote is compared: no accents, one kind of quote mark, case and spacing
     ignored."""
-    text = unicodedata.normalize("NFKD", text.translate(_QUOTES))
-    text = "".join(c for c in text if not unicodedata.combining(c)).lower()
-    return " ".join(text.split())
+    return " ".join(fold(text.translate(_QUOTES)).split())
 
 
 def _date(value: str) -> date | None:
@@ -531,7 +564,7 @@ class Stated:
     id: str
     kind: FactKind
     parties: tuple[tuple[str, str], ...]  # (role, identity) in the kind's role order
-    values: dict[str, Any]
+    values: Mapping[str, Any]  # read-only
     scale: int | None  # an amount's, so `3,5` billions agrees with `3 516` millions
     when: date  # its as-of date, or the end of its fiscal year
     annual: bool  # from an annual report, over an issuer page (R8)
@@ -565,22 +598,12 @@ def agree(a: Stated, b: Stated) -> bool:
         if x in (None, "") or y in (None, ""):
             continue
         if f.type == "number":
-            if not _same_number(
-                x, a.scale if f.name == "amount" else 1, y, b.scale if f.name == "amount" else 1
-            ):
+            scales = (a.scale or 1, b.scale or 1) if f.name == "amount" else (1, 1)
+            if not same_number(x, scales[0], y, scales[1]):
                 return False
         elif _text(x) != _text(y):
             return False
     return True
-
-
-def _same_number(x: str, x_scale: int | None, y: str, y_scale: int | None) -> bool:
-    px, py = parse_value(x), parse_value(y)
-    if px is None or py is None:
-        return px == py
-    sx, sy = x_scale or 1, y_scale or 1
-    half = max(precision(x, sx), precision(y, sy)) / 2
-    return abs(px * sx - py * sy) <= half
 
 
 def _text(value: Any) -> Any:
@@ -605,8 +628,11 @@ class Shown:
 
     fact: Stated
     why: Literal["kept", "latest", "annual_report", "earliest"]
-    agreeing: list[Stated]  # every fact stating the shown value at its date, the shown first
-    others: list[list[Stated]]  # each other value at the shown date: a Conflict when any
+    agreeing: tuple[Stated, ...]  # every fact stating the shown value at its date, shown first
+    others: tuple[tuple[Stated, ...], ...]  # each other value at the shown date: a Conflict
+    # A person kept a value at an earlier date, which a later date's value now replaces: the
+    # latest date wins (#19 R8 as settled in #24), and the row says so.
+    kept_earlier: bool = False
 
     @property
     def conflict(self) -> bool:
@@ -640,6 +666,7 @@ def shown(facts: Sequence[Stated]) -> Shown:
     return Shown(
         fact=first,
         why=why,
-        agreeing=[first, *(f for f in group if f is not first)],
-        others=[g for g in groups if g is not group],
+        agreeing=(first, *(f for f in group if f is not first)),
+        others=tuple(tuple(g) for g in groups if g is not group),
+        kept_earlier=any(f.kept and f.when < latest for f in facts),
     )

@@ -7,16 +7,16 @@ from builders import DOCUMENT
 
 from bloomberg_invest.domain.facts import FactKind
 from bloomberg_invest.service_layer.company_facts import sentence
-from bloomberg_invest.views import EntityRef, Party, Passage, StatedFact
+from bloomberg_invest.views import Party, PartyRef, Passage, StatedFact
 
 
-def party(role: str, name: str, entity: str | None = None) -> Party:
+def party(role: str, name: str, resolved: str | None = None) -> Party:
     return Party(
         role=role,
         written=name,
         name=name,
         alias=name.lower(),
-        entity=EntityRef(id="e1", name=entity, kind="company") if entity else None,
+        resolved=PartyRef(id="e1", name=resolved, kind="company") if resolved else None,
     )
 
 
@@ -45,7 +45,7 @@ def text(f) -> tuple[str, str, str]:
 def test_a_holding_names_its_parties_as_resolved_or_as_read():
     holding = fact(
         FactKind.shareholding,
-        [party("holder", "IAM", entity="Maroc Telecom"), party("held", "Beta Mobile SA")],
+        [party("holder", "IAM", resolved="Maroc Telecom"), party("held", "Beta Mobile SA")],
         percent="80",
         shares=None,
         rights="capital",

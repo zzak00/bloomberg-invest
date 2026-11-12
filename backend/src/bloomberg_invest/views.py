@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from bloomberg_invest.domain.facts import FactKind
 from bloomberg_invest.domain.figures import Scope
 from bloomberg_invest.domain.model import Bbox, DocType, Organisation, PageInfo, RunInfo
-from bloomberg_invest.domain.names import EntityKind, NameVerdict
+from bloomberg_invest.domain.names import NameStatus, NameVerdict, PartyKind
 from bloomberg_invest.domain.review import CheckStatus, Correction, Verdict
 
 
@@ -310,25 +310,25 @@ class Candidate(BaseModel):
     context: str  # the column's header for a cell, the words around a quote
 
 
-class EntityRef(BaseModel):
+class PartyRef(BaseModel):
     """An Organisation or Person a name resolves to."""
 
     id: str
     name: str
-    kind: EntityKind  # an Aggregate's is `free_float` or `treasury_shares`
+    kind: PartyKind  # an Aggregate's is `free_float` or `treasury_shares`
     isin: str | None = None  # an issuer's, whose dossier it opens
 
 
 class Party(BaseModel):
     """A party a fact names: as written, the full name the extractor read, and what it resolves
-    to; `entity` is None until the name is linked or a person resolves it in CHECKS."""
+    to; `resolved` is None until the name is linked or a person resolves it in CHECKS."""
 
     role: str
     written: str
     name: str
     alias: str  # the Alias key: what CHECKS resolves once for every filing writing it
-    entity: EntityRef | None
-    not_an_entity: bool = False  # a person said the name is no Organisation or Person
+    resolved: PartyRef | None
+    not_a_party: bool = False  # a person said the name is no Organisation or Person
 
 
 FactValue = str | int | bool | None
@@ -373,12 +373,12 @@ class RejectedFact(BaseModel):
     passage: Passage | None
 
 
-class KnownEntity(BaseModel):
+class KnownParty(BaseModel):
     """An Organisation or Person and every name it is known by, for linking names to it."""
 
     id: str
     name: str
-    kind: EntityKind
+    kind: PartyKind
     names: list[str]  # its own, its Listings', and the names a person resolved to it
 
 
@@ -387,7 +387,7 @@ class NameToLink(BaseModel):
 
     key: str
     name: str
-    kind: EntityKind
+    kind: PartyKind
 
 
 class NameSource(BaseModel):
@@ -418,12 +418,12 @@ class NameCheck(BaseModel):
 
     alias: str  # the Alias key the decision is recorded on
     name: str  # the full name the extractor read
-    kind: EntityKind  # what the extractor proposed it is
-    status: Literal["to_check", "resolved", "not_an_entity"]
-    entity: EntityRef | None  # what it resolves to
+    kind: PartyKind  # what the extractor proposed it is
+    status: NameStatus
+    resolved: PartyRef | None  # what it resolves to
     review: NameReview | None  # the decision in force
     sources: list[NameSource]  # every current fact naming it, by filing and page
-    candidates: list[EntityRef] = []  # the entities it most likely means, for "Same as"
+    candidates: list[PartyRef] = []  # the parties it most likely means, for "Same as"
 
 
 class Sentence(BaseModel):
@@ -445,6 +445,8 @@ class FactRow(BaseModel):
     sources: list[StatedFact]  # every fact stating the shown value at its date, the shown first
     others: list[list[StatedFact]]  # each other value at that date, its facts
     conflict: bool
+    # A person kept a value at an earlier date, which this later value replaces.
+    kept_earlier: bool = False
 
 
 class FactSection(BaseModel):

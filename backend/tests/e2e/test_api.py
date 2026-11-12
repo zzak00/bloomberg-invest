@@ -20,7 +20,7 @@ from bloomberg_invest.domain.chunking import Block, ChunkDraft
 from bloomberg_invest.domain.extraction import SourceParagraph, page_sources
 from bloomberg_invest.domain.facts import FactKind
 from bloomberg_invest.domain.facts import drafts as fact_drafts
-from bloomberg_invest.domain.model import RunStep
+from bloomberg_invest.domain.model import DocType, RunStep
 from bloomberg_invest.domain.prices import CASABLANCA, XCAS, Close, ListedShare
 from bloomberg_invest.entrypoints import cli
 from bloomberg_invest.entrypoints import prices as prices_entrypoint
@@ -162,7 +162,8 @@ def test_openapi_declares_the_contract(client):
         "/api/facts/{fact_id}/reviews",
         "/api/names",
         "/api/names/{key}/reviews",
-        "/api/entities",
+        "/api/parties",
+        "/api/rejected-facts",
     }
     schemas = spec["components"]["schemas"]
     assert {
@@ -851,22 +852,22 @@ def test_a_company_s_facts_are_listed_by_section_whether_their_names_are_known_o
     assert (rows["45"]["why"], rows["45"]["conflict"]) == ("latest", False)
     # A holder no rule linked is shown as the filing names it, and waits in CHECKS Names.
     [holder, _] = rows["53"]["shown"]["parties"]
-    assert (holder["name"], holder["entity"]) == ("Société Alpha", None)
+    assert (holder["name"], holder["resolved"]) == ("Société Alpha", None)
     assert facts["unlinked"] == 0
     names = client.get("/api/names").json()
     assert [(n["alias"], n["status"]) for n in names] == [
         ("itissalat al maghrib", "to_check"),
         ("societe alpha", "to_check"),
     ]
-    # No known name shares a word with it: the person picks among every entity.
+    # No known name shares a word with it: the person picks among every Organisation and Person.
     assert names[0]["candidates"] == []
-    assert [e["name"] for e in client.get("/api/entities").json()] == ["Maroc Telecom"]
+    assert [e["name"] for e in client.get("/api/parties").json()] == ["Maroc Telecom"]
 
 
 def test_resolving_a_name_puts_its_facts_in_the_dossier(client, with_facts):
-    [issuer] = [e["id"] for e in client.get("/api/entities").json()]
+    [issuer] = [e["id"] for e in client.get("/api/parties").json()]
     answer = client.post(
-        "/api/names/itissalat al maghrib/reviews", json={"verdict": "same_as", "entity_id": issuer}
+        "/api/names/itissalat al maghrib/reviews", json={"verdict": "same_as", "party_id": issuer}
     )
     assert answer.status_code == 201
     assert [n["status"] for n in answer.json()] == ["to_check", "resolved"]
@@ -884,7 +885,7 @@ def test_resolving_a_name_puts_its_facts_in_the_dossier(client, with_facts):
     [holder, _] = next(
         r for r in facts["sections"][0]["rows"] if r["shown"]["values"]["percent"] == "53"
     )["shown"]["parties"]
-    assert (holder["entity"]["name"], holder["entity"]["kind"]) == ("Société Alpha", "holding")
+    assert (holder["resolved"]["name"], holder["resolved"]["kind"]) == ("Société Alpha", "holding")
 
 
 def test_a_name_decision_that_does_not_hold_together_is_refused(client, with_facts):
@@ -892,12 +893,11 @@ def test_a_name_decision_that_does_not_hold_together_is_refused(client, with_fac
         client.post("/api/names/societe alpha/reviews", json={"verdict": "new"}).status_code == 409
     )
     missing = client.post(
-        "/api/names/societe alpha/reviews", json={"verdict": "same_as", "entity_id": "nobody"}
+        "/api/names/societe alpha/reviews", json={"verdict": "same_as", "party_id": "nobody"}
     )
     assert missing.status_code == 404
     assert (
-        client.post("/api/names/nobody/reviews", json={"verdict": "not_an_entity"}).status_code
-        == 404
+        client.post("/api/names/nobody/reviews", json={"verdict": "not_a_party"}).status_code == 404
     )
 
 
@@ -956,3 +956,51 @@ def test_undoing_a_value_nobody_kept_is_refused(client, with_facts):
     answer = client.post(f"/api/facts/{row['shown']['id']}/reviews", json={"verdict": "reopened"})
     assert answer.status_code == 409
     assert client.post("/api/facts/nope/reviews", json={"verdict": "accepted"}).status_code == 404
+
+
+def issuer_page(store, meta, parsed) -> str:
+    """The issuer's page on the exchange's site: a second filing of the same company."""
+    page_meta = meta.model_copy(update={"doc_type": DocType.issuer_page})
+    two_pages = parsed.model_copy(update={"pages": parsed.pages[:2], "sections": []})
+    return store.record_parse(page_meta, two_pages, make_run(2), "e" * 64)
+
+
+def test_two_filings_disagreeing_show_the_annual_report_s_value_and_both(
+    client, store, meta, parsed, with_facts
+):
+    """#19 R8: at one date, an annual report's value over an issuer page's; both stay visible."""
+    other = issuer_page(store, meta, parsed)
+    record_facts(store, other, [holding("Société Alpha", "54", "Société Alpha : 54%")], minute=5)
+    link_names(other, store)
+    rows = client.get("/api/companies/MA0000011488/facts").json()["sections"][0]["rows"]
+    alpha = [r for r in rows if r["shown"]["parties"][0]["name"] == "Société Alpha"]
+    [row] = alpha
+    assert (row["shown"]["values"]["percent"], row["why"], row["conflict"]) == (
+        "53",
+        "annual_report",
+        True,
+    )
+    [[page_value]] = row["others"]
+    assert (page_value["values"]["percent"], page_value["document"]["doc_type"]) == (
+        "54",
+        "issuer_page",
+    )
+
+
+def test_two_filings_agreeing_are_one_value_stated_twice(client, store, meta, parsed, with_facts):
+    other = issuer_page(store, meta, parsed)
+    record_facts(store, other, [holding("Société Alpha", "53,0", "Société Alpha : 53%")], minute=5)
+    rows = client.get("/api/companies/MA0000011488/facts").json()["sections"][0]["rows"]
+    [row] = [r for r in rows if r["shown"]["parties"][0]["name"] == "Société Alpha"]
+    assert (row["conflict"], len(row["sources"])) == (False, 2)
+
+
+def test_rejected_facts_are_listed_with_why(client, store, document_id):
+    record_facts(store, document_id, [holding("Société Alpha", "55", "Société Alpha : 53%")])
+    [rejected] = client.get("/api/rejected-facts?isin=MA0000011488").json()
+    assert (rejected["reason"], rejected["values"]["percent"], rejected["page"]) == (
+        "a number it states is not in its quote",
+        "55",
+        2,
+    )
+    assert client.get("/api/companies/MA0000011488/facts").json()["sections"] == []

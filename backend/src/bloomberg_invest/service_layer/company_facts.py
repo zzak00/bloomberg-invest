@@ -2,8 +2,10 @@
 details, showing the value in force (#19 R8), and the fact inspector with a Conflict's sides."""
 
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
+from types import MappingProxyType
 
 from bloomberg_invest.adapters.store import GraphStore
 from bloomberg_invest.domain.facts import (
@@ -26,22 +28,34 @@ from bloomberg_invest.views import (
     FactSection,
     FactSide,
     Party,
+    RejectedFact,
     Review,
     Sentence,
     StatedFact,
 )
 
-# The dossier's sections, in its order: (key, title, kind, the roles the company may play).
+
+@dataclass(frozen=True)
+class Section:
+    """A dossier section: the kind it lists and the roles the company plays in its rows."""
+
+    key: str
+    title: str
+    kind: FactKind
+    roles: tuple[str, ...]
+
+
+# The dossier's sections, in its order. Auditors list both mandates and opinions.
 SECTIONS = [
-    ("ownership", "Ownership", FactKind.shareholding, ("held",)),
-    ("holdings", "Holdings", FactKind.shareholding, ("holder",)),
-    ("subsidiaries", "Subsidiaries", FactKind.consolidation, ("parent",)),
-    ("board", "Board", FactKind.board_seat, ("company",)),
-    ("auditors", "Auditors", FactKind.audit_mandate, ("company",)),
-    ("auditors", "Auditors", FactKind.auditor_opinion, ("company",)),
-    ("dividends", "Dividends", FactKind.dividend, ("company",)),
-    ("listings", "Listings", FactKind.listing, ("company",)),
-    (
+    Section("ownership", "Ownership", FactKind.shareholding, ("held",)),
+    Section("holdings", "Holdings", FactKind.shareholding, ("holder",)),
+    Section("subsidiaries", "Subsidiaries", FactKind.consolidation, ("parent",)),
+    Section("board", "Board", FactKind.board_seat, ("company",)),
+    Section("auditors", "Auditors", FactKind.audit_mandate, ("company",)),
+    Section("auditors", "Auditors", FactKind.auditor_opinion, ("company",)),
+    Section("dividends", "Dividends", FactKind.dividend, ("company",)),
+    Section("listings", "Listings", FactKind.listing, ("company",)),
+    Section(
         "related_parties",
         "Related-party agreements",
         FactKind.related_party_agreement,
@@ -51,8 +65,8 @@ SECTIONS = [
 
 
 def identity(party: Party) -> str:
-    """Who a party is for grouping: its entity, or its name until a person resolves it."""
-    return party.entity.id if party.entity is not None else f"alias:{party.alias}"
+    """Who a party is for grouping: what it resolves to, or its name until a person resolves it."""
+    return party.resolved.id if party.resolved is not None else f"alias:{party.alias}"
 
 
 def stated(fact: StatedFact) -> Stated:
@@ -62,7 +76,7 @@ def stated(fact: StatedFact) -> Stated:
         id=fact.id,
         kind=fact.kind,
         parties=tuple((p.role, identity(p)) for p in fact.parties),
-        values=fact.values,
+        values=MappingProxyType(fact.values),
         scale=fact.scale,
         when=when,
         annual=fact.document.doc_type == DocType.annual_report,
@@ -101,12 +115,12 @@ def company_facts(isin: str, store: GraphStore) -> CompanyFacts | None:
     placed_keys = set()
     for row, by_id in rows(facts):
         fact = by_id[row.fact.id]
-        for key, title, kind, roles in SECTIONS:
-            if fact.kind != kind:
+        for section in SECTIONS:
+            if fact.kind != section.kind:
                 continue
-            if any(p.role in roles and _is(p, isin) for p in fact.parties):
-                placed[key].append(_row(row, by_id))
-                titles[key] = title
+            if any(p.role in section.roles and _is(p, isin) for p in fact.parties):
+                placed[section.key].append(_row(row, by_id))
+                titles[section.key] = section.title
                 placed_keys.add(row_key(row.fact))
                 break
     unlinked = sum(
@@ -114,11 +128,11 @@ def company_facts(isin: str, store: GraphStore) -> CompanyFacts | None:
         for f in facts
         if f.document.issuer.isin == isin
         and row_key(stated(f)) not in placed_keys
-        and any(p.entity is None and not p.not_an_entity for p in f.parties)
+        and any(p.resolved is None and not p.not_a_party for p in f.parties)
     )
     sections = [
         FactSection(key=key, title=titles[key], rows=sorted(placed[key], key=_order))
-        for key in dict.fromkeys(k for k, *_ in SECTIONS)
+        for key in dict.fromkeys(s.key for s in SECTIONS)
         if placed[key]
     ]
     return CompanyFacts(
@@ -129,7 +143,7 @@ def company_facts(isin: str, store: GraphStore) -> CompanyFacts | None:
 
 
 def _is(party: Party, isin: str) -> bool:
-    return party.entity is not None and party.entity.isin == isin
+    return party.resolved is not None and party.resolved.isin == isin
 
 
 def _order(row: FactRow) -> tuple:
@@ -148,7 +162,15 @@ def _row(row: Shown, by_id: dict[str, StatedFact]) -> FactRow:
         sources=[by_id[f.id] for f in row.agreeing],
         others=[[by_id[f.id] for f in group] for group in row.others],
         conflict=row.conflict,
+        kept_earlier=row.kept_earlier,
     )
+
+
+def rejected_facts(store: GraphStore, isin: str | None = None) -> list[RejectedFact]:
+    """The facts the check refused (D2), of one issuer's filings or every one, by page: kept
+    with the reason, never in the dossier."""
+    _, rejected = store.facts(isin)
+    return sorted(rejected, key=lambda r: (r.document.id, r.page, r.kind, r.id))
 
 
 def fact_detail(fact_id: str, store: GraphStore) -> FactDetail | None:
@@ -202,7 +224,7 @@ def _name(fact: StatedFact, role: str) -> str:
     party = next((p for p in fact.parties if p.role == role), None)
     if party is None:
         return ""
-    return party.entity.name if party.entity is not None else party.name
+    return party.resolved.name if party.resolved is not None else party.name
 
 
 def _percent(value: object) -> str:
@@ -215,6 +237,10 @@ def _percent(value: object) -> str:
 def _amount(fact: StatedFact) -> str:
     unit = fact.values.get("unit") or ""
     return f"{fact.values.get('amount')} {unit}".strip()
+
+
+def _scope(values: Mapping[str, object]) -> str:
+    return "consolidated" if values.get("basis_scope") == "consolidated" else "company-only"
 
 
 BODIES = {
@@ -246,7 +272,7 @@ def sentence(fact: StatedFact) -> Sentence:
                 after=f" of {name('company')}'s {BODIES[v.get('body') or 'board']}",
             )
         case FactKind.audit_mandate:
-            scope = "consolidated" if v.get("basis_scope") == "consolidated" else "company-only"
+            scope = _scope(v)
             return Sentence(
                 before="",
                 value=name("auditor"),
@@ -279,7 +305,7 @@ def sentence(fact: StatedFact) -> Sentence:
                 after=f"{per} for {year}",
             )
         case FactKind.auditor_opinion:
-            scope = "consolidated" if v.get("basis_scope") == "consolidated" else "company-only"
+            scope = _scope(v)
             emphasis = ", with an emphasis of matter" if v.get("emphasis") else ""
             return Sentence(
                 before=f"The auditors' opinion on {name('company')}'s {scope} accounts for "

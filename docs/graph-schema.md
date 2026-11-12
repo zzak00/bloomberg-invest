@@ -22,7 +22,7 @@ erDiagram
         String key UK
         String name
         String kind
-        Boolean not_an_entity
+        Boolean not_a_party
     }
     Listing {
         String key UK
@@ -169,7 +169,7 @@ erDiagram
         String unit
         Integer scale
         String currency
-        String entity_id
+        String party_id
         String name
         String kind
     }
@@ -237,7 +237,7 @@ Arrows in Cypher run from the first entity to the second, for example `(:Documen
 
 - **Every box is a node label.** A node can carry more than one label.
 - **Passage is a second label, not a node type of its own.** Every Cell node is `:Cell:Passage` and every Span node is `:Span:Passage`. A Passage is what a Fact cites, or a correction: the table cell or the quoted sentence its value comes from. Reads match `(:Fact)-[:CITES]->(:Passage)` so they need not ask which kind it is. No node is a Passage alone.
-- **Relationships carry no properties, but two.** Their type and direction are the whole meaning; anything worth recording, such as when or by which tool, is a property of a node, usually the Run that `PRODUCED_BY` points to. The exceptions belong to one link, not to either node: `NAMES` holds the party's `role` in the fact and how that fact writes it, since an Alias is shared by every fact writing the name; `ALIAS_OF` holds `by`, the id of the link Run or the Review that made it.
+- **Relationships carry no properties, but two.** Their type and direction are the whole meaning; anything worth recording, such as when or by which tool, is a property of a node, usually the Run that `PRODUCED_BY` points to. The exceptions belong to one link, not to either node: `NAMES` holds the party's `role` in the fact and how that fact writes it, since an Alias is shared by every fact writing the name; `ALIAS_OF` holds `by`, the id of the link Run or the Review that made it, and once a later decision replaces it, `superseded = true` and `superseded_by`, that decision's Review id: it is kept, never deleted.
 
 One figure, as stored:
 
@@ -282,7 +282,7 @@ A name as facts write it, shared by every fact and filing writing the same name:
 | `key` | String, unique | the full name normalised: lower case, no accents, punctuation or legal forms (`domain/names.py`); an aggregate's is `<kind>:<its company's key>` | `itissalat al maghrib`; `free_float:maroc telecom` |
 | `name` | String | the full name the extractor read, the first time | `Itissalat Al-Maghrib` |
 | `kind` | String | what the extractor proposed it is | `company` |
-| `not_an_entity` | Boolean, optional | a person said it is no Organisation or Person | `true` |
+| `not_a_party` | Boolean, optional | a person said it is no Organisation or Person | `true` |
 
 ### Document
 
@@ -439,7 +439,7 @@ A shareholding, board seat, audit mandate, listing, consolidation, dividend, aud
 
 ### RejectedFact
 
-A fact of the eight other kinds that failed the check, with the same properties as the Fact it would be (`as_of` stays the LLM's text), its `page`, and its `reason`: `its source id is not on the page`, `its quote is not in its source`, `a party has no name`, `it states nothing`, `a number it states is not one number`, `a number it states is not in its quote`, `its date is not a date`, `its unit names no currency`.
+A fact of the eight other kinds that failed the check, with the same properties as the Fact it would be (`as_of` stays the LLM's text), its `page`, and its `reason`: `its source id is not on the page`, `its quote is not in its source`, `a party has no name`, `it states nothing`, `a number it states is not one number`, `a number it states is not in its quote`, `its date is not a date`, `its number is not in the cell it cites`, `its year is not on its page`, `its unit names no currency`. `GET /api/rejected-facts` lists them.
 
 ### RejectedFigure
 
@@ -458,7 +458,7 @@ Examples:
 
 ### Review
 
-A person's check of figures in CHECKS (#23). One Review `REVIEWS` every figure of one CHECKS row: the Facts of one filing stating one value of a line item and year, or one RejectedFigure. A correction's properties are absent on an acceptance or a reopening. A Review of one Fact of the other kinds keeps its value in a Conflict (`accepted`) or undoes that (`reopened`, D5). A Review of an Alias records what a person decided the name stands for (`same_as` with `entity_id`, `new` with `name` and `kind`, `not_an_entity`, or `reopened`).
+A person's check of figures in CHECKS (#23). One Review `REVIEWS` every figure of one CHECKS row: the Facts of one filing stating one value of a line item and year, or one RejectedFigure. A correction's properties are absent on an acceptance or a reopening. A Review of one Fact of the other kinds keeps its value in a Conflict (`accepted`) or undoes that (`reopened`, D5). A Review of an Alias records what a person decided the name stands for (`same_as` with `party_id`, `new` with `name` and `kind`, `not_a_party`, or `reopened`).
 
 | Property | Type | Meaning | Example |
 | --- | --- | --- | --- |
@@ -553,13 +553,13 @@ A Fact keeps the label map's `line_item` key only; its title and statement are r
 
 ## Where facts and names live
 
-The eight other kinds of Fact come from their own Run step, `extract_facts`, with its own prompt (`config/prompts/extract_facts_v1.md`), page by page over every page with text; the figure pass is untouched (#24 D1). A fact is kept when its quote is in its source, its paragraph or its cell's table row, and every number it states is in its quote (D2); it `CITES` that Cell or a Span of its quote, boxed in the PDF's text layer like a figure's.
+The eight other kinds of Fact come from their own Run step, `extract_facts`, with its own prompt (`config/prompts/extract_facts_v1.md`), page by page over every page with text; the figure pass is untouched (#24 D1). A fact is kept when its quote is in its source, its paragraph (or the few after it on the page) or its cell's table row or column; every number it states is in its quote, or for a table in that row or column, its first in the cell it cites; and its year is written on its page, whole or ending a date (`31-déc.-25`) (D2); it `CITES` that Cell or a Span of its quote, boxed in the PDF's text layer like a figure's.
 
-Each party is written twice by the extractor: as the page writes it (`l'Etat`, on `NAMES`) and as the full name it means there (`Royaume du Maroc`), whose key is the Alias's. A `link` Run, after every `extract_facts` Run, links each Alias with no `ALIAS_OF` to the one Organisation or Person whose name, Listing name or resolved Alias has its key; none or several leaves it for CHECKS Names (D3). An aggregate Alias (`free_float:<key>`, `treasury_shares:<key>`) links to its company's Aggregate once the company's name is linked, never through CHECKS. A person's decision is a Review of the Alias; it replaces the Alias's `ALIAS_OF`, and the company's aggregates follow it.
+Each party is written twice by the extractor: as the page writes it (`l'Etat`, on `NAMES`) and as the full name it means there (`Royaume du Maroc`), whose key is the Alias's. A `link` Run, after every `extract_facts` Run, links each Alias with no `ALIAS_OF` to the one Organisation or Person whose name, Listing name or resolved Alias has its key; none or several leaves it for CHECKS Names (D3). An aggregate Alias (`free_float:<key>`, `treasury_shares:<key>`) links to its company's Aggregate once the company's name is linked, never through CHECKS. A person's decision is a Review of the Alias; it supersedes the Alias's current `ALIAS_OF`, which is kept, and the company's aggregates follow it. Reads follow current links only.
 
 An `extract_facts` Run supersedes earlier ones' Facts, RejectedFacts and Spans, never an Alias, an Organisation or Person, or a Review. A new Fact keeps the Review of the previous Run's Fact that read the same kind, names, values and source (#19 R4).
 
-The dossier groups Facts by kind, parties (each one's entity, or its Alias until resolved) and details (the rights, body, scope, measure or nature), one row per fiscal year for the fiscal-year kinds. A row shows a value a person kept; else the latest date's; at one date an annual report's over an issuer page's; else the first recorded (#19 R8). Values at the shown date that disagree, numbers beyond the precision they are written to, are a Conflict, and both stay visible.
+The dossier groups Facts by kind, parties (what each one resolves to, or its Alias until resolved) and details (the rights, body, scope, measure or nature), one row per fiscal year for the fiscal-year kinds. A row shows the latest date's value: one a person kept at that date; else an annual report's over an issuer page's; else the first recorded, and among values one Run recorded at once, the first in the filing's reading order (#19 R8). A value kept at an earlier date gives way to a later date's, and the row says so (`kept_earlier`). Values at the shown date that disagree, numbers beyond the precision they are written to, are a Conflict, and both stay visible.
 
 ## Where checks live
 

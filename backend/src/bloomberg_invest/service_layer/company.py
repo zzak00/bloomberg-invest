@@ -9,9 +9,11 @@ from bloomberg_invest.domain.figures import STANDARD, Scope, period
 from bloomberg_invest.domain.kpis import KpiRules
 from bloomberg_invest.domain.label_map import LabelMap
 from bloomberg_invest.domain.review import (
-    check_of,
+    across_filings,
     correction_in_force,
+    fact_key,
     needs_check,
+    value_check,
 )
 from bloomberg_invest.service_layer.prices import listing_and_last_close
 from bloomberg_invest.views import (
@@ -63,7 +65,7 @@ def figure_detail(
     if shown is None:
         return None
     figure = flagged(shown, rules)
-    if figure.needs_review and _covered(figure, store, label_map):
+    if figure.needs_review and _checked_elsewhere(figure, store, label_map):
         figure = figure.model_copy(update={"needs_review": False})
     item = label_map.items.get(figure.line_item)
     return FigureDetail(
@@ -71,24 +73,17 @@ def figure_detail(
     )
 
 
-def _covered(figure: Figure, store: GraphStore, label_map: LabelMap) -> bool:
+def _checked_elsewhere(figure: Figure, store: GraphStore, label_map: LabelMap) -> bool:
     """Whether another filing's check covers the figure's value (D4)."""
     facts, rejected = store.figures(figure.document.issuer.isin)
+    key = across_filings(fact_key(figure))
     same = [
         f
         for f in (as_shown(f, label_map) for f in [*facts, *rejected])
-        if f is not None
-        and (f.line_item, f.fiscal_year, f.basis_scope, f.breakdown, _currency(f))
-        == (
-            figure.line_item,
-            figure.fiscal_year,
-            figure.basis_scope,
-            figure.breakdown,
-            _currency(figure),
-        )
+        if f is not None and across_filings(fact_key(f)) == key
     ]
     group = next((g for g in agreeing(same) if any(f.id == figure.id for f in g)), [])
-    return checked(group)
+    return value_check(group) is not None
 
 
 def as_shown(figure: Figure | RejectedFigure, label_map: LabelMap) -> Figure | None:
@@ -194,20 +189,20 @@ def _row(
     (unit, scale), _ = Counter((f.unit, f.scale) for f in figures).most_common(1)[0]
 
     # A value is checked once every figure of one filing stating it is, as in CHECKS
-    # (`check_of`, D4). A checked value is shown before the others, and a checked figure for its
+    # (`value_check`, D4). A checked value is shown before the others, and a checked figure for its
     # value (#19 R8); a value not yet checked stays flagged whichever figure shows it.
 
     def value(group: list[Figure]) -> FigureValue:
         sources = sorted(
             group, key=lambda f: (f.review is None, (f.unit, f.scale) != (unit, scale), f.page)
         )
-        needed = needs_check(group[0], rules) and not checked(group)
+        needed = needs_check(group[0], rules) and value_check(group) is None
         return FigureValue(
             shown=sources[0].model_copy(update={"needs_review": needed}), sources=sources
         )
 
     def values(stated: list[Figure]) -> list[FigureValue]:
-        return [value(g) for g in sorted(agreeing(stated), key=lambda g: not checked(g))]
+        return [value(g) for g in sorted(agreeing(stated), key=lambda g: value_check(g) is None)]
 
     return FigureRow(
         line_item=line_item,
@@ -221,15 +216,6 @@ def _row(
             for year in years
             if (stated := [f for f in figures if f.fiscal_year == year])
         ],
-    )
-
-
-def checked(group: Sequence[Figure]) -> bool:
-    """Whether a value is checked: every figure stating it in one of the filings is (D4: one
-    filing's check covers the value)."""
-    documents = {f.document.id for f in group}
-    return any(
-        check_of([f.review for f in group if f.document.id == d]) is not None for d in documents
     )
 
 

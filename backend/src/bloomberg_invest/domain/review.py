@@ -3,13 +3,13 @@ read, and when a check carries over to a re-extracted figure."""
 
 import re
 from collections.abc import Hashable, Iterable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from enum import StrEnum
 from typing import Protocol
 
 from bloomberg_invest.domain.chunking import Box
-from bloomberg_invest.domain.dossier import Stated, agreeing
+from bloomberg_invest.domain.dossier import Stated, agreeing, same_value
 from bloomberg_invest.domain.figures import (
     Scope,
     parse_unit,
@@ -140,6 +140,35 @@ def check_of[C: Dated](checks: Sequence[C | None]) -> C | None:
     return max(done, key=lambda c: c.reviewed_at)
 
 
+class Filed(Protocol):
+    """A figure as D4 reads it: the filing stating it, and its check in force."""
+
+    @property
+    def document(self) -> "Identified": ...
+    @property
+    def review(self) -> Dated | None: ...
+
+
+def value_check[F: Filed](figures: Sequence[F]) -> Dated | None:
+    """The check in force on a value from the figures stating it, of every filing (#24 D4): one
+    filing's check covers the value once every figure of that filing stating it is checked
+    (`check_of`); the latest such check."""
+    documents = dict.fromkeys(f.document.id for f in figures)
+    checks = [check_of([f.review for f in figures if f.document.id == d]) for d in documents]
+    return max((c for c in checks if c is not None), key=lambda c: c.reviewed_at, default=None)
+
+
+def covering[C](
+    stated: Stated, document_id: str, checked: Iterable[tuple[str, Stated, C]]
+) -> C | None:
+    """The check of another filing whose value in force this filing's figure states (#24 D4),
+    given each checked value with its filing's id and its check; None when there is none."""
+    return next(
+        (check for d, value, check in checked if d != document_id and same_value(value, stated)),
+        None,
+    )
+
+
 _STATUS_OF = {Verdict.accepted: CheckStatus.accepted, Verdict.corrected: CheckStatus.corrected}
 
 
@@ -185,6 +214,11 @@ class CheckKey:
     basis_scope: Scope | None
     breakdown: str
     currency: str  # a Fact's currency, or its unit when it has none (`%`, `shares`)
+
+
+def across_filings(key: CheckKey) -> CheckKey:
+    """The key of a value as every filing states it: D4 compares values across filings."""
+    return replace(key, document_id="")
 
 
 def fact_key(fact: KeyedFact) -> CheckKey:

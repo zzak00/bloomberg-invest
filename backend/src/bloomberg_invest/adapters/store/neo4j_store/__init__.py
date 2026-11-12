@@ -30,7 +30,9 @@ from bloomberg_invest.adapters.store.neo4j_store._facts import (
 )
 from bloomberg_invest.adapters.store.neo4j_store._names import (
     CURRENT_FACTS,
+    CURRENT_LINK,
     KNOWN,
+    UNLINKED,
     _known,
     _name_check,
     _record_links,
@@ -66,7 +68,7 @@ from bloomberg_invest.domain.model import (
     ParsedDocument,
     RunInfo,
 )
-from bloomberg_invest.domain.names import NameReviewDraft
+from bloomberg_invest.domain.names import AggregateName, NameReviewDraft
 from bloomberg_invest.domain.prices import Close, ListedShare, StoredClose
 from bloomberg_invest.domain.review import ReviewDraft
 from bloomberg_invest.views import (
@@ -75,7 +77,7 @@ from bloomberg_invest.views import (
     DocumentDetail,
     DocumentSummary,
     Figure,
-    KnownEntity,
+    KnownParty,
     Listing,
     NameCheck,
     NameToLink,
@@ -295,7 +297,8 @@ class Neo4jStore(GraphStore):
             WITH n WHERE {CURRENT} AND ($ids IS NULL OR n.id IN $ids)
             MATCH (n)-[:ABOUT]->(o:Organisation), (n)-[:FROM_DOCUMENT]->(d:Document)
             WITH n, o, d WHERE $isin IS NULL OR o.isin = $isin OR EXISTS {{
-                (n)-[:NAMES]->(:Alias)-[:ALIAS_OF]->(:Organisation {{isin: $isin}})
+                (n)-[:NAMES]->(:Alias)-[link:ALIAS_OF]->(:Organisation {{isin: $isin}})
+                WHERE {CURRENT_LINK}
             }}
             OPTIONAL MATCH (n)-[:CITES]->(passage:Passage)
             {LATEST_REVIEW}
@@ -336,30 +339,44 @@ class Neo4jStore(GraphStore):
             MATCH (d:Document {{id: $id}})
             {CURRENT_FACTS}
             MATCH (n)-[:NAMES]->(a:Alias)
-            WHERE NOT a.key CONTAINS ':' AND NOT coalesce(a.not_an_entity, false)
-              AND NOT EXISTS {{ (a)-[:ALIAS_OF]->() }}
+            WHERE NOT coalesce(a.not_a_party, false) AND {UNLINKED}
             RETURN DISTINCT a.key AS key, a.name AS name, a.kind AS kind ORDER BY key
             """,
             id=document_id,
         )
         return [NameToLink(**r.data()) for r in records]
 
-    def known_entities(self) -> list[KnownEntity]:
+    def known_parties(self) -> list[KnownParty]:
         records, _, _ = self._driver.execute_query(KNOWN)
-        return [KnownEntity(**k) for k in _known(records)]
+        return [KnownParty(**k) for k in _known(records)]
 
     def record_links(
-        self, document_id: str, links: list[tuple[str, str]], run: RunInfo
+        self,
+        document_id: str,
+        links: list[tuple[str, str]],
+        aggregates: list[tuple[AggregateName, str]],
+        run: RunInfo,
     ) -> tuple[str, int]:
         with self._driver.session() as session:
-            return session.execute_write(_record_links, document_id, links, run)
+            return session.execute_write(_record_links, document_id, links, aggregates, run)
+
+    def resolved_names(self, keys: list[str]) -> dict[str, str]:
+        records, _, _ = self._driver.execute_query(
+            f"""
+            MATCH (a:Alias)-[link:ALIAS_OF]->(o:Organisation)
+            WHERE a.key IN $keys AND {CURRENT_LINK}
+            RETURN a.key AS key, o.id AS id
+            """,
+            keys=keys,
+        )
+        return {r["key"]: r["id"] for r in records}
 
     def names_to_check(self) -> list[NameCheck]:
         records, _, _ = self._driver.execute_query(
             f"""
             MATCH (n:Fact)-[names:NAMES]->(a:Alias)
-            WHERE n.kind IN $kinds AND {CURRENT} AND NOT a.key CONTAINS ':'
-            OPTIONAL MATCH (a)-[link:ALIAS_OF]->(e)
+            WHERE n.kind IN $kinds AND {CURRENT}
+            OPTIONAL MATCH (a)-[link:ALIAS_OF]->(e) WHERE {CURRENT_LINK}
             WITH n, names, a, e, link
             WHERE e IS NULL OR EXISTS {{ (:Review {{id: link.by}}) }}
             MATCH (n)-[:FROM_DOCUMENT]->(d:Document)-[:ISSUED_BY]->(o:Organisation)
@@ -378,9 +395,11 @@ class Neo4jStore(GraphStore):
         )
         return [_name_check(r) for r in records]
 
-    def record_name_review(self, key: str, review: NameReviewDraft) -> str:
+    def record_name_review(
+        self, key: str, review: NameReviewDraft, aggregates: list[AggregateName]
+    ) -> str:
         with self._driver.session() as session:
-            return session.execute_write(_record_name_review, key, review)
+            return session.execute_write(_record_name_review, key, review, aggregates)
 
     def search_vector(self, vector: list[float], limit: int) -> list[str]:
         records, _, _ = self._driver.execute_query(

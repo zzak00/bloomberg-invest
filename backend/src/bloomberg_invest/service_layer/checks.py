@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 
 from bloomberg_invest.adapters.files import DocumentFiles, Occurrence
 from bloomberg_invest.adapters.store import GraphStore
-from bloomberg_invest.domain.dossier import agreeing, same_value
+from bloomberg_invest.domain.dossier import agreeing
 from bloomberg_invest.domain.figures import parse_value
 from bloomberg_invest.domain.kpis import KpiRules
 from bloomberg_invest.domain.label_map import LabelMap
@@ -21,9 +21,11 @@ from bloomberg_invest.domain.review import (
     QuotedSource,
     ReviewDraft,
     Verdict,
+    across_filings,
     around,
     check_of,
     correction,
+    covering,
     fact_key,
     fact_status,
     needs_check,
@@ -135,55 +137,28 @@ def queue_rows(
 
 
 def _covered(rows: list[CheckRow]) -> list[CheckRow]:
-    """D4: one filing's check covers the value. A row no one checked takes the check of another
-    filing's row of the same line item, year, basis and currency whose value in force it states,
-    and leaves the rows to check; a row stating another value stays."""
-    done = [r for r in rows if r.status in (CheckStatus.accepted, CheckStatus.corrected)]
-
-    def key(row: CheckRow) -> tuple[object, ...]:
-        return (
-            row.document.issuer.isin,
-            row.line_item,
-            row.fiscal_year,
-            row.basis_scope,
-            row.breakdown,
-            row.currency or row.unit,
-        )
-
+    """D4: a row no one checked takes the check of another filing's row whose value in force it
+    states, of the same line item, year, basis and currency, and leaves the rows to check."""
+    done: dict[CheckKey, list[tuple[str, CheckRow | Correction, CheckRow]]] = defaultdict(list)
+    for row in rows:
+        if row.rejected is None and row.status in (CheckStatus.accepted, CheckStatus.corrected):
+            value = row.review.correction if row.review and row.review.correction else row
+            done[across_filings(fact_key(row))].append((row.document.id, value, row))
     covered = []
     for row in rows:
         source = None
         if row.status == CheckStatus.to_check:
-            source = next(
-                (
-                    d
-                    for d in done
-                    if d.document.id != row.document.id
-                    and key(d) == key(row)
-                    and same_value(_in_force(d), row)
-                ),
-                None,
+            source = covering(row, row.document.id, done[across_filings(fact_key(row))])
+        if source is not None:
+            row = row.model_copy(
+                update={
+                    "review": source.review,
+                    "status": source.status,
+                    "checked_in": source.document,
+                }
             )
-        if source is None:
-            covered.append(row)
-        else:
-            covered.append(
-                row.model_copy(
-                    update={
-                        "review": source.review,
-                        "status": source.status,
-                        "checked_in": source.document,
-                    }
-                )
-            )
+        covered.append(row)
     return covered
-
-
-def _in_force(row: CheckRow) -> CheckRow | Correction:
-    """The value a done row's check gives: its correction's, or what it read."""
-    if row.review is not None and row.review.correction is not None:
-        return row.review.correction
-    return row
 
 
 def _place(row: CheckRow) -> tuple[float, float]:

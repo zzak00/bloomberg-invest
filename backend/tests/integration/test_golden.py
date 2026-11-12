@@ -399,6 +399,14 @@ def test_golden_facts_and_names_are_extracted_and_linked(golden):
         if (resolve(p.name) or resolve(p.written)) is None and ":" not in p.alias
     }
     to_check = [n for n in store.names_to_check() if n.status == "to_check"]
+    # Names the link Run resolved: each to the golden entity its name means, never another.
+    linked = [
+        (party, resolve(party.name) or resolve(party.written), resolve(party.resolved.name))
+        for f in facts
+        for party in f.parties
+        if party.resolved is not None and ":" not in party.alias
+    ]
+    wrong = sorted({(p.written, p.resolved.name) for p, said, got in linked if said != got})
 
     print(
         f"\n{ingested.facts.pages} pages, {ingested.facts.facts} facts, "
@@ -417,13 +425,17 @@ def test_golden_facts_and_names_are_extracted_and_linked(golden):
         f"entities named: {len(named)} of {len(entities)}; not named: "
         f"{', '.join(e.id for e in entities if e.id not in named)}"
     )
-    print(f"names no golden entity has: {len(unknown)}; names in CHECKS: {len(to_check)}")
+    print(
+        f"names no golden entity has: {len(unknown)}; names in CHECKS: {len(to_check)}; "
+        f"names linked: {len({p.alias for p, _, _ in linked})}, wrongly: {wrong}"
+    )
     for reason, n in Counter(r.reason for r in rejected).items():
         print(f"rejected, {reason}: {n}")
 
     for kind, score in scores.items():
         assert len(score.matched) >= FLOORS[kind], (kind, score)
     assert len(named) >= ENTITY_FLOOR
+    assert wrong == []
     # Every Fact cites a Passage on a page of the report, with its time and when it was recorded.
     assert all(f.passage is not None and 1 <= f.page <= 90 for f in facts)
     assert all((f.as_of or f.fiscal_year) and f.recorded_at for f in facts)

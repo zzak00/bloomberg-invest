@@ -24,7 +24,7 @@ _NOT_WORD = re.compile(r"[^a-z0-9]+")
 _SHORT_FORM = re.compile(r"\([^)]*\)|«[^»]*»")
 
 
-class EntityKind(StrEnum):
+class PartyKind(StrEnum):
     """What a name stands for. Organisation kinds follow the ontology (AGENTS.md); the two
     aggregates stand for a company's own holders, never for an Organisation of their own."""
 
@@ -41,28 +41,31 @@ class EntityKind(StrEnum):
 
     @property
     def aggregate(self) -> bool:
-        return self in (EntityKind.free_float, EntityKind.treasury_shares)
+        return self in (PartyKind.free_float, PartyKind.treasury_shares)
 
 
 AGGREGATE_NAMES = {
-    EntityKind.free_float: "Free float",
-    EntityKind.treasury_shares: "Treasury shares",
+    PartyKind.free_float: "Free float",
+    PartyKind.treasury_shares: "Treasury shares",
 }
+
+
+def fold(text: str) -> str:
+    """Text in lower case without accents: `Télécom` is `telecom`."""
+    text = unicodedata.normalize("NFKD", text)
+    return "".join(c for c in text if not unicodedata.combining(c)).lower()
 
 
 def name_key(name: str) -> str:
     """The key two names of the same Organisation or Person share: `Maroc Telecom SA` and
     `MAROC TÉLÉCOM` are `maroc telecom`. Empty for a name of only punctuation or legal forms."""
-    text = _SHORT_FORM.sub(" ", name)
-    text = unicodedata.normalize("NFKD", text)
-    text = "".join(c for c in text if not unicodedata.combining(c)).lower()
-    text = _NOT_WORD.sub(" ", text)
+    text = _NOT_WORD.sub(" ", fold(_SHORT_FORM.sub(" ", name)))
     # `S.A` became `s a`: drop legal forms after punctuation is gone, then tidy the spaces.
     text = _LEGAL.sub(" ", f" {text} ")
     return " ".join(text.split())
 
 
-def alias_key(name: str, kind: EntityKind, held_key: str = "") -> str:
+def alias_key(name: str, kind: PartyKind, held_key: str = "") -> str:
     """The key an Alias is stored and matched by. An aggregate is one per company, so its key
     names the company it belongs to: every filing's `Autres` of Maroc Telecom is one Alias, and
     another company's is another."""
@@ -104,7 +107,7 @@ class NameVerdict(StrEnum):
 
     same_as = "same_as"  # an Organisation or Person already known
     new = "new"  # one created for it
-    not_an_entity = "not_an_entity"  # no Organisation or Person: a group of people, a brand...
+    not_a_party = "not_a_party"  # no Organisation or Person: a group of people, a brand...
     reopened = "reopened"  # undoes the decision before; the name goes back to CHECKS
 
 
@@ -113,14 +116,53 @@ class NameReviewDraft:
     verdict: NameVerdict
     reviewer: str
     reviewed_at: datetime
-    entity_id: str | None = None  # same_as
+    party_id: str | None = None  # same_as
     name: str | None = None  # new
-    kind: EntityKind | None = None  # new
+    kind: PartyKind | None = None  # new
 
     def __post_init__(self) -> None:
-        if (self.verdict == NameVerdict.same_as) != (self.entity_id is not None):
-            raise ValueError("a name is the same as one entity, named by its id")
+        if (self.verdict == NameVerdict.same_as) != (self.party_id is not None):
+            raise ValueError("a name is the same as one Organisation or Person, named by its id")
         if (self.verdict == NameVerdict.new) != (self.name is not None and self.kind is not None):
-            raise ValueError("a new entity has a name and a kind")
+            raise ValueError("a new Organisation or Person has a name and a kind")
         if self.kind is not None and self.kind.aggregate:
             raise ValueError("an aggregate is never created by hand: one comes with each company")
+
+
+@dataclass(frozen=True)
+class AggregateName:
+    """The Alias a company's free float or treasury shares are named by in every filing."""
+
+    key: str
+    kind: PartyKind
+    name: str
+
+
+def aggregates_of(company_key: str) -> list[AggregateName]:
+    """The aggregate Aliases that belong to the company with this name key."""
+    return [
+        AggregateName(alias_key("", kind, company_key), kind, AGGREGATE_NAMES[kind])
+        for kind in AGGREGATE_NAMES
+    ]
+
+
+def aggregate_of(key: str) -> tuple[PartyKind, str] | None:
+    """For an aggregate Alias key, its kind and its company's name key; None for a name."""
+    kind, sep, company = key.partition(":")
+    if not sep or kind not in AGGREGATE_NAMES:
+        return None
+    return PartyKind(kind), company
+
+
+class NameStatus(StrEnum):
+    """Where a CHECKS Names row stands."""
+
+    to_check = "to_check"
+    resolved = "resolved"
+    not_a_party = "not_a_party"
+
+
+def name_status(resolved: bool, not_a_party: bool) -> NameStatus:
+    if not_a_party:
+        return NameStatus.not_a_party
+    return NameStatus.resolved if resolved else NameStatus.to_check
