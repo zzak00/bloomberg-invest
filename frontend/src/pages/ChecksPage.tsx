@@ -17,6 +17,9 @@ import {
 import { useApi } from "../api/useApi";
 import { capitalised, periodLabel } from "../figures";
 import { DOC_TYPE_LABELS, formatDate } from "../format";
+import { Names, RejectedFacts } from "./ChecksNames";
+
+type Tab = "figures" | "names" | "facts";
 
 type Filter = "open" | "needs_review" | "done" | "all";
 
@@ -45,9 +48,12 @@ const STATUS: Record<CheckStatus, { word: string; tone: string }> = {
   corrected: { word: "Corrected", tone: "ok" },
 };
 
-/** CHECKS (#23): the figures that feed a KPI or screen, for a person to accept or correct. */
+/** CHECKS (#23): the figures that feed a KPI or screen, for a person to accept or correct; the
+ * names no rule linked (#24, S7b); and the facts the check refused. */
 export function ChecksPage() {
   const [params, setParams] = useSearchParams();
+  const tab: Tab =
+    params.get("tab") === "names" ? "names" : params.get("tab") === "facts" ? "facts" : "figures";
   const isin = params.get("company");
   const filter = FILTERS.find((f) => f.id === params.get("status")) ?? OPEN;
   // Rows checked on this visit stay where they were until the filter changes.
@@ -58,15 +64,40 @@ export function ChecksPage() {
     }),
   );
 
-  const choose = (next: { company?: string | null; status?: Filter }) => {
+  const names = useApi("names", () => api.GET("/api/names"));
+  const parties = useApi("parties", () => api.GET("/api/parties"));
+  const rejected = useApi(`rejected-facts:${isin}`, () =>
+    api.GET("/api/rejected-facts", { params: { query: isin ? { isin } : {} } }),
+  );
+
+  const choose = (next: { company?: string | null; status?: Filter; tab?: Tab }) => {
     const company = next.company === undefined ? isin : next.company;
     const status = next.status ?? filter.id;
+    const shown = next.tab ?? tab;
     setTouched(new Set());
     setParams({
+      ...(shown !== "figures" ? { tab: shown } : {}),
       ...(company ? { company } : {}),
-      ...(status !== "open" ? { status } : {}),
+      ...(status !== "open" && shown === "figures" ? { status } : {}),
     });
   };
+
+  const toCheck = names.state === "ready" ? names.data.filter((n) => n.status === "to_check").length : null;
+  const tabs: { id: Tab; label: string }[] = [
+    {
+      id: "figures",
+      label:
+        queue.state === "ready"
+          ? `FIGURES · ${queue.data.counts.to_check + queue.data.counts.rejected}`
+          : "FIGURES",
+    },
+    { id: "names", label: toCheck === null ? "NAMES" : `NAMES · ${toCheck}` },
+    {
+      id: "facts",
+      label: rejected.state === "ready" ? `REJECTED FACTS · ${rejected.data.length}` : "REJECTED FACTS",
+    },
+  ];
+  const canCheck = queue.state === "ready" && queue.data.reviewer !== null;
 
   return (
     <section className="page checks" aria-labelledby="checks-title">
@@ -76,59 +107,117 @@ export function ChecksPage() {
           <h1 id="checks-title" className="page-title">
             Checks
           </h1>
-          <p className="checks-intro">
-            Each figure that feeds a KPI or a Sharia screen sits next to the source it came from. Accept it,
-            or correct it before it counts.
-          </p>
+          {tab === "figures" && (
+            <p className="checks-intro">
+              Each figure that feeds a KPI or a Sharia screen sits next to the source it came from. Accept it,
+              or correct it before it counts.
+            </p>
+          )}
         </div>
-        {queue.state === "ready" && <Counts queue={queue.data} />}
+        {queue.state === "ready" && tab === "figures" && <Counts queue={queue.data} />}
       </div>
 
-      {queue.state === "loading" && <div className="skeleton checks-skeleton" aria-busy="true" />}
-      {queue.state === "error" && <ApiError title="The checks could not be loaded" message={queue.message} />}
-      {queue.state === "ready" && (
-        <>
-          <Reviewer name={queue.data.reviewer} />
-          <div className="figures-bar">
-            <div role="group" aria-label="Company" className="segmented">
-              <button type="button" aria-pressed={!isin} onClick={() => choose({ company: null })}>
-                ALL COMPANIES
-              </button>
-              {queue.data.companies.map((c) => (
-                <button
-                  key={c.isin}
-                  type="button"
-                  aria-pressed={c.isin === isin}
-                  onClick={() => choose({ company: c.isin })}
-                >
-                  {c.name.toUpperCase()}
-                </button>
-              ))}
-            </div>
-            <div role="group" aria-label="Status" className="segmented">
-              {FILTERS.map((f) => (
-                <button
-                  key={f.id}
-                  type="button"
-                  aria-pressed={f.id === filter.id}
-                  onClick={() => choose({ status: f.id })}
-                >
-                  {f.label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <Groups
-            queue={queue.data}
-            shows={(row) => filter.shows.includes(row.status) || touched.has(rowKey(row))}
-            onChecked={(row) => {
-              setTouched((previous) => new Set(previous).add(rowKey(row)));
-              // In place: the list stays on screen while its counts and statuses refresh.
-              return queue.reload();
-            }}
-          />
-        </>
-      )}
+      <div role="tablist" aria-label="Checks" className="tabs">
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            id={`checks-tab-${t.id}`}
+            aria-selected={tab === t.id}
+            aria-controls={`checks-panel-${t.id}`}
+            onClick={() => choose({ tab: t.id })}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      <div role="tabpanel" id={`checks-panel-${tab}`} aria-labelledby={`checks-tab-${tab}`}>
+        {tab === "names" ? (
+          // The queue says who records checks, so the actions wait for it too.
+        names.state === "loading" || parties.state === "loading" || queue.state === "loading" ? (
+            <div className="skeleton checks-skeleton" aria-busy="true" />
+          ) : names.state === "error" || parties.state === "error" ? (
+            <ApiError
+              title="The names could not be loaded"
+              message={
+                names.state === "error" ? names.message : parties.state === "error" ? parties.message : ""
+              }
+            />
+          ) : (
+            <>
+              {queue.state === "ready" && <Reviewer name={queue.data.reviewer} />}
+              <Names
+                names={names.data}
+                parties={parties.data}
+                canCheck={canCheck}
+                onChecked={async () => {
+                  await Promise.all([names.reload(), parties.reload()]);
+                }}
+              />
+            </>
+          )
+        ) : tab === "facts" ? (
+          rejected.state === "loading" ? (
+            <div className="skeleton checks-skeleton" aria-busy="true" />
+          ) : rejected.state === "error" ? (
+            <ApiError title="The rejected facts could not be loaded" message={rejected.message} />
+          ) : (
+            <RejectedFacts facts={rejected.data} />
+          )
+        ) : (
+          <>
+            {queue.state === "loading" && <div className="skeleton checks-skeleton" aria-busy="true" />}
+            {queue.state === "error" && (
+              <ApiError title="The checks could not be loaded" message={queue.message} />
+            )}
+            {queue.state === "ready" && (
+              <>
+                <Reviewer name={queue.data.reviewer} />
+                <div className="figures-bar">
+                  <div role="group" aria-label="Company" className="segmented">
+                    <button type="button" aria-pressed={!isin} onClick={() => choose({ company: null })}>
+                      ALL COMPANIES
+                    </button>
+                    {queue.data.companies.map((c) => (
+                      <button
+                        key={c.isin}
+                        type="button"
+                        aria-pressed={c.isin === isin}
+                        onClick={() => choose({ company: c.isin })}
+                      >
+                        {c.name.toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                  <div role="group" aria-label="Status" className="segmented">
+                    {FILTERS.map((f) => (
+                      <button
+                        key={f.id}
+                        type="button"
+                        aria-pressed={f.id === filter.id}
+                        onClick={() => choose({ status: f.id })}
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <Groups
+                  queue={queue.data}
+                  shows={(row) => filter.shows.includes(row.status) || touched.has(rowKey(row))}
+                  onChecked={(row) => {
+                    setTouched((previous) => new Set(previous).add(rowKey(row)));
+                    // In place: the list stays on screen while its counts and statuses refresh.
+                    return queue.reload();
+                  }}
+                />
+              </>
+            )}
+          </>
+        )}
+      </div>
     </section>
   );
 }

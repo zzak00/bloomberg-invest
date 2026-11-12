@@ -740,6 +740,7 @@ export interface components {
          */
         FactSide: {
             fact: components["schemas"]["StatedFact"];
+            sentence: components["schemas"]["Sentence"];
             /** Sources */
             sources: number;
             /** In Use */

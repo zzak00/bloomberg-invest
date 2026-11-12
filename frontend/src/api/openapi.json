@@ -2027,6 +2027,9 @@
           "fact": {
             "$ref": "#/components/schemas/StatedFact"
           },
+          "sentence": {
+            "$ref": "#/components/schemas/Sentence"
+          },
           "sources": {
             "type": "integer",
             "title": "Sources"
@@ -2039,6 +2042,7 @@
         "type": "object",
         "required": [
           "fact",
+          "sentence",
           "sources",
           "in_use"
         ],

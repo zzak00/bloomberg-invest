@@ -5,7 +5,7 @@ A company's figures, extracted from its filings and checked against their cells 
 ## Sub-features
 
 - Under the name, the company's listing and last close (#26): its ticker chip and sector beside the ISIN, then `CLOSE 91,70 MAD +2,1 %` (the change from the session before), `10/11/2026 · Bourse de Casablanca · raw close, not adjusted for dividends`, `History from …` and a three-year price line. A company with no listing shows none; a listing with no closes yet says to run `bloomberg prices backfill`.
-- `FIGURES · n` and `FILINGS · n` tabs; the dossier opens on FIGURES.
+- `FIGURES · n`, `FACTS · n` and `FILINGS · n` tabs; the dossier opens on FIGURES. FACTS is in [facts.md](facts.md).
 - A basis switch, `CONSOLIDATED · IFRS` (default) or `COMPANY-ONLY · CGNC`, kept in the URL as `?basis=company-only`.
 - One table per statement (income statement, balance sheet, cash flow, per share and dividends, company-reported measures): a row per line item, its breakdowns indented under it, a column per fiscal year, newest first. Values are as written in the filing, with the unit in its own column.
 - Several passages stating the same value show "n sources"; a different value for the same line item and year shows under the first, marked `≠`.

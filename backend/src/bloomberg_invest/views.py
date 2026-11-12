@@ -467,6 +467,7 @@ class FactSide(BaseModel):
     """One value of a Conflict, as the inspector shows it side by side (S3b)."""
 
     fact: StatedFact
+    sentence: Sentence  # its value, as the inspector shows each side
     sources: int  # facts stating it at that date
     in_use: bool
 
