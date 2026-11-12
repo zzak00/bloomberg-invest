@@ -191,7 +191,7 @@ class FactReadingLLM:
         self.pages: list[str] = []
 
     def complete_json(self, system: str, user: str, schema_name: str, schema: dict) -> dict:
-        self.pages.append(user.splitlines()[0])
+        self.pages.append(next(line for line in user.splitlines() if line.startswith("Page ")))
         paragraphs = re.findall(r"^\[(p[\d.]+)\] (.*)$", user, re.MULTILINE)
         answer: dict[str, list[dict]] = {name: [] for name in schema["properties"]}
         for kind, items in self.facts.items():

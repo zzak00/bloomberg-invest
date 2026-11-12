@@ -63,6 +63,9 @@ class Spec:
     roles: tuple[str, ...]
     fields: tuple[Field, ...]
     description: str
+    # Its parties are its statement: a listing says a company's shares trade on an exchange,
+    # whether or not it gives a ticker.
+    named_is_stated: bool = False
 
     @property
     def time(self) -> Literal["as_of", "fiscal_year"]:
@@ -132,6 +135,7 @@ SPECS: dict[FactKind, Spec] = {
             AS_OF,
         ),
         "a company's shares listed on an exchange",
+        named_is_stated=True,
     ),
     FactKind.consolidation: Spec(
         ("parent", "subsidiary"),
@@ -333,6 +337,26 @@ def instructions(prompt: str) -> str:
     return prompt + "\n".join(lines)
 
 
+Heading = tuple[str, int, int]  # a section's title, level and first page
+
+
+def section_path(headings: Sequence[Heading], page: int) -> list[str]:
+    """The sections a page is in, outermost first: what its heading pages say about it. A page
+    on its own can be a table of signatures; its section says whose report they sign.
+    `headings` are in reading order."""
+    path: list[tuple[int, str]] = []
+    for title, level, first in headings:
+        if first > page:
+            break
+        path = [p for p in path if p[0] < level] + [(level, title)]
+    return [title for _, title in path]
+
+
+def page_prompt(sources: PageSources, path: Sequence[str]) -> str:
+    """The page as the facts pass shows it: its sections, then its paragraphs and tables."""
+    return (f"Section: {' > '.join(path)}\n" if path else "") + sources.prompt
+
+
 def pages_with_text(
     paragraphs: Sequence[SourceParagraph], cells: Sequence[SourceCell]
 ) -> list[int]:
@@ -340,16 +364,21 @@ def pages_with_text(
     return sorted({p.page for p in paragraphs} | {c.page for c in cells})
 
 
-def drafts(response: dict[str, Any], sources: PageSources) -> list[FactDraft]:
-    """Each fact the LLM returned for the page, checked against its source."""
+def drafts(
+    response: dict[str, Any], sources: PageSources, path: Sequence[str] = ()
+) -> list[FactDraft]:
+    """Each fact the LLM returned for the page, checked against its source. `path` is the
+    sections the page is in, whose headings may write its year."""
     return [
-        _draft(FactKind(kind), item, sources)
+        _draft(FactKind(kind), item, sources, path)
         for kind in SPECS
         for item in response.get(kind.value, [])
     ]
 
 
-def _draft(kind: FactKind, item: dict[str, Any], sources: PageSources) -> FactDraft:
+def _draft(
+    kind: FactKind, item: dict[str, Any], sources: PageSources, path: Sequence[str]
+) -> FactDraft:
     spec = SPECS[kind]
     source_id, quote = item["source_id"], item["quote"]
     cell = sources.cells.get(source_id)
@@ -373,6 +402,9 @@ def _draft(kind: FactKind, item: dict[str, Any], sources: PageSources) -> FactDr
             row,
         )
         evidence = " ".join(c.text for c in line)
+        if _label_then_cell(quote, cell, row):
+            # The row's label, then the cited cell: the columns between are left out.
+            evidence = quote
         numbers = {n for c in line for n in _numbers(c.text)}
         cited = _numbers(cell.text)
     elif paragraph is not None:
@@ -384,7 +416,11 @@ def _draft(kind: FactKind, item: dict[str, Any], sources: PageSources) -> FactDr
     draft = FactDraft(kind, sources.page, source_id, quote, names, values, passage)
 
     page = " ".join(
-        [*(p.text for p in sources.paragraphs.values()), *(c.text for c in sources.cells.values())]
+        [
+            *path,
+            *(p.text for p in sources.paragraphs.values()),
+            *(c.text for c in sources.cells.values()),
+        ]
     )
     reason = _refusal(spec, values, names, quote, evidence, numbers, cited, page)
     if reason is not None:
@@ -447,7 +483,9 @@ def _refusal(
     if any(not n.key or n.key.endswith(":") for n in names):
         return FactRejection.unnamed
     stated = [f for f in spec.fields if f.compared and values.get(f.name) not in (None, "")]
-    if not [f for f in stated if not (f.type in ("date", "year") or f.detail)]:
+    if not spec.named_is_stated and not [
+        f for f in stated if not (f.type in ("date", "year") or f.detail)
+    ]:
         # A shareholding with neither a percentage nor a share count says nothing.
         return FactRejection.no_value
     for f in spec.fields:
@@ -490,6 +528,17 @@ def _year_on_page(year: int, text: str) -> bool:
         re.search(rf"(?<!\d){year}(?!\d)", text)
         or re.search(rf"\d[-./ ]?\D{{0,6}}[-./]{year % 100:02d}(?![\d,])", text)
     )
+
+
+def _label_then_cell(quote: str, cell: SourceCell, row: Sequence[SourceCell]) -> bool:
+    """Whether the quote is the row's text up to some column, then the cited cell: `Total (b)
+    4 518` from a row `Total (b) | 2 841 | 4 518`."""
+    q, cited = plain(quote), plain(cell.text)
+    if not cited or not q.endswith(cited):
+        return False
+    label = q[: -len(cited)].strip()
+    before = plain(" ".join(c.text for c in row if c.col < cell.col))
+    return bool(label) and before.startswith(label)
 
 
 def row_cells(cell: SourceCell, cells: Iterable[SourceCell]) -> list[SourceCell]:

@@ -18,9 +18,11 @@ from bloomberg_invest.domain.facts import (
     agree,
     drafts,
     instructions,
+    page_prompt,
     pages_with_text,
     row_key,
     schema,
+    section_path,
     shown,
     values_of,
 )
@@ -473,3 +475,84 @@ def test_a_table_fact_s_first_number_is_in_the_cell_it_cites():
     }
     [fact] = drafts(answer(shareholding=[item]), page_sources(40, [], table))
     assert fact.rejected == FactRejection.not_in_cited_cell
+
+
+def test_a_page_is_shown_with_the_sections_it_is_in():
+    headings = [
+        ("3. COMPTES CONSOLIDES", 1, 20),
+        ("NOTE 2. PERIMETRE", 2, 40),
+        ("RAPPORT DES COMMISSAIRES AUX COMPTES", 2, 73),
+        ("4. COMPTES SOCIAUX", 1, 78),
+    ]
+    assert section_path(headings, 77) == [
+        "3. COMPTES CONSOLIDES",
+        "RAPPORT DES COMMISSAIRES AUX COMPTES",
+    ]
+    assert section_path(headings, 80) == ["4. COMPTES SOCIAUX"]
+    assert section_path(headings, 5) == []
+    assert page_prompt(page27(), ["4. COMPTES SOCIAUX"]).startswith(
+        "Section: 4. COMPTES SOCIAUX\nPage 27"
+    )
+
+
+def test_a_listing_naming_only_its_company_and_exchange_is_a_fact():
+    paragraph = SourceParagraph(
+        52, "En 2025, un contrat de liquidité a été conclu à la bourse de Paris.", ()
+    )
+    item = {
+        "company": party("Gamma"),
+        "exchange": party("bourse de Paris", "Bourse de Paris"),
+        "ticker": None,
+        "isin": None,
+        "compartment": None,
+        "sector": None,
+        "as_of": "2025-12-31",
+        "source_id": "p52.0",
+        "quote": "un contrat de liquidité a été conclu à la bourse de Paris",
+    }
+    [fact] = drafts(answer(listing=[item]), page_sources(52, [paragraph], []))
+    assert fact.rejected is None
+
+
+def test_a_year_in_the_page_s_sections_is_on_the_page():
+    """A signature page never writes its year; the report's heading does."""
+    item = {
+        "auditor": party("Beta Audit SA", kind="audit_firm"),
+        "company": party("Gamma"),
+        "basis_scope": "consolidated",
+        "partner": "Marie Beta",
+        "fiscal_year": 2025,
+        "source_id": "t40.0.r0.c1",
+        "quote": "Beta Audit SA\nMarie BETA\nAssocié",
+    }
+    signatures = [c for c in SIGNATURES if c.text != "Exercice 2025"]
+    sources = page_sources(40, [], signatures)
+    [fact] = drafts(answer(audit_mandate=[item]), sources)
+    assert fact.rejected == FactRejection.year_not_on_page
+    [fact] = drafts(answer(audit_mandate=[item]), sources, ["COMPTES AU 31 DECEMBRE 2025"])
+    assert fact.rejected is None
+
+
+def test_a_quote_may_be_a_row_s_label_then_the_cited_cell():
+    table = [
+        cell(0, 1, "31-déc.-25"),
+        cell(5, 0, "Total (b)"),
+        cell(5, 1, "1 924"),
+        cell(5, 2, "3 691"),
+    ]
+    item = {
+        "company": party("Gamma"),
+        "measure": "total",
+        "amount": "3 691",
+        "unit": "MAD millions",
+        "status": "paid",
+        "fiscal_year": 2025,
+        "source_id": "t40.0.r5.c2",
+        "quote": "Total (b) 3 691",
+    }
+    [fact] = drafts(answer(dividend=[item]), page_sources(40, [], table))
+    assert fact.rejected is None
+    # Not a label the row does not write.
+    item = item | {"quote": "Total (a) 3 691"}
+    [fact] = drafts(answer(dividend=[item]), page_sources(40, [], table))
+    assert fact.rejected == FactRejection.quote_not_in_source

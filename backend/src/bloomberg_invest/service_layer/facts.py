@@ -14,12 +14,16 @@ from bloomberg_invest.config import Prompt
 from bloomberg_invest.domain.extraction import SourceParagraph, SpanPassage, page_sources
 from bloomberg_invest.domain.facts import (
     FactDraft,
+    Heading,
     drafts,
     instructions,
+    page_prompt,
     pages_with_text,
     schema,
+    section_path,
 )
 from bloomberg_invest.domain.model import RunInfo, RunStatus, RunStep
+from bloomberg_invest.views import Section
 
 
 class FactsFailed(Exception):
@@ -92,14 +96,18 @@ def extract_facts(
             if b.kind in ("heading", "text")
         ]
         cells = store.cells(document_id)
+        headings = _headings(detail.sections)
         pages = pages_with_text(paragraphs, cells)
         system = instructions(extraction.prompt.text)
         answer = schema()
 
         def extract_page(page: int) -> list[FactDraft]:
             sources = page_sources(page, paragraphs, cells)
-            response = extraction.llm.complete_json(system, sources.prompt, "facts", answer)
-            return drafts(response, sources)
+            path = section_path(headings, page)
+            response = extraction.llm.complete_json(
+                system, page_prompt(sources, path), "facts", answer
+            )
+            return drafts(response, sources, path)
 
         with ThreadPoolExecutor(max_workers=extraction.concurrency) as pool:
             found = [f for page in pool.map(extract_page, pages) for f in page]
@@ -111,6 +119,15 @@ def extract_facts(
     run_id = store.record_fact_extraction(document_id, found, run_info())
     rejected = sum(f.rejected is not None for f in found)
     return ExtractedFacts(run_id, len(pages), len(found) - rejected, rejected)
+
+
+def _headings(sections: list[Section]) -> list[Heading]:
+    """The outline as reading-order headings: each section, then its children."""
+    found: list[Heading] = []
+    for section in sections:
+        found.append((section.title, section.level, section.page))
+        found += _headings(section.children)
+    return found
 
 
 def _quoted(found: list[FactDraft], files: DocumentFiles, sha256: str) -> list[FactDraft]:
