@@ -517,9 +517,11 @@ function Source({ row, page }: { row: CheckRow; page: PageInfo | undefined }) {
           <div className="check-crop" />
         )}
       </Link>
-      <div className="check-source-meta micro">
-        P. {passage.page} · {what === "cell" ? `CELL “${oneLine(passage.text)}”` : "QUOTE"}
-        {row.rejected && <span className="check-reason"> · {row.rejected.toUpperCase()}</span>}
+      <div>
+        <div className="check-source-meta micro">
+          P. {passage.page} · {what === "cell" ? `CELL “${oneLine(passage.text)}”` : "QUOTE"}
+        </div>
+        {row.rejected && <div className="check-reason micro">{row.rejected.toUpperCase()}</div>}
       </div>
     </div>
   );

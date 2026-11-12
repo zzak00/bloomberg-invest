@@ -66,6 +66,27 @@ try {
     check(vp.name, "NEXT shows page 2", new URL(page.url()).searchParams.get("page") === "2");
     await shot("03-viewer-page-2");
 
+    // Up and Down scroll the page, as in a PDF reader; the page field keeps its own keys (#49).
+    // At 390 the page fits on screen, so there is nothing to scroll.
+    const scrollTop = () => page.locator(".paper-scroll").evaluate((el) => el.scrollTop);
+    const scrollable = await page.locator(".paper-scroll").evaluate((el) => el.scrollHeight > el.clientHeight);
+    const start = await scrollTop();
+    await page.keyboard.press("ArrowDown");
+    const down = await scrollTop();
+    await page.keyboard.press("ArrowUp");
+    const up = await scrollTop();
+    check(
+      vp.name,
+      "Down and Up scroll the page",
+      (scrollable ? down > start : down === start) && up === start,
+      `${start}px, Down ${down}px, Up ${up}px${scrollable ? "" : " (the page fits)"}`,
+    );
+    const pageField = page.getByLabel("Page number");
+    await pageField.focus();
+    await page.keyboard.press("ArrowDown");
+    check(vp.name, "the page field keeps its arrow keys", (await scrollTop()) === up, `${await scrollTop()}px`);
+    await pageField.blur();
+
     // A section in the outline jumps to its page (the outline is folded at 390).
     const toggle = page.getByRole("button", { name: "SHOW" });
     if (await toggle.isVisible()) await toggle.click();
@@ -337,6 +358,13 @@ try {
       vp.name,
       "a rejected figure can't be accepted",
       await checkRows.first().getByRole("button", { name: "ACCEPT" }).isDisabled(),
+    );
+    const reason = checkRows.first().locator(".check-reason");
+    check(
+      vp.name,
+      "a rejected row's reason shows in full",
+      /^ITS |^A |^NO /.test(await reason.innerText()) && (await reason.evaluate((el) => el.scrollWidth <= el.clientWidth)),
+      await reason.innerText(),
     );
     const reviewer = await page.locator(".checks-reviewer").innerText();
     check(vp.name, "the reviewer is set", /Checks are recorded as/.test(reviewer), reviewer);
