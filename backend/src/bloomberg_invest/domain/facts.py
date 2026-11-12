@@ -168,7 +168,7 @@ SPECS: dict[FactKind, Spec] = {
             Field(
                 "measure",
                 "choice",
-                "per share, or the total paid",
+                "per share, or the total for all shares",
                 ("per_share", "total"),
                 detail=True,
             ),
@@ -183,7 +183,7 @@ SPECS: dict[FactKind, Spec] = {
             ),
             FISCAL_YEAR,
         ),
-        "a dividend for a fiscal year, per share or in total",
+        "the dividend a company declares for a fiscal year's result, per share or in total",
     ),
     FactKind.auditor_opinion: Spec(
         ("company",),
