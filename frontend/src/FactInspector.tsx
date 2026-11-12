@@ -2,18 +2,21 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 
 import { ApiError } from "./ApiError";
-import { api, type FactDetail, type Party } from "./api/client";
+import { api, refusal, type FactDetail, type Party } from "./api/client";
 import { useApi } from "./api/useApi";
 import {
   FACT_KIND_LABELS,
   WHY_LABELS,
+  isKept,
   reviewText,
+  scopeLabel,
+  shownName,
   sourceHref,
   sourceLine,
   unresolved,
   whenLabel,
 } from "./facts";
-import { formatDate, formatDay } from "./format";
+import { formatDate } from "./format";
 
 /** The fact inspector (#24 AC4, S3): one fact in a sentence, its details, its evidence and
  * quote; for a Conflict (S3b), every value at its date side by side, with Keep and Undo (D5). */
@@ -31,14 +34,22 @@ export function FactInspector({
   );
   const panel = useRef<HTMLElement>(null);
 
+  // Focus moves into the panel, and back to what opened it when it closes.
   useEffect(() => {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     panel.current?.focus();
+    return () => opener?.focus();
+  }, []);
+
+  useEffect(() => {
     const close = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      // Escape in a field belongs to the field.
+      const typing = event.target instanceof HTMLElement && event.target.closest("input, select, textarea");
+      if (event.key === "Escape" && !typing) onClose();
     };
     document.addEventListener("keydown", close);
     return () => document.removeEventListener("keydown", close);
-  }, [factId, onClose]);
+  }, [onClose]);
 
   const kind = fact.state === "ready" && fact.data.kind !== "financial_figure" ? fact.data.kind : null;
   return (
@@ -62,7 +73,7 @@ export function FactInspector({
       {fact.state === "ready" &&
         (fact.data.kind === "financial_figure" ? (
           <div className="inspector-body">
-            <Link className="button" to={`/documents/${fact.data.document.id}?fact=${fact.data.id}`}>
+            <Link className="button" to={sourceHref(fact.data)}>
               OPEN SOURCE →
             </Link>
           </div>
@@ -81,22 +92,14 @@ export function FactInspector({
 }
 
 function Single({ fact }: { fact: FactDetail }) {
-  const kept = fact.review?.verdict === "accepted";
   return (
     <div className="inspector-body">
       <Sentence fact={fact} />
-      <dl className="inspector-details">
-        {details(fact).map(([key, value]) => (
-          <div key={key}>
-            <dt className="micro">{key}</dt>
-            <dd className="num">{value}</dd>
-          </div>
-        ))}
-      </dl>
+      <Details fact={fact} review={isKept(fact) ? "Kept" : "Not checked"} />
       <Parties parties={fact.parties} />
-      <div className="inspector-status" data-tone={kept ? "ok" : undefined}>
+      <div className="inspector-status" data-tone={isKept(fact) ? "ok" : undefined}>
         <span className="inspector-status-line" aria-hidden="true" />
-        <span>{reviewText(fact, false)}</span>
+        <span>{reviewText(fact)}</span>
         <span className="inspector-status-source">{sourceLine(fact)}</span>
       </div>
       <blockquote className="inspector-quote">
@@ -115,7 +118,12 @@ function Single({ fact }: { fact: FactDetail }) {
   );
 }
 
-const LETTERS = "ABCDEFGH";
+/** A Conflict's sides are lettered in reading order: A, B, ... Z, then AA. */
+function letter(index: number): string {
+  return index < 26
+    ? String.fromCharCode(65 + index)
+    : `${letter(Math.floor(index / 26) - 1)}${letter(index % 26)}`;
+}
 
 function Conflict({ fact, onChanged }: { fact: FactDetail; onChanged: () => Promise<void> }) {
   const [busy, setBusy] = useState(false);
@@ -127,27 +135,29 @@ function Conflict({ fact, onChanged }: { fact: FactDetail; onChanged: () => Prom
       a.fact.page - b.fact.page ||
       a.fact.id.localeCompare(b.fact.id),
   );
-  const kept = sides.find((s) => s.fact.review?.verdict === "accepted");
+  const kept = sides.find((s) => isKept(s.fact));
   const shown = Math.max(
     0,
     sides.findIndex((s) => s.in_use),
   );
-  const filings = new Set(sides.map((s) => s.fact.document.id)).size;
+  const why = sides[shown]?.why;
+  const disagreeing = new Set(sides.map((s) => s.fact.document.id)).size > 1 ? "filings" : "passages";
 
   const review = async (factId: string, verdict: "accepted" | "reopened") => {
     setBusy(true);
     setError(null);
-    const { error: refused, response } = await api.POST("/api/facts/{fact_id}/reviews", {
-      params: { path: { fact_id: factId } },
-      body: { verdict },
-    });
-    if (response.ok) {
-      await onChanged();
-    } else {
-      const detail = (refused as { detail?: unknown } | undefined)?.detail;
-      setError(typeof detail === "string" ? detail : `${response.status} ${response.statusText}`);
+    try {
+      const { error: refused, response } = await api.POST("/api/facts/{fact_id}/reviews", {
+        params: { path: { fact_id: factId } },
+        body: { verdict },
+      });
+      if (response.ok) await onChanged();
+      else setError(refusal(refused, response));
+    } catch (failed) {
+      setError(String(failed));
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
   };
 
   return (
@@ -157,8 +167,8 @@ function Conflict({ fact, onChanged }: { fact: FactDetail; onChanged: () => Prom
           <path d="M8 1.5a6.5 6.5 0 1 1 0 13a6.5 6.5 0 1 1 0-13Z" />
           <path d="M6.3 6.3a1.75 1.75 0 1 1 2.5 1.6c-.5.25-.8.6-.8 1.1v.5M8 11.4v.2" />
         </svg>
-        {sides.length === 2 ? "TWO" : sides.length} {filings > 1 ? "FILINGS" : "PASSAGES OF ONE FILING"}{" "}
-        DISAGREE
+        {sides.length === 2 ? "TWO" : sides.length}{" "}
+        {disagreeing === "filings" ? "FILINGS" : "PASSAGES OF ONE FILING"} DISAGREE
       </div>
       <p className="inspector-sentence">
         {fact.sentence.before}
@@ -178,6 +188,11 @@ function Conflict({ fact, onChanged }: { fact: FactDetail; onChanged: () => Prom
         )}
         {fact.sentence.after}
       </p>
+      <Details fact={fact} review={kept ? "Kept" : "Disagree"} />
+      <div className="inspector-status" data-tone={kept ? "ok" : "review"}>
+        <span className="inspector-status-line" aria-hidden="true" />
+        <span>{reviewText(kept?.fact ?? fact, disagreeing)}</span>
+      </div>
       <ul className="inspector-sides" aria-label="Values at this date">
         {sides.map((side, i) => {
           const tag = kept ? (side === kept ? "IN USE" : "SET ASIDE") : side.in_use ? "SHOWN" : "";
@@ -185,7 +200,7 @@ function Conflict({ fact, onChanged }: { fact: FactDetail; onChanged: () => Prom
             <li key={side.fact.id} className="inspector-side" data-in-use={side.in_use || undefined}>
               <div className="inspector-side-head">
                 <span>
-                  {filings > 1 ? "FILING" : "PASSAGE"} {LETTERS[i]}
+                  {disagreeing === "filings" ? "FILING" : "PASSAGE"} {letter(i)}
                 </span>
                 <span className="inspector-side-tag">{tag}</span>
               </div>
@@ -210,8 +225,7 @@ function Conflict({ fact, onChanged }: { fact: FactDetail; onChanged: () => Prom
             <path d="M5.2 8.3l1.9 1.9 3.8-4.2" />
           </svg>
           <span>
-            Kept {LETTERS[sides.indexOf(kept)]} · {kept.sentence.value} · by {kept.fact.review?.reviewer} on{" "}
-            {kept.fact.review && formatDate(kept.fact.review.reviewed_at)}
+            Kept {letter(sides.indexOf(kept))} · {kept.sentence.value}
           </span>
           <button
             type="button"
@@ -225,9 +239,8 @@ function Conflict({ fact, onChanged }: { fact: FactDetail; onChanged: () => Prom
       ) : (
         <>
           <p className="inspector-note">
-            The dossier shows {LETTERS[shown]}
-            {sides[shown]?.fact.id === fact.id && fact.why ? `, because ${WHY_LABELS[fact.why]}` : ""}. Keep
-            one to settle it.
+            The dossier shows {letter(shown)}
+            {why ? `, because ${WHY_LABELS[why]}` : ""}. Keep one to settle it.
           </p>
           <div className="inspector-keep">
             {sides.map((side, i) => (
@@ -238,7 +251,7 @@ function Conflict({ fact, onChanged }: { fact: FactDetail; onChanged: () => Prom
                 disabled={busy}
                 onClick={() => review(side.fact.id, "accepted")}
               >
-                KEEP {LETTERS[i]} · {side.sentence.value}
+                KEEP {letter(i)} · {side.sentence.value}
               </button>
             ))}
           </div>
@@ -265,6 +278,27 @@ function Sentence({ fact }: { fact: FactDetail }) {
   );
 }
 
+/** PERIOD or AS OF, BASIS where the kind has one, RECORDED and REVIEW. */
+function Details({ fact, review }: { fact: FactDetail; review: string }) {
+  const basis = scopeLabel(fact);
+  const rows: [string, string][] = [
+    [fact.as_of ? "AS OF" : "PERIOD", whenLabel(fact)],
+    ...(basis ? [["BASIS", basis] as [string, string]] : []),
+    ["RECORDED", formatDate(fact.recorded_at)],
+    ["REVIEW", review],
+  ];
+  return (
+    <dl className="inspector-details">
+      {rows.map(([key, value]) => (
+        <div key={key}>
+          <dt className="micro">{key}</dt>
+          <dd className="num">{value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 /** Each party as the filing writes it, with what it links to, or that it waits in CHECKS. */
 function Parties({ parties }: { parties: Party[] }) {
   return (
@@ -276,9 +310,9 @@ function Parties({ parties }: { parties: Party[] }) {
             {party.resolved?.isin ? (
               <Link to={`/companies/${party.resolved.isin}`}>{party.resolved.name}</Link>
             ) : (
-              (party.resolved?.name ?? party.name)
+              shownName(party)
             )}
-            {party.written !== (party.resolved?.name ?? party.name) && (
+            {party.written !== shownName(party) && (
               <span className="inspector-written"> · written “{party.written}”</span>
             )}
             {unresolved(party) && (
@@ -291,16 +325,4 @@ function Parties({ parties }: { parties: Party[] }) {
       ))}
     </ul>
   );
-}
-
-/** PERIOD or AS OF, BASIS where the kind has one, RECORDED and REVIEW. */
-function details(fact: FactDetail): [string, string][] {
-  const rows: [string, string][] = [];
-  if (fact.as_of) rows.push(["AS OF", formatDay(fact.as_of)]);
-  else rows.push(["PERIOD", `FY${fact.fiscal_year}`]);
-  const scope = fact.values.basis_scope;
-  if (scope) rows.push(["BASIS", scope === "consolidated" ? "Consolidated" : "Company-only"]);
-  rows.push(["RECORDED", formatDate(fact.recorded_at)]);
-  rows.push(["REVIEW", fact.review?.verdict === "accepted" ? "Kept" : "Not checked"]);
-  return rows;
 }

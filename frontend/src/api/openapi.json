@@ -2037,6 +2037,23 @@
           "in_use": {
             "type": "boolean",
             "title": "In Use"
+          },
+          "why": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "kept",
+                  "latest",
+                  "annual_report",
+                  "earliest"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Why"
           }
         },
         "type": "object",

@@ -17,7 +17,7 @@ import {
   type Scope,
 } from "../api/client";
 import { useApi } from "../api/useApi";
-import { rowLabel, sentenceText, unresolved, whenLabel } from "../facts";
+import { isKept, rowLabel, sentenceText, unresolved, whenLabel } from "../facts";
 import { SCOPES, capitalised, unitLabel } from "../figures";
 import { DOC_TYPE_LABELS, formatChange, formatDateTime, formatDay, formatPrice } from "../format";
 
@@ -121,7 +121,14 @@ export function CompanyPage() {
             <Facts
               facts={facts.data}
               open={factId}
-              onOpen={(id) => setParams({ tab: "facts", fact: id })}
+              onOpen={(id) =>
+                setParams((previous) => {
+                  const next = new URLSearchParams(previous);
+                  next.set("tab", "facts");
+                  next.set("fact", id);
+                  return next;
+                })
+              }
             />
           )
         ) : figures.state === "loading" ? (
@@ -247,7 +254,7 @@ function FactLine({
 }) {
   const fact = row.shown;
   const { name, detail } = rowLabel(fact, section);
-  const kept = fact.review?.verdict === "accepted";
+  const kept = isKept(fact);
   const waiting = fact.parties.some(unresolved);
   const values = 1 + row.others.length;
   const disagree = row.conflict ? `, ${values} values disagree` : "";

@@ -3,6 +3,7 @@ import { Link } from "react-router";
 
 import {
   api,
+  refusal,
   type NameCheck,
   type NameVerdict,
   type PartyKind,
@@ -75,18 +76,22 @@ function Name({
   const send = async (body: { verdict: NameVerdict; party_id?: string; name?: string; kind?: PartyKind }) => {
     setBusy(true);
     setError(null);
-    const { error: refused, response } = await api.POST("/api/names/{key}/reviews", {
-      params: { path: { key: check.alias } },
-      body,
-    });
-    if (response.ok) {
-      await onChecked();
-      setCreating(false);
-    } else {
-      const detail = (refused as { detail?: unknown } | undefined)?.detail;
-      setError(typeof detail === "string" ? detail : `${response.status} ${response.statusText}`);
+    try {
+      const { error: refused, response } = await api.POST("/api/names/{key}/reviews", {
+        params: { path: { key: check.alias } },
+        body,
+      });
+      if (response.ok) {
+        await onChecked();
+        setCreating(false);
+      } else {
+        setError(refusal(refused, response));
+      }
+    } catch (failed) {
+      setError(String(failed));
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
   };
 
   const candidates = new Set(check.candidates.map((c) => c.id));

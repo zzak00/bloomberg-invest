@@ -230,6 +230,13 @@ try {
     check(vp.name, "AC4: the inspector states the fact in one sentence", / holds .* of /.test(sentence), sentence);
     check(vp.name, "AC4: with its date, recorded date and review", ["AS OF", "RECORDED", "REVIEW"].every((k) => detailKeys.includes(k)), detailKeys.join(" "));
     check(vp.name, "AC4: with its evidence status and quote", (await inspector.locator(".inspector-status").isVisible()) && (await inspector.locator(".inspector-quote").innerText()).includes("«"));
+    const panel = await inspector.boundingBox();
+    check(
+      vp.name,
+      vp.width < 640 ? "the inspector is a full-width sheet" : "the inspector is a side panel",
+      vp.width < 640 ? panel.width >= vp.width - 1 : panel.width <= 402,
+      `${Math.round(panel.width)}px wide`,
+    );
     await shot("10b-fact-inspector");
     await inspector.getByRole("link", { name: "OPEN SOURCE →" }).click();
     await page.waitForURL(/\/documents\/.*fact=/);
@@ -237,6 +244,14 @@ try {
     const factBar = (await page.getByRole("status").innerText()).replace(/\s+/g, " ");
     check(vp.name, "the source viewer highlights the fact", /SHAREHOLDING/i.test(factBar), factBar);
     await shot("10c-fact-source");
+
+    // A kind with a basis and a fiscal year: an audit mandate.
+    await page.goto(`${base}/companies/MA0000011488?tab=facts`);
+    await page.getByRole("region", { name: /^AUDITORS · \d+$/ }).getByRole("button", { name: / audits / }).first().click();
+    await inspector.locator(".inspector-details").waitFor();
+    const mandateKeys = await inspector.locator(".inspector-details dt").allInnerTexts();
+    check(vp.name, "AC4: PERIOD and BASIS for a mandate", mandateKeys.includes("PERIOD") && mandateKeys.includes("BASIS"), mandateKeys.join(" "));
+    await page.keyboard.press("Escape");
 
     // A Conflict shows both values and both sources; Keep and Undo record a Review (S3b, D5).
     await page.goto(`${base}/companies/MA0000011488?tab=facts`);
@@ -246,19 +261,23 @@ try {
     if ((await disagreeing.count()) === 0) {
       check(vp.name, "S3b: a Conflict in this data", false, "no row with two values: see features/facts.md");
     } else {
+      const mark = await disagreeing.first().locator("xpath=ancestor::tr").locator(".facts-flag").first().innerText();
+      check(vp.name, "the dossier marks a Conflict with its count", /^≠ · \d+ VALUES$/.test(mark), mark);
       await disagreeing.first().scrollIntoViewIfNeeded();
       await disagreeing.first().click();
       const sides = inspector.getByRole("list", { name: "Values at this date" }).getByRole("listitem");
       await sides.first().waitFor();
       check(vp.name, "S3b: both values side by side", (await sides.count()) >= 2, `${await sides.count()} sides`);
       check(vp.name, "S3b: each with its source and quote", (await sides.first().locator(".inspector-side-quote").count()) === 1);
+      const why = await inspector.locator(".inspector-note").innerText();
+      check(vp.name, "S3b: which one is shown, and why", /^The dossier shows [A-Z], because /.test(why), why);
       await shot("10d-conflict");
       const keepB = inspector.getByRole("button", { name: /^KEEP B · / });
       if (await keepB.count()) {
         await keepB.click();
-        const kept = inspector.getByRole("status");
-        await kept.getByText(/^Kept B · /).waitFor();
-        check(vp.name, "D5: keeping a value records who and when", /by .+ on \d{2}\/\d{2}\/\d{4}/.test(await kept.innerText()), (await kept.innerText()).replace(/\s+/g, " "));
+        await inspector.getByRole("status").getByText(/^Kept B · /).waitFor();
+        const keptBy = await inspector.locator(".inspector-status").innerText();
+        check(vp.name, "D5: keeping a value records who and when", /^Kept by .+ on \d{2}\/\d{2}\/\d{4}/.test(keptBy), keptBy);
         await shot("10e-conflict-kept");
         await inspector.getByRole("button", { name: "UNDO" }).click();
         await inspector.getByRole("button", { name: /^KEEP A · / }).waitFor();
@@ -281,7 +300,7 @@ try {
     check(vp.name, "S7b: each with the passage it was read from", (await names.first().locator(".name-passage").count()) === 1);
     await shot("10f-checks-names");
     const toDecide = names.first();
-    const label = firstName.replace(/: to check$/, "");
+    const label = (firstName ?? "").replace(/: to check$/, "");
     await toDecide.getByRole("button", { name: "NEITHER" }).click();
     const decided = page.getByRole("listitem", { name: `${label}: neither an Organisation nor a Person`, exact: true });
     await decided.waitFor();
@@ -289,6 +308,15 @@ try {
     await decided.getByRole("button", { name: "UNDO" }).click();
     await page.getByRole("listitem", { name: `${label}: to check`, exact: true }).waitFor();
     check(vp.name, "S7b: undo puts the name back to check", true);
+    const withCandidate = page.getByRole("listitem", { name: / to check$/ }).filter({ has: page.locator(".name-candidate") }).first();
+    const sameLabel = ((await withCandidate.getAttribute("aria-label")) ?? "").replace(/: to check$/, "");
+    const candidate = (await withCandidate.locator(".name-candidate-name").first().innerText()).trim();
+    await withCandidate.locator(".name-candidate").first().getByRole("button", { name: "SAME AS" }).click();
+    const linked = page.getByRole("listitem", { name: `${sameLabel}: linked`, exact: true });
+    await linked.waitFor();
+    check(vp.name, "S7b: SAME AS links the name", (await linked.innerText()).includes(`Same as ${candidate}`), `${sameLabel} → ${candidate}`);
+    await linked.getByRole("button", { name: "UNDO" }).click();
+    await page.getByRole("listitem", { name: `${sameLabel}: to check`, exact: true }).waitFor();
 
     // CHECKS lists the facts the check refused, with why (D2).
     await page.getByRole("tab", { name: /^REJECTED FACTS · \d+$/ }).click();

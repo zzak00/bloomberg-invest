@@ -37,6 +37,12 @@ export type Listing = components["schemas"]["Listing"];
 export type LastClose = components["schemas"]["LastClose"];
 export type PricePoint = components["schemas"]["PricePoint"];
 
+/** Why the API refused a request: its `detail`, else the HTTP status. */
+export function refusal(error: unknown, response: Response): string {
+  const detail = (error as { detail?: unknown } | undefined)?.detail;
+  return typeof detail === "string" ? detail : `${response.status} ${response.statusText}`;
+}
+
 export function pageImageUrl(documentId: string, page: number): string {
   return `/api/documents/${encodeURIComponent(documentId)}/pages/${page}.png`;
 }

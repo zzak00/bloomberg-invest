@@ -42,5 +42,7 @@
   --space-12: 48px;
 
   --radius-sm: 2px;
+  /* A panel floating over the page, such as the fact inspector. */
+  --shadow-panel: 0 12px 32px rgb(0 0 0 / 50%);
   --header-height: 56px;
 }

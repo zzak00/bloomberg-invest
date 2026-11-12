@@ -4,7 +4,7 @@ The eight other kinds of fact (#24): shareholdings, board seats, audit mandates,
 
 ## Sub-features
 
-- The dossier's `FACTS · n` tab: one section per kind (Ownership, Holdings, Subsidiaries, Board, Auditors, Dividends, Listings, Related-party agreements), only those with rows. A row is one value shown: who it is about, the value, its as-of date or fiscal year, and its review mark (`≠ · 2 VALUES` for a Conflict, `KEPT`, `NAME TO CHECK`). "n facts name someone not linked yet · CHECKS →" links to CHECKS Names.
+- The dossier's `FACTS · n` tab: one section per kind (Ownership, Holdings, Subsidiaries, Board, Auditors, Dividends, Listings, Related-party agreements), only those with rows. A row is one value shown: who it is about, the value, its as-of date or fiscal year, and its review mark (`≠ · 2 VALUES` for a Conflict, `KEPT`, `NAME TO CHECK`). "n facts wait for a name to be checked · CHECKS →" counts the facts that can't show yet because a company they name isn't linked, and links to CHECKS Names.
 - A value opens the fact inspector, kept in the URL as `?tab=facts&fact=<id>`: a side panel at 1440 and 1024, a full-width sheet at 390. It shows the fact in one sentence with its value marked, AS OF or PERIOD, BASIS where the kind has one, RECORDED and REVIEW, each name as written and what it links to (or "not linked yet · CHECKS"), the evidence status line, the quote on paper, and `OPEN SOURCE →` to the source viewer on the highlighted passage. Escape or `ESC` closes it.
 - A Conflict (S3b): `TWO FILINGS DISAGREE` (or `TWO PASSAGES OF ONE FILING DISAGREE`), the sentence with both values, a card per value with its filing, page, date, recorded date and quote, and which one the dossier shows and why. `KEEP A` / `KEEP B` record a Review on that fact (D5); "Kept B · … by <name> on <date>" then has `UNDO`.
 - CHECKS has three tabs: `FIGURES · n` (#23), `NAMES · n` and `REJECTED FACTS · n`, kept in the URL as `?tab=names` or `?tab=facts`.
@@ -19,7 +19,7 @@ On a company's dossier, click `FACTS`. Or open http://localhost:8080/companies/M
 
 Sections are regions named `OWNERSHIP · n`; a value is a button named by its sentence, for example `Etisalat holds 53 % of Maroc Telecom, 31/12/2025` (`…, 2 values disagree` for a Conflict). The inspector is `getByRole("dialog", { name: "Fact inspector" })`; a Conflict's cards are `getByRole("list", { name: "Values at this date" })`. Names rows are list items of `getByRole("list", { name: "Names" })`, named `<written names>: to check`.
 
-Proof: the inspector's sentence reads "… holds … of …" with AS OF, RECORDED and REVIEW; `OPEN SOURCE →` highlights the passage; `NEITHER` then `UNDO` puts a name back to check.
+Proof: the inspector's sentence reads "… holds … of …" with AS OF, RECORDED and REVIEW (PERIOD and BASIS for an audit mandate); `OPEN SOURCE →` highlights the passage; a Conflict says which value is shown and why, and Keep then Undo puts it back; `NEITHER` and `SAME AS`, each undone, put a name back to check. `NEW ORGANISATION OR PERSON` is not driven: an Organisation, once created, stays in the graph after the Undo.
 
 ## Getting facts without a live model
 

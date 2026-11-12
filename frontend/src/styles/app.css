@@ -1774,7 +1774,7 @@ a {
   overflow: auto;
   border: 1px solid var(--rule-strong);
   background: var(--surface-raised);
-  box-shadow: 0 12px 32px rgb(0 0 0 / 50%);
+  box-shadow: var(--shadow-panel);
 }
 
 /* Where there is room, the dossier makes way for the inspector instead of sitting under it. */
@@ -1919,6 +1919,10 @@ a {
 
 .inspector-status[data-tone="ok"] {
   color: var(--ok);
+}
+
+.inspector-status[data-tone="review"] {
+  color: var(--review);
 }
 
 .inspector-status-line {

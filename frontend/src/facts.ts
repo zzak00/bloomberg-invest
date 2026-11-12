@@ -39,9 +39,25 @@ export function whenLabel(fact: Pick<StatedFact, "as_of" | "fiscal_year">): stri
 }
 
 /** A party as the dossier names it: what it resolves to, else the name the extractor read. */
+export function shownName(party: Party): string {
+  return party.resolved?.name ?? party.name;
+}
+
 export function partyName(fact: StatedFact, role: string): string {
   const party = fact.parties.find((p) => p.role === role);
-  return party ? (party.resolved?.name ?? party.name) : "";
+  return party ? shownName(party) : "";
+}
+
+/** A value a person kept (D5): its latest Review accepts it. */
+export function isKept(fact: Pick<StatedFact, "review">): boolean {
+  return fact.review?.verdict === "accepted";
+}
+
+/** "Consolidated" or "Company-only", for a kind with a basis. */
+export function scopeLabel(fact: Pick<StatedFact, "values">): string | null {
+  const scope = fact.values.basis_scope;
+  if (!scope) return null;
+  return scope === "consolidated" ? "Consolidated" : "Company-only";
 }
 
 /** A name no rule or person has linked yet: it waits in CHECKS Names. */
@@ -69,7 +85,7 @@ export function rowLabel(fact: StatedFact, section: string): { name: string; det
     const value = fact.values[key];
     return value === null || value === undefined ? "" : String(value);
   };
-  const scope = text("basis_scope") === "consolidated" ? "Consolidated accounts" : "Company-only accounts";
+  const scope = `${scopeLabel(fact) ?? "Company-only"} accounts`;
   switch (fact.kind) {
     case "shareholding":
       return {
@@ -115,12 +131,15 @@ export function sourceLine(fact: Pick<StatedFact, "document" | "page">): string 
   return `${DOC_TYPE_LABELS[fact.document.doc_type]} FY${fact.document.fiscal_year}, p. ${fact.page}`;
 }
 
-/** The evidence status line: who kept the value, or that nobody checked it. */
-export function reviewText(fact: StatedFact, conflict: boolean): string {
-  if (fact.review?.verdict === "accepted") {
+/** The evidence status line: who kept the value, that the values at its date disagree, or that
+ * nobody checked it. */
+export function reviewText(fact: StatedFact, disagreeing: "filings" | "passages" | null = null): string {
+  if (fact.review && isKept(fact)) {
     return `Kept by ${fact.review.reviewer} on ${formatDate(fact.review.reviewed_at)}`;
   }
-  return conflict ? "Two values disagree · needs review" : "Not checked";
+  if (disagreeing === "filings") return "Two filings disagree · needs review";
+  if (disagreeing === "passages") return "Two passages of the filing disagree · needs review";
+  return "Not checked";
 }
 
 /** The source viewer on the fact's passage. */

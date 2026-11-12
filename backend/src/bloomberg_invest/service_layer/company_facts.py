@@ -193,6 +193,7 @@ def fact_detail(fact_id: str, store: GraphStore) -> FactDetail | None:
                     sentence=sentence(by_id[group[0].id]),
                     sources=len(group),
                     in_use=i == 0,
+                    why=row.why if i == 0 else None,
                 )
                 for i, group in enumerate(at_date)
             ]

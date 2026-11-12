@@ -745,6 +745,8 @@ export interface components {
             sources: number;
             /** In Use */
             in_use: boolean;
+            /** Why */
+            why?: ("kept" | "latest" | "annual_report" | "earliest") | null;
         };
         /**
          * Figure

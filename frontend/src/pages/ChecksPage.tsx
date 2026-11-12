@@ -5,6 +5,7 @@ import { ApiError } from "../ApiError";
 import {
   api,
   pageImageUrl,
+  refusal,
   type Candidate,
   type CheckGroup,
   type CheckQueue,
@@ -19,7 +20,8 @@ import { capitalised, periodLabel } from "../figures";
 import { DOC_TYPE_LABELS, formatDate } from "../format";
 import { Names, RejectedFacts } from "./ChecksNames";
 
-type Tab = "figures" | "names" | "facts";
+const TABS = ["figures", "names", "facts"] as const;
+type Tab = (typeof TABS)[number];
 
 type Filter = "open" | "needs_review" | "done" | "all";
 
@@ -52,8 +54,7 @@ const STATUS: Record<CheckStatus, { word: string; tone: string }> = {
  * names no rule linked (#24, S7b); and the facts the check refused. */
 export function ChecksPage() {
   const [params, setParams] = useSearchParams();
-  const tab: Tab =
-    params.get("tab") === "names" ? "names" : params.get("tab") === "facts" ? "facts" : "figures";
+  const tab: Tab = TABS.find((t) => t === params.get("tab")) ?? "figures";
   const isin = params.get("company");
   const filter = FILTERS.find((f) => f.id === params.get("status")) ?? OPEN;
   // Rows checked on this visit stay where they were until the filter changes.
@@ -66,9 +67,8 @@ export function ChecksPage() {
 
   const names = useApi("names", () => api.GET("/api/names"));
   const parties = useApi("parties", () => api.GET("/api/parties"));
-  const rejected = useApi(`rejected-facts:${isin}`, () =>
-    api.GET("/api/rejected-facts", { params: { query: isin ? { isin } : {} } }),
-  );
+  // Every filing's: the company filter belongs to the figures tab.
+  const rejected = useApi("rejected-facts", () => api.GET("/api/rejected-facts"));
 
   const choose = (next: { company?: string | null; status?: Filter; tab?: Tab }) => {
     const company = next.company === undefined ? isin : next.company;
@@ -98,6 +98,8 @@ export function ChecksPage() {
     },
   ];
   const canCheck = queue.state === "ready" && queue.data.reviewer !== null;
+  // The queue says who records checks, so the Names actions wait for it too.
+  const namesFailure = [names, parties, queue].find((loaded) => loaded.state === "error");
 
   return (
     <section className="page checks" aria-labelledby="checks-title">
@@ -135,19 +137,13 @@ export function ChecksPage() {
 
       <div role="tabpanel" id={`checks-panel-${tab}`} aria-labelledby={`checks-tab-${tab}`}>
         {tab === "names" ? (
-          // The queue says who records checks, so the actions wait for it too.
-        names.state === "loading" || parties.state === "loading" || queue.state === "loading" ? (
+          namesFailure?.state === "error" ? (
+            <ApiError title="The names could not be loaded" message={namesFailure.message} />
+          ) : names.state !== "ready" || parties.state !== "ready" || queue.state !== "ready" ? (
             <div className="skeleton checks-skeleton" aria-busy="true" />
-          ) : names.state === "error" || parties.state === "error" ? (
-            <ApiError
-              title="The names could not be loaded"
-              message={
-                names.state === "error" ? names.message : parties.state === "error" ? parties.message : ""
-              }
-            />
           ) : (
             <>
-              {queue.state === "ready" && <Reviewer name={queue.data.reviewer} />}
+              <Reviewer name={queue.data.reviewer} />
               <Names
                 names={names.data}
                 parties={parties.data}
@@ -375,8 +371,7 @@ function Row({
       await onChecked();
       setFixing(false);
     } else {
-      const detail = (refused as { detail?: unknown } | undefined)?.detail;
-      setError(typeof detail === "string" ? detail : `${response.status} ${response.statusText}`);
+      setError(refusal(refused, response));
     }
     setBusy(false);
   };
