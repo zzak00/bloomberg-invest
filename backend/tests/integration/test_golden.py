@@ -41,6 +41,7 @@ from bloomberg_invest.domain.figures import number, parse_value
 from bloomberg_invest.domain.model import DocType, DocumentMeta, Organisation
 from bloomberg_invest.domain.names import name_key
 from bloomberg_invest.domain.prices import ListedShare
+from bloomberg_invest.service_layer.company_facts import company_facts
 from bloomberg_invest.service_layer.extract import Extraction
 from bloomberg_invest.service_layer.facts import FactExtraction
 from bloomberg_invest.service_layer.ingest import Ingested, ingest
@@ -55,13 +56,13 @@ EXCLUDED_PAGES = {26, 58}
 TARGET = 148
 # Golden facts matched per kind: the first scored run's, only ever raised (a ratchet).
 FLOORS = {
-    FactKind.shareholding: 32,
+    FactKind.shareholding: 33,
     FactKind.board_seat: 3,
     FactKind.audit_mandate: 4,
     FactKind.listing: 3,
     FactKind.consolidation: 15,
     FactKind.dividend: 2,
-    FactKind.auditor_opinion: 1,
+    FactKind.auditor_opinion: 2,
     FactKind.related_party_agreement: 7,
 }
 # Golden entities a fact names, of 55.
@@ -456,3 +457,10 @@ def test_golden_facts_and_names_are_extracted_and_linked(golden):
     # Every Fact cites a Passage on a page of the report, with its time and when it was recorded.
     assert all(f.passage is not None and 1 <= f.page <= 90 for f in facts)
     assert all((f.as_of or f.fiscal_year) and f.recorded_at for f in facts)
+    # #53: the report declares its dividends in words (pp. 10, 16); a table of dividends paid
+    # in a year (the cash flows, Note 13) states figures, not a dividend, nor a Conflict.
+    dividends = [f for f in facts if f.kind == FactKind.dividend]
+    assert dividends and all(f.passage.kind == "span" for f in dividends)
+    dossier = company_facts("MA0000011488", store)
+    rows = [r for s in dossier.sections for r in s.rows if r.kind == FactKind.dividend]
+    assert rows and not any(r.conflict for r in rows)
