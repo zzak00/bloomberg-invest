@@ -1454,6 +1454,7 @@ a {
 }
 
 .check-reason {
+  margin-top: 2px;
   color: var(--review);
 }
 

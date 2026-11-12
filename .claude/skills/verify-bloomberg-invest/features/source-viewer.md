@@ -6,6 +6,7 @@ One filing page by page, rendered from the stored PDF, with the section outline 
 
 - Page image from `/api/documents/{id}/pages/{n}.png`.
 - PREV and NEXT, a page field (type a number, press Enter), `?page=N` in the URL.
+- Up and Down scroll the page wherever focus is, except in a field; they stop at the page's top and bottom (#49).
 - Outline: clicking a section jumps to its page and highlights it (amber bar); paging highlights the last section starting on or before the page.
 - At 390 the outline folds behind SHOW / HIDE above the page.
 - The line under the page names the parser, its version and the parse time (from the Run).

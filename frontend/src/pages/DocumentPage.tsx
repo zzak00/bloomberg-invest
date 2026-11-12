@@ -42,6 +42,19 @@ export function DocumentPage() {
   useEffect(() => {
     if (drawn) firstMark.current?.scrollIntoView({ block: "center" });
   }, [drawn]);
+  // Up and Down scroll the page, as in a PDF reader, wherever focus is but in a field.
+  const scroller = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const step = { ArrowDown: ARROW_STEP, ArrowUp: -ARROW_STEP }[event.key];
+      if (!step || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
+      if (event.target instanceof Element && event.target.closest("input, textarea, select, [contenteditable]")) return;
+      event.preventDefault();
+      scroller.current?.scrollBy({ top: step });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // A link to a chunk or a figure with no page: its page comes with it, so wait for it rather
   // than show page 1 first.
@@ -105,7 +118,7 @@ export function DocumentPage() {
             onClear={() => setParams({ page: String(page) })}
           />
         )}
-        <div className="paper-scroll">
+        <div className="paper-scroll" ref={scroller}>
           <div className="paper-sheet">
             <img
               key={page}
@@ -140,6 +153,8 @@ export function DocumentPage() {
     </div>
   );
 }
+
+const ARROW_STEP = 40; // pixels an arrow key scrolls, as a browser does
 
 /** What the viewer highlights, from a chunk or a figure, and the link parameter that names it. */
 interface Highlight {
