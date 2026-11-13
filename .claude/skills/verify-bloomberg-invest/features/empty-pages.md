@@ -1,6 +1,6 @@
-# Empty pages: MAP, KPIs
+# Empty page: MAP
 
-Placeholders until their slices land: the map (#25) and the KPI reference page (#27).
+A placeholder until its slice lands: the map (#25). The KPIs page replaced its own in #27 ([kpis.md](kpis.md)).
 
 ## Sub-features
 
@@ -9,11 +9,11 @@ Placeholders until their slices land: the map (#25) and the KPI reference page (
 
 ## How to get to it (user POV)
 
-Click MAP or KPIs in the top navigation.
+Click MAP in the top navigation.
 
 ## Driving it with Playwright
 
-Go to `/map`, `/kpis`; proof is the heading by role: "The map arrives with entities and facts", "KPIs follow checked figures".
+Go to `/map`; proof is the heading by role: "The map arrives with entities and facts".
 
 ## Gotchas
 

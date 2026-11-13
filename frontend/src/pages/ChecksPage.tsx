@@ -11,6 +11,7 @@ import {
   type CheckQueue,
   type CheckRow,
   type CheckStatus,
+  type DividendCheck,
   type PageInfo,
   type Passage,
   type Verdict,
@@ -200,6 +201,11 @@ export function ChecksPage() {
                     ))}
                   </div>
                 </div>
+                <Dividends
+                  dividends={queue.data.dividends.filter(
+                    (d) => filter.shows.includes(d.status) || touched.has(d.fact.id),
+                  )}
+                />
                 <Groups
                   queue={queue.data}
                   shows={(row) => filter.shows.includes(row.status) || touched.has(rowKey(row))}
@@ -249,6 +255,87 @@ function Reviewer({ name }: { name: string | null }) {
       Checks can't be recorded yet: set <code>REVIEWER</code> in <code>.env</code> to your name, then restart
       the API.
     </p>
+  );
+}
+
+/** The dividends companies declare that feed a KPI (#27): kept in the fact inspector, like a
+ * Conflict's value, so each row opens it there. */
+function Dividends({ dividends }: { dividends: DividendCheck[] }) {
+  if (dividends.length === 0) return null;
+  return (
+    <section className="check-group" aria-labelledby="checks-dividends">
+      <div className="check-group-head">
+        <span id="checks-dividends">Declared dividends</span>
+        <span className="num micro">{dividends.length}</span>
+      </div>
+      <ul className="check-rows">
+        {dividends.map((dividend) => (
+          <DividendRow key={dividend.fact.id} dividend={dividend} />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function DividendRow({ dividend }: { dividend: DividendCheck }) {
+  const { company, fiscal_year, fact, review } = dividend;
+  const status = STATUS[dividend.status];
+  const { document } = fact;
+  const measure = fact.values.measure === "per_share" ? "per share" : "in total";
+  const name = `Declared dividend ${measure}`;
+  return (
+    <li
+      className="check-row"
+      data-kind="dividend"
+      data-tone={status.tone}
+      aria-label={`${name}, FY${fiscal_year}: ${status.word}`}
+    >
+      <div className="check-what">
+        <div className="micro">
+          {company.name.toUpperCase()} · FY{fiscal_year}
+        </div>
+        <div className="check-name">{name}</div>
+        <div className="check-sub">{fact.values.status === "proposed" ? "Proposed" : "Paid"}</div>
+        <div className="check-sub check-feeds" title={`Feeds ${dividend.feeds.join(", ")}`}>
+          Feeds {dividend.feeds.join(", ")}
+        </div>
+        {dividend.sources > 1 && (
+          <div className="check-flags">
+            <span className="check-flag">{dividend.sources} SOURCES AGREE</span>
+          </div>
+        )}
+      </div>
+
+      <div className="check-value">
+        <div className="micro">EXTRACTED</div>
+        <div className="num check-number">{String(fact.values.amount ?? "")}</div>
+        <div className="check-unit">{String(fact.values.unit ?? "")}</div>
+      </div>
+
+      <div className="check-source">
+        <div className="micro">
+          {DOC_TYPE_LABELS[document.doc_type].toUpperCase()} {document.fiscal_year} · P. {fact.page}
+        </div>
+        <blockquote className="check-quote">“{fact.quote}”</blockquote>
+      </div>
+
+      <div className="check-act">
+        <span className="check-status" data-tone={status.tone}>
+          <StatusIcon status={dividend.status} />
+          {status.word}
+        </span>
+        {review && (
+          <div className="check-done">
+            <span>
+              Accepted by {review.reviewer} on {formatDate(review.reviewed_at)}
+            </span>
+          </div>
+        )}
+        <Link className="button" to={`/companies/${document.issuer.isin}?tab=facts&fact=${fact.id}`}>
+          {review ? "OPEN IN THE INSPECTOR" : "CHECK IN THE INSPECTOR"}
+        </Link>
+      </div>
+    </li>
   );
 }
 

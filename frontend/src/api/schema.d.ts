@@ -174,6 +174,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/companies/{isin}/kpis": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Kpis
+         * @description The issuer's scorecard (#27): its quality KPIs and F-score for the fiscal year, by
+         *     default its last with a computed value, each computed from checked figures or "-" with
+         *     why, with its inputs and their sources.
+         */
+        get: operations["kpis_api_companies__isin__kpis_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kpis": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Kpi Definitions
+         * @description The KPIs page (#27 AC4): every computed KPI, generated from the rules that compute
+         *     it.
+         */
+        get: operations["kpi_definitions_api_kpis_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/companies/{isin}/facts": {
         parameters: {
             query?: never;
@@ -440,7 +483,8 @@ export interface components {
         };
         /**
          * CheckQueue
-         * @description CHECKS (#19 R9): the figures that feed a KPI or screen, problems first.
+         * @description CHECKS (#19 R9): the figures that feed a KPI or screen, problems first, and the declared
+         *     dividends that feed one.
          */
         CheckQueue: {
             /** Reviewer */
@@ -448,6 +492,8 @@ export interface components {
             counts: components["schemas"]["CheckCounts"];
             /** Companies */
             companies: components["schemas"]["Organisation"][];
+            /** Dividends */
+            dividends: components["schemas"]["DividendCheck"][];
             /** Groups */
             groups: components["schemas"]["CheckGroup"][];
         };
@@ -576,6 +622,23 @@ export interface components {
             currency: string | null;
         };
         /**
+         * DividendCheck
+         * @description A dividend a company declares for a fiscal year that feeds a KPI (#27): one row per amount
+         *     the filings state, checked in the fact inspector.
+         */
+        DividendCheck: {
+            company: components["schemas"]["Organisation"];
+            /** Fiscal Year */
+            fiscal_year: number;
+            fact: components["schemas"]["StatedFact"];
+            /** Sources */
+            sources: number;
+            /** Feeds */
+            feeds: string[];
+            status: components["schemas"]["CheckStatus"];
+            review: components["schemas"]["Review"] | null;
+        };
+        /**
          * DocType
          * @enum {string}
          */
@@ -688,6 +751,11 @@ export interface components {
             why: ("kept" | "latest" | "annual_report" | "earliest") | null;
             /** Sides */
             sides: components["schemas"]["FactSide"][];
+            /**
+             * Feeds
+             * @default []
+             */
+            feeds: string[];
         };
         /**
          * FactKind
@@ -922,6 +990,116 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * KpiDefinition
+         * @description A KPI as the KPIs page documents it, from the rules that compute it (#27 AC4).
+         */
+        KpiDefinition: {
+            /** Name */
+            name: string;
+            /** Title */
+            title: string;
+            /** Theme */
+            theme: string;
+            /** Means */
+            means: string;
+            /** Formula */
+            formula: string;
+            /** Inputs */
+            inputs: string[];
+            /** Read */
+            read: string;
+            /**
+             * Applies
+             * @enum {string}
+             */
+            applies: "all" | "non_financial";
+            /**
+             * Format
+             * @enum {string}
+             */
+            format: "percent" | "multiple" | "amount" | "score";
+            /** Band */
+            band: string[] | null;
+            /**
+             * Tests
+             * @default []
+             */
+            tests: components["schemas"]["TestDefinition"][];
+        };
+        /** KpiDefinitions */
+        KpiDefinitions: {
+            /** Version */
+            version: string;
+            /** Since */
+            since: string | null;
+            /** Sha256 */
+            sha256: string;
+            /** Themes */
+            themes: components["schemas"]["KpiTheme"][];
+            /** Kpis */
+            kpis: components["schemas"]["KpiDefinition"][];
+        };
+        /**
+         * KpiInput
+         * @description An input of a KPI value as its hover lists it: the value in force, where it is read,
+         *     and whether a person checked it.
+         */
+        KpiInput: {
+            /** Name */
+            name: string;
+            /** Title */
+            title: string;
+            /** Fiscal Year */
+            fiscal_year: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "figure" | "declared";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "checked" | "unchecked" | "missing" | "conflict" | "not_reported";
+            /** Value As Written */
+            value_as_written?: string | null;
+            /** Unit As Written */
+            unit_as_written?: string | null;
+            document?: components["schemas"]["DocumentRef"] | null;
+            /** Page */
+            page?: number | null;
+            /** Fact Id */
+            fact_id?: string | null;
+            /** Checked By */
+            checked_by?: string | null;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+        };
+        /** KpiPoint */
+        KpiPoint: {
+            /** Fiscal Year */
+            fiscal_year: number;
+            status: components["schemas"]["KpiStatus"];
+            /** Value */
+            value: string | null;
+        };
+        /**
+         * KpiStatus
+         * @description Where a KPI value stands: computed, or why it is not (#19 R10, R12).
+         * @enum {string}
+         */
+        KpiStatus: "computed" | "not_meaningful" | "missing" | "conflict" | "unchecked";
+        /** KpiTheme */
+        KpiTheme: {
+            /** Name */
+            name: string;
+            /** Title */
+            title: string;
         };
         /**
          * LastClose
@@ -1258,7 +1436,7 @@ export interface components {
          * @description The processing steps a Run records (AGENTS.md); later steps add theirs.
          * @enum {string}
          */
-        RunStep: "parse" | "chunk" | "embed" | "extract" | "extract_facts" | "link";
+        RunStep: "parse" | "chunk" | "embed" | "extract" | "extract_facts" | "link" | "compute";
         /**
          * Scope
          * @enum {string}
@@ -1271,6 +1449,93 @@ export interface components {
             years: number[];
             /** Statements */
             statements: components["schemas"]["StatementFigures"][];
+        };
+        /** ScoreTest */
+        ScoreTest: {
+            /** Name */
+            name: string;
+            status: components["schemas"]["KpiStatus"];
+            /** Passed */
+            passed: boolean | null;
+            /** Reason */
+            reason: string;
+            /** Title */
+            title: string;
+        };
+        /**
+         * Scorecard
+         * @description An issuer's quality KPIs and F-score for one fiscal year, by default its last (#27).
+         */
+        Scorecard: {
+            /** Fiscal Year */
+            fiscal_year: number | null;
+            /** Years */
+            years: number[];
+            /** Window */
+            window: number;
+            /** Basis */
+            basis: string;
+            /** Rule Version */
+            rule_version: string;
+            /** Since */
+            since: string | null;
+            /** Financial */
+            financial: boolean;
+            /** Sector */
+            sector: string | null;
+            /** Kpis */
+            kpis: components["schemas"]["ScorecardKpi"][];
+        };
+        /**
+         * ScorecardKpi
+         * @description One scorecard row: the selected year's value, or "-" and why (#19 R12).
+         */
+        ScorecardKpi: {
+            /** Name */
+            name: string;
+            /** Title */
+            title: string;
+            /** Theme */
+            theme: string;
+            /**
+             * Format
+             * @enum {string}
+             */
+            format: "percent" | "multiple" | "amount" | "score";
+            /** Band */
+            band: string[] | null;
+            /**
+             * Applies
+             * @enum {string}
+             */
+            applies: "all" | "non_financial";
+            /** Formula */
+            formula: string;
+            status: components["schemas"]["KpiStatus"];
+            /** Value */
+            value: string | null;
+            /** Reason */
+            reason: string;
+            /** Out Of */
+            out_of?: number | null;
+            /** History */
+            history: components["schemas"]["KpiPoint"][];
+            /** Peers */
+            peers: number;
+            /** Sector Median */
+            sector_median: string | null;
+            /** Inputs */
+            inputs: components["schemas"]["KpiInput"][];
+            /**
+             * Tests
+             * @default []
+             */
+            tests: components["schemas"]["ScoreTest"][];
+            /**
+             * Computed At
+             * Format: date-time
+             */
+            computed_at: string;
         };
         /** Section */
         Section: {
@@ -1369,6 +1634,15 @@ export interface components {
             part: number;
             /** Parts */
             parts: number;
+        };
+        /** TestDefinition */
+        TestDefinition: {
+            /** Name */
+            name: string;
+            /** Title */
+            title: string;
+            /** Formula */
+            formula: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -1708,6 +1982,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    kpis_api_companies__isin__kpis_get: {
+        parameters: {
+            query?: {
+                fiscal_year?: number | null;
+            };
+            header?: never;
+            path: {
+                isin: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Scorecard"];
+                };
+            };
+            /** @description No filing from an issuer with this ISIN, or no KPI value for the year */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    kpi_definitions_api_kpis_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KpiDefinitions"];
                 };
             };
         };

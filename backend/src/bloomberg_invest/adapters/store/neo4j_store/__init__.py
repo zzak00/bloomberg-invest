@@ -4,9 +4,10 @@ Neo4j Community enforces uniqueness only. Required properties are enforced by th
 which every write goes through. Reads never return Superseded nodes (ADR 0002).
 """
 
+from collections.abc import Sequence
 from datetime import date, datetime
 
-from neo4j import Driver
+from neo4j import Driver, ManagedTransaction
 
 from bloomberg_invest.adapters.store import GraphStore
 from bloomberg_invest.adapters.store.neo4j_store._chunks import _record_chunks
@@ -27,6 +28,12 @@ from bloomberg_invest.adapters.store.neo4j_store._facts import (
     PARTIES,
     _fact_or_rejected,
     _record_fact_extraction,
+)
+from bloomberg_invest.adapters.store.neo4j_store._kpis import (
+    CURRENT_KPIS,
+    WITH_SOURCES,
+    _record_kpi_values,
+    _stored_kpi,
 )
 from bloomberg_invest.adapters.store.neo4j_store._names import (
     CURRENT_FACTS,
@@ -61,6 +68,7 @@ from bloomberg_invest.domain.extraction import FigureDraft, SourceCell
 from bloomberg_invest.domain.facts import FactDraft
 from bloomberg_invest.domain.figures import FINANCIAL_FIGURE
 from bloomberg_invest.domain.indexing import EmbedInput
+from bloomberg_invest.domain.kpis import KpiChange
 from bloomberg_invest.domain.model import (
     DocumentMeta,
     Organisation,
@@ -84,6 +92,7 @@ from bloomberg_invest.views import (
     RejectedFact,
     RejectedFigure,
     StatedFact,
+    StoredKpi,
 )
 
 CONSTRAINTS = [
@@ -103,6 +112,7 @@ CONSTRAINTS = [
     ("Person", "id"),
     ("Alias", "key"),
     ("RejectedFact", "id"),
+    ("KpiValue", "id"),
 ]
 
 
@@ -280,9 +290,17 @@ class Neo4jStore(GraphStore):
             for r in records
         ]
 
-    def record_review(self, figure_ids: list[str], review: ReviewDraft) -> str:
+    def record_review(
+        self, figure_ids: list[str], review: ReviewDraft, kpis: Sequence[KpiChange] = ()
+    ) -> str:
+        def write(tx: ManagedTransaction) -> str:
+            review_id = _record_review(tx, figure_ids, review)
+            for change in kpis:
+                _record_kpi_values(tx, change)
+            return review_id
+
         with self._driver.session() as session:
-            return session.execute_write(_record_review, figure_ids, review)
+            return session.execute_write(write)
 
     def record_fact_extraction(self, document_id: str, facts: list[FactDraft], run: RunInfo) -> str:
         with self._driver.session() as session:
@@ -558,3 +576,34 @@ class Neo4jStore(GraphStore):
             isin=isin,
         )
         return _listing(records[0]["l"]) if records else None
+
+    def kpi_values(self, isin: str) -> list[StoredKpi]:
+        records, _, _ = self._driver.execute_query(
+            f"""
+            {CURRENT_KPIS}
+            RETURN k, sources ORDER BY k.kpi, k.fiscal_year
+            """,
+            isin=isin,
+        )
+        return [_stored_kpi(r["k"], r["sources"]) for r in records]
+
+    def sector_kpi_values(self, sector: str, fiscal_year: int, other_than: str) -> list[StoredKpi]:
+        records, _, _ = self._driver.execute_query(
+            f"""
+            MATCH (o:Organisation)-[:LISTED_AS]->(:Listing {{sector: $sector}})
+            WHERE o.isin <> $other_than
+            WITH DISTINCT o
+            MATCH (k:KpiValue {{fiscal_year: $fiscal_year}})-[:VALUE_OF]->(o)
+            WHERE {current("k")}
+            {WITH_SOURCES}
+            RETURN k, sources ORDER BY k.kpi, k.id
+            """,
+            sector=sector,
+            fiscal_year=fiscal_year,
+            other_than=other_than,
+        )
+        return [_stored_kpi(r["k"], r["sources"]) for r in records]
+
+    def record_kpi_values(self, change: KpiChange) -> str:
+        with self._driver.session() as session:
+            return session.execute_write(_record_kpi_values, change)

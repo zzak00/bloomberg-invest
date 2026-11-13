@@ -152,7 +152,8 @@ def label_map() -> LabelMap:
 
 def checks(settings: Settings) -> Checks:
     """The KPI rules in force, checked against the label map, and who checks figures."""
-    return Checks(config.kpi_rules(label_map()), settings.reviewer)
+    labels = label_map()
+    return Checks(config.kpi_rules(labels), settings.reviewer, labels)
 
 
 def extraction(settings: Settings) -> Extraction:

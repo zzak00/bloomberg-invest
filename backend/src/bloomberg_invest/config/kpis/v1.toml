@@ -1,102 +1,254 @@
-# KPI rules v1 (#7): for now, each KPI, F-score test group and Sharia screen with the figures it
-# reads. A consolidated figure of one of these inputs needs a person's check before it counts
-# (#19 R10); CHECKS names the KPIs each one feeds. #27-#29 add the formulas and thresholds here.
+# KPI rules v1 (#7, #27): each KPI, F-score test and Sharia screen with the figures it reads. A
+# consolidated figure of one of these inputs needs a person's check before it counts (#19 R10);
+# CHECKS names the KPIs each one feeds. #28 and #29 add the valuation and Sharia formulas here.
 #
-# An input is a line item of the label map, or a table naming its breakdown as well:
-# { line_item = "eps", breakdown = "basic" }.
+# A computed KPI has a `formula` over input names: a name is a line item of the label map unless
+# [sources] says otherwise. Its inputs are read from the formula; a KPI with no formula yet lists
+# them in `inputs`, a line item or a table naming its breakdown: { line_item = "eps", breakdown =
+# "basic" }. A formula may use + - * /, comparisons, prev(x) (x one fiscal year earlier), avg(x)
+# (of x and prev(x): opening and closing balances) and abs(x). Filings write expenses negative:
+# abs() takes their amount. `when` is a condition the KPI needs to mean anything.
 #
-# Inputs #7 names that label map v1 has no line item for, left out until a label map v2:
-# gross profit (gross margin, F-score), lease liabilities (debt), treasury shares held (market
-# cap), weighted average shares (P/E fallback).
+# `format`: percent (a ratio, shown x 100), multiple ("1,0x"), amount (MAD) or score. `band` is
+# the rule of thumb the scorecard compares with, in the unit shown. `applies`: all, or
+# non_financial (banks and insurers read "not meaningful", #7).
 #
 # Never edit a released version: add v2 and point `KPI_RULES` in `config/__init__.py` at it.
 
 version = "v1"
+since = 2026-10-29
+financial_sectors = ["Banques", "Assurances"]
+
+# Names a formula reads that are not a line item of the label map.
+[sources]
+declared_dividend_per_share = { declared = "per_share" }
+
+# Names a formula reads that the filings do not report, and why: what reads one is not
+# meaningful, and the F-score counts its other tests.
+[not_reported]
+gross_profit = "the income statement is by nature: no gross profit"
+
+# Each theme a KPI belongs to, and its title, in the order the KPIs page shows them.
+[themes]
+growth = "Growth"
+profitability = "Profitability"
+returns = "Returns"
+cash = "Cash"
+leverage = "Leverage"
+liquidity = "Liquidity"
+dividends = "Dividends"
+composite = "Composite"
+
+[titles]
+declared_dividend_per_share = "Declared dividend per share"
+gross_profit = "Gross profit"
 
 [kpis.revenue_growth]
 title = "Revenue growth"
-inputs = ["revenue"]
+theme = "growth"
+means = "How fast sales grew over the last fiscal year."
+formula = "revenue / prev(revenue) - 1"
+when = "prev(revenue) > 0"
+read = "compare with the sector median and with inflation"
+band = [3, 12]
+applies = "non_financial"
 
 [kpis.net_income_growth]
 title = "Net income growth"
-inputs = ["net_income"]
+theme = "growth"
+means = "How fast profit grew over the last fiscal year."
+formula = "net_income / prev(net_income) - 1"
+when = "prev(net_income) > 0"
+read = "volatile; read with revenue growth"
+band = [0, 15]
+applies = "non_financial"
 
 [kpis.gross_margin]
 title = "Gross margin"
-inputs = ["revenue"]
+theme = "profitability"
+means = "What is left of each dirham of sales after the direct cost of goods."
+formula = "gross_profit / revenue"
+read = "compare within a sector only"
+band = [20, 50]
+applies = "non_financial"
+
+[kpis.ebitda_margin]
+title = "EBITDA margin"
+theme = "profitability"
+means = "Operating profit before depreciation and amortisation, per dirham of sales."
+formula = "ebitda / revenue"
+read = "compare within a sector; capital-heavy sectors run higher"
+band = [20, 40]
+applies = "non_financial"
 
 [kpis.operating_margin]
 title = "Operating margin"
-inputs = ["operating_income_ebit", "revenue"]
+theme = "profitability"
+means = "Operating profit per dirham of sales."
+formula = "operating_income_ebit / revenue"
+read = "higher is more room; compare with peers"
+band = [10, 30]
+applies = "non_financial"
 
 [kpis.net_margin]
 title = "Net margin"
-inputs = ["net_income", "revenue"]
+theme = "profitability"
+means = "Profit per dirham of sales."
+formula = "net_income / revenue"
+read = "compare with peers and with its own history"
+band = [5, 20]
+applies = "non_financial"
 
 [kpis.roe]
 title = "ROE"
-inputs = ["net_income_group_share", "equity_group_share"]
+theme = "returns"
+means = "Profit earned on shareholders' equity."
+formula = "net_income_group_share / avg(equity_group_share)"
+read = "10 % to 20 % is usual; very high can mean thin equity"
+band = [10, 20]
 
 [kpis.roa]
 title = "ROA"
-inputs = ["net_income", "total_assets"]
+theme = "returns"
+means = "Profit earned on everything the company owns."
+formula = "net_income / avg(total_assets)"
+read = "banks run near 1 %; industrials higher"
+band = [3, 10]
 
 [kpis.roic]
 title = "ROIC"
-inputs = [
-    "operating_income_ebit",
-    "tax_expense",
-    "pre_tax_income",
-    "equity",
-    "long_term_debt",
-    "short_term_debt",
-    "cash_and_equivalents",
-]
+theme = "returns"
+means = "After-tax operating profit earned on the capital invested in the business."
+formula = """operating_income_ebit * (1 - abs(tax_expense) / pre_tax_income)
+    / avg(equity + long_term_debt + short_term_debt - cash_and_equivalents)"""
+read = "above the cost of capital creates value"
+band = [8, 15]
+applies = "non_financial"
 
 [kpis.cash_conversion]
 title = "Cash conversion"
-inputs = ["operating_cash_flow", "net_income"]
+theme = "cash"
+means = "How much operating cash comes in for each dirham of reported profit."
+formula = "operating_cash_flow / net_income"
+when = "net_income > 0"
+format = "multiple"
+read = "around 1 or above is healthy"
+band = [1, 3]
+applies = "non_financial"
 
 [kpis.free_cash_flow]
 title = "Free cash flow"
-inputs = ["operating_cash_flow", "capex_cash"]
+theme = "cash"
+means = "Cash left after paying for investment."
+formula = "operating_cash_flow - abs(capex_cash)"
+format = "amount"
+read = "positive and stable is what matters"
+applies = "non_financial"
 
 [kpis.fcf_margin]
 title = "FCF margin"
-inputs = ["operating_cash_flow", "capex_cash", "revenue"]
+theme = "cash"
+means = "Free cash flow per dirham of sales."
+formula = "(operating_cash_flow - abs(capex_cash)) / revenue"
+read = "compare with the sector median"
+band = [5, 15]
+applies = "non_financial"
 
 [kpis.debt_to_equity]
 title = "Debt / equity"
-inputs = ["long_term_debt", "short_term_debt", "equity"]
+theme = "leverage"
+means = "How much debt sits on each dirham of equity."
+formula = "(long_term_debt + short_term_debt) / equity"
+format = "multiple"
+read = "below 1 is conservative; debt includes lease liabilities"
+band = [0, 1]
+applies = "non_financial"
 
 [kpis.net_debt_to_ebitda]
 title = "Net debt / EBITDA"
-inputs = ["long_term_debt", "short_term_debt", "cash_and_equivalents", "ebitda"]
+theme = "leverage"
+means = "How many years of operating profit it would take to repay net debt."
+formula = "(long_term_debt + short_term_debt - cash_and_equivalents) / ebitda"
+when = "ebitda > 0"
+format = "multiple"
+read = "below 2 comfortable; compare with the sector median; debt includes lease liabilities"
+band = [0, 2]
+applies = "non_financial"
 
 [kpis.interest_coverage]
 title = "Interest coverage"
-inputs = ["operating_income_ebit", "interest_expense"]
+theme = "leverage"
+means = "How many times operating profit covers interest."
+formula = "operating_income_ebit / abs(interest_expense)"
+format = "multiple"
+read = "above 4 is comfortable"
+band = [4, 20]
+applies = "non_financial"
 
 [kpis.current_ratio]
 title = "Current ratio"
-inputs = ["current_assets", "current_liabilities"]
+theme = "liquidity"
+means = "Short-term assets against short-term debts."
+formula = "current_assets / current_liabilities"
+format = "multiple"
+read = "above 1 means short-term debts are covered"
+band = [1, 2]
+applies = "non_financial"
 
 [kpis.payout_ratio]
 title = "Payout ratio"
-inputs = ["dividends_paid", "net_income_group_share"]
+theme = "dividends"
+means = "Share of profit paid out as the dividend declared for the year."
+formula = "declared_dividend_per_share * shares_outstanding / net_income_group_share"
+when = "net_income_group_share > 0"
+read = "above 100 % is paid from reserves"
+band = [30, 70]
 
+# The nine standard Piotroski tests, FY against FY-1. ROA and asset turnover read opening assets.
 [kpis.f_score]
 title = "Piotroski F-score"
-inputs = [
-    "net_income",
-    "total_assets",
-    "operating_cash_flow",
-    "long_term_debt",
-    "current_assets",
-    "current_liabilities",
-    "shares_outstanding",
-    "revenue",
-]
+theme = "composite"
+means = "Nine pass/fail tests on profitability, leverage and efficiency; a test that can't apply, such as gross margin with no gross profit, is left out."
+format = "score"
+read = "7 to 9 strong, 0 to 3 weak; out of the tests that apply, each with checked inputs"
+band = [7, 9]
+applies = "non_financial"
+
+[kpis.f_score.tests.roa_positive]
+title = "Positive ROA"
+formula = "net_income / prev(total_assets) > 0"
+
+[kpis.f_score.tests.cfo_positive]
+title = "Positive operating cash flow"
+formula = "operating_cash_flow > 0"
+
+[kpis.f_score.tests.roa_up]
+title = "ROA up"
+formula = "net_income / prev(total_assets) > prev(net_income / prev(total_assets))"
+
+[kpis.f_score.tests.accruals]
+title = "Operating cash flow above net income"
+formula = "operating_cash_flow > net_income"
+
+[kpis.f_score.tests.leverage_down]
+title = "Long-term debt / assets down"
+formula = "long_term_debt / total_assets < prev(long_term_debt / total_assets)"
+
+[kpis.f_score.tests.current_ratio_up]
+title = "Current ratio up"
+formula = "current_assets / current_liabilities > prev(current_assets / current_liabilities)"
+
+[kpis.f_score.tests.no_new_shares]
+title = "No new shares"
+formula = "shares_outstanding <= prev(shares_outstanding)"
+
+[kpis.f_score.tests.gross_margin_up]
+title = "Gross margin up"
+formula = "gross_profit / revenue > prev(gross_profit / revenue)"
+
+[kpis.f_score.tests.asset_turnover_up]
+title = "Asset turnover up"
+formula = "revenue / prev(total_assets) > prev(revenue / prev(total_assets))"
 
 [kpis.pe]
 title = "P/E"

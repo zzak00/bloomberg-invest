@@ -174,6 +174,22 @@ erDiagram
         String name
         String kind
     }
+    KpiValue {
+        String id UK
+        String kpi
+        Integer fiscal_year
+        String status
+        String value
+        String reason
+        Integer out_of
+        String rule_version
+        String rule_sha256
+        String label_map
+        DateTime computed_at
+        String used "JSON"
+        String tests "JSON"
+        Boolean superseded
+    }
 
     Document }o--|| Organisation : ISSUED_BY
     Run }o--|| Document : PROCESSED
@@ -230,6 +246,12 @@ erDiagram
     Organisation |o--o| Listing : "LISTED_AS (when its ISIN is in config/listings/)"
     Listing ||--o{ Price : HAS_PRICE
     Price |o--o| Price : "SUPERSEDED_BY (a later answer gave another close)"
+    KpiValue }o--|| Organisation : VALUE_OF
+    KpiValue }o--o{ Fact : "COMPUTED_FROM (each figure or dividend it read)"
+    KpiValue }o--o{ RejectedFigure : "COMPUTED_FROM (a corrected one)"
+    KpiValue }o--|| Run : "PRODUCED_BY (compute Run)"
+    KpiValue }o--o| Run : "SUPERSEDED_BY (a later compute Run)"
+    Run }o--o| Organisation : "PROCESSED (compute Run)"
 ```
 
 Arrows in Cypher run from the first entity to the second, for example `(:Document)-[:ISSUED_BY]->(:Organisation)` and `(:Run)-[:PROCESSED]->(:Document)`.
@@ -304,8 +326,8 @@ One execution of a step. `config` is a JSON string whose keys depend on the step
 | Property | Type | Meaning | Example |
 | --- | --- | --- | --- |
 | `id` | String, unique | UUID | `0d43fb28-03f5-42c5-b558-2fc4512df0eb` |
-| `step` | String | `parse`, `chunk`, `embed` or `extract` | `parse` |
-| `tool` | String | `docling`, `bloomberg-chunker`, `sentence-transformers` or `azure-openai` | `docling` |
+| `step` | String | `parse`, `chunk`, `embed`, `extract`, `extract_facts`, `link` or `compute` | `parse` |
+| `tool` | String | `docling`, `bloomberg-chunker`, `sentence-transformers`, `azure-openai` or `bloomberg-invest` | `docling` |
 | `tool_version` | String | the tool's package version | `2.145.0` |
 | `config` | String (JSON) | the settings the output depends on | see below |
 | `started_at`, `finished_at` | DateTime | UTC | `2026-11-09T13:36:59Z` |
@@ -320,6 +342,7 @@ One execution of a step. `config` is a JSON string whose keys depend on the step
 - **chunk:** `{"cap": "2000", "table_cap": "1500", "tokenizer": "cl100k_base", "parser": "docling 2.145.0", "parse_run": "0d43fb28-…"}`
 - **embed:** `{"model": "Qwen/Qwen3-Embedding-0.6B", "max_tokens": "2048", "chunk_run": "59e09a42-…"}`
 - **extract:** `{"api": "openai/v1", "deployment": "gpt-5.6-sol", "prompt": "extract-figures v1", "prompt_sha256": "2e0590a8…", "label_map": "v1", "label_map_sha256": "7ef25890…", "pages": "88", "parse_run": "0d43fb28-…", "replayed": "true"}`
+- **compute:** `{"kpi_rules": "v1", "kpi_rules_sha256": "4b1c…", "label_map": "v1"}`. A compute Run `PROCESSED` the Organisation whose KPI values it computed, not a Document.
 
 ### Page
 
@@ -472,6 +495,26 @@ A person's check of figures in CHECKS (#23). One Review `REVIEWS` every figure o
 | `unit_as_written` | String, corrections | the figure's own, which the value is read in | `MAD millions` |
 | `value`, `unit`, `scale`, `currency` | corrections | parsed as on a Fact | `17920000000`, `MAD`, `1000000`, `MAD` |
 
+### KpiValue
+
+One KPI of one company for one fiscal year (#27), computed in Python by a compute Run from the company's checked consolidated figures and declared dividends under one version of `config/kpis/`. It is kept whether or not it has a value: "-" and why is a result too (#19 R12). It is `VALUE_OF` the Organisation and `COMPUTED_FROM` every Fact it read; a corrected RejectedFigure it read is linked too.
+
+| Property | Type | Meaning | Example |
+| --- | --- | --- | --- |
+| `id` | String, unique | UUID | `c2e4…` |
+| `kpi` | String | its name in `config/kpis/` | `net_debt_to_ebitda` |
+| `fiscal_year` | Integer | | `2025` |
+| `status` | String | `computed`, `not_meaningful`, `missing`, `conflict` or `unchecked` | `computed` |
+| `value` | String, optional | exact decimal, nine places; a ratio as a fraction, a score as the tests passed | `0.953712215` |
+| `reason` | String | why there is no value, naming each input and year; empty when computed | `Waiting for check: EBITDA FY2025` |
+| `out_of` | Integer, optional | a score's tests counted: those that are meaningful for the company | `8` |
+| `rule_version`, `rule_sha256` | String | the KPI rules it was computed under | `v1`, `4b1c…` |
+| `label_map` | String | the label map version its figures were read with | `v1` |
+| `computed_at` | DateTime | UTC, its compute Run's end | `2026-11-13T10:02:11Z` |
+| `used` | String (JSON) | each input it read, `[name, fiscal year]` | `[["ebitda", 2025]]` |
+| `tests` | String (JSON) | a score's tests, `[name, status, passed, reason]` | `[["roa_positive", "computed", true, ""]]` |
+| `superseded` | Boolean, optional | `true` once a later compute Run replaced it | `true` |
+
 ### Listing
 
 A share as its exchange lists it (#26). Every share the Bourse de Casablanca lists has one, refreshed from the exchange's issuer list on each price run; a share it no longer lists keeps its Listing and Prices. An Organisation is `LISTED_AS` its Listing when `config/listings/` gives the ticker's ISIN: the exchange's list has none.
@@ -513,6 +556,7 @@ Neo4j Community enforces uniqueness only. Required properties are enforced by th
 | Table, Cell | `id` | always created, per parse Run |
 | Fact, RejectedFigure, RejectedFact, Span | `id` | always created, per extract or extract_facts Run |
 | Review | `id` | always created, per check; never superseded |
+| KpiValue | `id` | always created, by a compute Run, for each KPI and year whose result changed |
 | Listing | `key`; `(mic, ticker)` | `(mic, ticker)` from the exchange's list |
 | Price | `(listing, date, source, fetched_at)` | the current close of `(listing, date, source)`: the same close writes nothing, another one from a later answer supersedes it. "One current close" is kept by the write, in the share's transaction: Community has no partial uniqueness |
 
@@ -576,6 +620,14 @@ An extract Run carries checks over in its own transaction (#19 R4). A new figure
 Any other new figure starts unchecked and goes back to CHECKS, and so does every figure with no Passage: its page and `source_id` are not the same Cell. Only the Run just before counts, so a check undone by a different reading does not come back when a later Run reads the first value again.
 
 One filing's check covers the value (#24 D4): a figure of another filing stating the value in force, within the precision it is written to, counts as checked and leaves CHECKS, which names the filing checked (`checked_in`). This is read, not stored: no Review links to it, and it is reopened where the check was made.
+
+## Where KPI values live
+
+A compute Run computes every KPI of one company for every fiscal year it has inputs for, compares each result with the current KpiValue (status, value, reason, tests counted, rule and label map versions, inputs and Facts read), and writes only those that differ, superseding the one each replaces with `SUPERSEDED_BY` the Run. A correction therefore supersedes only the values that read the corrected figure (#27 AC3), and a run that changes nothing writes no Run.
+
+A check of a figure or a declared dividend computes the KPI values with the check applied, and writes the Review, the compute Run and its KpiValues in one transaction: if any part fails, none is kept. The CLI's `ingest`, `extract` and `facts`, the only entry points that extract, end with a compute Run of their own for the company; so does `bloomberg kpis`, after a new rule version.
+
+An input's value is the one in force across the company's filings, as the dossier shows it (#19 R8, #24 D4). When filings state different values, the one a person checked counts; until one is, the KPI reads "two values". The scorecard reads the current values; the KPIs page reads the rules.
 
 ## Where closes live
 

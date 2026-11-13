@@ -3,6 +3,7 @@ import { Link, useParams, useSearchParams } from "react-router";
 
 import { ApiError } from "../ApiError";
 import { FactInspector } from "../FactInspector";
+import { Scorecard } from "../Scorecard";
 import {
   api,
   type CompanyFacts,
@@ -21,11 +22,11 @@ import { isKept, rowLabel, sentenceText, unresolved, whenLabel } from "../facts"
 import { SCOPES, capitalised, unitLabel } from "../figures";
 import { DOC_TYPE_LABELS, formatChange, formatDateTime, formatDay, formatPrice } from "../format";
 
-const TABS = ["figures", "facts", "filings"] as const;
+const TABS = ["figures", "facts", "scorecard", "filings"] as const;
 type Tab = (typeof TABS)[number];
 
-/** A company's dossier: its figures by statement and year, its other facts by section, and its
- * filings. A fact opens in the inspector (`?fact=`). */
+/** A company's dossier: its figures by statement and year, its other facts by section, its
+ * scorecard, and its filings. A fact opens in the inspector (`?fact=`). */
 export function CompanyPage() {
   const { isin = "" } = useParams();
   const [params, setParams] = useSearchParams();
@@ -39,6 +40,13 @@ export function CompanyPage() {
     api.GET("/api/companies/{isin}/facts", { params: { path: { isin } } }),
   );
   const tab: Tab = TABS.find((t) => t === params.get("tab")) ?? "figures";
+  // The scorecard's fiscal year, when one is picked; else the API's default, the last.
+  const year = Number(params.get("year")) || undefined;
+  const card = useApi(`kpis:${isin}:${year ?? "last"}`, tab === "scorecard" ? () =>
+    api.GET("/api/companies/{isin}/kpis", {
+      params: { path: { isin }, query: year ? { fiscal_year: year } : {} },
+    }) : null,
+  );
   const factId = params.get("fact");
   const closeFact = useCallback(() => {
     setParams((previous) => {
@@ -77,6 +85,7 @@ export function CompanyPage() {
   const tabs: { id: Tab; label: string }[] = [
     { id: "figures", label: count === undefined ? "FIGURES" : `FIGURES · ${count}` },
     { id: "facts", label: factCount === undefined ? "FACTS" : `FACTS · ${factCount}` },
+    { id: "scorecard", label: "SCORECARD" },
     { id: "filings", label: `FILINGS · ${documents.length}` },
   ];
 
@@ -112,6 +121,18 @@ export function CompanyPage() {
       <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
         {tab === "filings" ? (
           <Filings documents={documents} />
+        ) : tab === "scorecard" ? (
+          card.state === "ready" ? (
+            <Scorecard
+              card={card.data}
+              isin={isin}
+              onYear={(y) => setParams({ tab: "scorecard", year: String(y) })}
+            />
+          ) : card.state === "error" ? (
+            <ApiError title="The scorecard could not be loaded" message={card.message} />
+          ) : (
+            <div className="skeleton figures-skeleton" aria-hidden="true" />
+          )
         ) : tab === "facts" ? (
           facts.state === "loading" ? (
             <div className="skeleton figures-skeleton" aria-hidden="true" />

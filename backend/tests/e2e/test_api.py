@@ -20,6 +20,7 @@ from bloomberg_invest.domain.chunking import Block, ChunkDraft
 from bloomberg_invest.domain.extraction import SourceParagraph, page_sources
 from bloomberg_invest.domain.facts import FactKind
 from bloomberg_invest.domain.facts import drafts as fact_drafts
+from bloomberg_invest.domain.kpis import KpiChange, KpiResult, KpiStatus
 from bloomberg_invest.domain.model import DocType, RunStep
 from bloomberg_invest.domain.prices import CASABLANCA, XCAS, Close, ListedShare
 from bloomberg_invest.entrypoints import cli
@@ -27,7 +28,9 @@ from bloomberg_invest.entrypoints import prices as prices_entrypoint
 from bloomberg_invest.entrypoints.api.app import create_app
 from bloomberg_invest.service_layer.checks import Checks
 from bloomberg_invest.service_layer.embed import embed_document
-from bloomberg_invest.service_layer.names import link_names
+from bloomberg_invest.service_layer.facts import ExtractedFacts
+from bloomberg_invest.service_layer.kpis import Computed, compute_kpis
+from bloomberg_invest.service_layer.names import Linked, link_names
 
 PDF = FIXTURES / "filing.pdf"
 SHA = hashlib.sha256(PDF.read_bytes()).hexdigest()
@@ -80,7 +83,7 @@ def embedder() -> FakeEmbedder:
 
 
 def app(store, files, embedder, reviewer: str | None = "Z. Bajjou"):
-    checks = Checks(config.kpi_rules(config.label_map()), reviewer)
+    checks = Checks(config.kpi_rules(config.label_map()), reviewer, config.label_map())
     return create_app(
         store=store, files=files, embedder=embedder, label_map=config.label_map(), checks=checks
     )
@@ -164,6 +167,8 @@ def test_openapi_declares_the_contract(client):
         "/api/names/{key}/reviews",
         "/api/parties",
         "/api/rejected-facts",
+        "/api/companies/{isin}/kpis",
+        "/api/kpis",
     }
     schemas = spec["components"]["schemas"]
     assert {
@@ -709,6 +714,7 @@ def test_the_queue_filters_by_company(client, extracted):
         "reviewer": "Z. Bajjou",
         "counts": {"to_check": 0, "rejected": 0, "done": 0},
         "companies": [{"isin": "MA0000011488", "name": "Maroc Telecom"}],
+        "dividends": [],
         "groups": [],
     }
     assert len(rows_of(queue(client, isin="MA0000011488"))) == 3
@@ -1015,3 +1021,324 @@ def test_rejected_facts_are_listed_with_why(client, store, document_id):
         2,
     )
     assert client.get("/api/companies/MA0000011488/facts").json()["sections"] == []
+
+
+def scorecard(client) -> dict:
+    return client.get("/api/companies/MA0000011488/kpis").json()
+
+
+def kpi(card: dict, name: str) -> dict:
+    return next(k for k in card["kpis"] if k["name"] == name)
+
+
+def kpi_values(driver, name: str) -> list[tuple[str | None, bool]]:
+    """Every KpiValue the graph keeps for a KPI and FY2025, current or not, oldest first."""
+    records, _, _ = driver.execute_query(
+        "MATCH (k:KpiValue {kpi: $kpi, fiscal_year: 2025}) "
+        "RETURN k.value AS value, coalesce(k.superseded, false) AS superseded "
+        "ORDER BY k.computed_at",
+        kpi=name,
+    )
+    return [(r["value"], r["superseded"]) for r in records]
+
+
+def test_a_kpi_with_an_input_waiting_for_check_reads_a_dash_and_why(client, extracted):
+    """#27 AC2: nothing is computed from an unchecked input."""
+    assert scorecard(client) == {
+        "fiscal_year": None,
+        "years": [],
+        "window": 3,
+        "basis": "Consolidated · IFRS",
+        "rule_version": "v1",
+        "since": "2026-10-29",
+        "financial": False,
+        "sector": None,
+        "kpis": [],
+    }
+    review(client, rows_of(queue(client))[1])  # revenue FY2025
+    card = scorecard(client)
+    assert card["fiscal_year"] == 2025
+    growth = kpi(card, "revenue_growth")
+    assert (growth["status"], growth["value"], growth["reason"]) == (
+        "unchecked",
+        None,
+        "Waiting for check: Revenue FY2024",
+    )
+    assert [(i["title"], i["fiscal_year"], i["status"]) for i in growth["inputs"]] == [
+        ("Revenue", 2025, "checked"),
+        ("Revenue", 2024, "unchecked"),
+    ]
+    assert growth["inputs"][0]["checked_by"] == "Z. Bajjou"
+    assert growth["inputs"][0]["value_as_written"] == "36 681"
+    assert growth["formula"] == "revenue / revenue FY-1 - 1"
+    margin = kpi(card, "net_margin")
+    # The misread net income is rejected: it does not count until corrected.
+    assert (margin["status"], margin["reason"]) == ("missing", "Missing: Net income FY2025")
+
+
+def test_a_checked_input_computes_the_kpi_from_the_facts_it_names(client, extracted, driver):
+    """#27 AC1: a KPI value links to the Facts it used and the rule version."""
+    review(client, rows_of(queue(client))[1])  # revenue FY2025
+    review(client, rows_of(queue(client))[2])  # revenue FY2024
+    growth = kpi(scorecard(client), "revenue_growth")
+    assert (growth["status"], growth["value"], growth["reason"]) == (
+        "computed",
+        "-0.000490477",  # 36 681 / 36 699 - 1
+        "",
+    )
+    assert [p["fiscal_year"] for p in growth["history"]] == [2024, 2025]
+    assert growth["applies"] == "non_financial"
+    records, _, _ = driver.execute_query(
+        "MATCH (k:KpiValue {kpi: 'revenue_growth', fiscal_year: 2025})-[:COMPUTED_FROM]->(f) "
+        "WHERE k.superseded IS NULL "
+        "MATCH (k)-[:PRODUCED_BY]->(r:Run {step: 'compute'}) "
+        "RETURN k.rule_version AS version, collect(f.id) AS facts, r.config AS config"
+    )
+    [record] = records
+    assert record["version"] == "v1"
+    assert sorted(record["facts"]) == sorted([extracted["36 681"], extracted["36 699"]])
+    assert '"kpi_rules": "v1"' in record["config"]
+
+
+def test_a_correction_supersedes_only_the_kpi_values_that_read_the_figure(
+    client, store, extracted, driver
+):
+    """#27 AC3: a corrected figure recomputes only the affected KPI values; the old ones are
+    kept, superseded."""
+    review(client, rows_of(queue(client))[1])  # revenue FY2025
+    review(client, rows_of(queue(client))[2])  # revenue FY2024
+    misread = rows_of(queue(client))[0]  # net income FY2025, 7 121 for 7 112
+    [_, right] = client.get(f"/api/figures/{misread['figure_ids'][0]}/candidates").json()
+    review(client, misread, "corrected", cell_id=right["cell_id"])
+
+    margin = kpi(scorecard(client), "net_margin")
+    assert (margin["status"], margin["value"]) == ("computed", "0.193887844")  # 7 112 / 36 681
+    assert kpi_values(driver, "net_margin") == [(None, True), ("0.193887844", False)]
+    # Revenue growth reads no net income: its value is the one computed before.
+    assert kpi_values(driver, "revenue_growth") == [(None, True), ("-0.000490477", False)]
+
+    review(client, rows_of(queue(client))[1], "corrected", value_as_written="36 680")
+    assert kpi(scorecard(client), "net_margin")["value"] == "0.193893130"  # 7 112 / 36 680
+    assert kpi_values(driver, "net_margin")[-2:] == [
+        ("0.193887844", True),
+        ("0.193893130", False),
+    ]
+    assert kpi_values(driver, "revenue_growth")[-1] == ("-0.000517725", False)
+    # Each check wrote the values computed with it applied: a recompute finds nothing to change.
+    label_map = config.label_map()
+    unchanged = compute_kpis("MA0000011488", store, label_map, config.kpi_rules(label_map))
+    assert unchanged == Computed(None, 0, 0)
+
+
+def test_a_failed_kpi_recompute_after_an_extract_says_the_extract_is_kept(
+    client, document_id, monkeypatch, capsys
+):
+    """The recompute ending `bloomberg facts` fails on its own line: what was extracted stays."""
+    monkeypatch.setenv("NEO4J_URI", os.environ.get("NEO4J_TEST_URI", "bolt://localhost:7688"))
+    monkeypatch.setenv("NEO4J_PASSWORD", os.environ.get("NEO4J_TEST_PASSWORD", "test-password"))
+    monkeypatch.setattr(bootstrap, "fact_extraction", lambda settings: None)
+    monkeypatch.setattr(bootstrap, "parser", lambda settings: None)
+    monkeypatch.setattr(cli, "extract_facts", lambda *args: ExtractedFacts("run-1", 3, 4, 0))
+    monkeypatch.setattr(cli, "link_names", lambda *args: Linked("run-2", 2, 0))
+
+    def fail(isin, *args):
+        raise LookupError(f"no issuer {isin}")
+
+    monkeypatch.setattr(cli, "compute_kpis", fail)
+    assert cli.main(["facts", document_id]) == 1
+    out = capsys.readouterr()
+    assert "extracted 4 other facts from 3 pages" in out.out
+    assert "; KPI values not recomputed; " in out.out
+    assert out.err.strip() == (
+        "KPI values not recomputed: no issuer MA0000011488; "
+        "run `bloomberg kpis --isin MA0000011488`"
+    )
+
+
+def test_bloomberg_kpis_carries_on_past_an_issuer_that_fails(
+    client, store, meta, parsed, extracted, monkeypatch, capsys
+):
+    monkeypatch.setenv("NEO4J_URI", os.environ.get("NEO4J_TEST_URI", "bolt://localhost:7688"))
+    monkeypatch.setenv("NEO4J_PASSWORD", os.environ.get("NEO4J_TEST_PASSWORD", "test-password"))
+    other = meta.issuer.model_copy(update={"isin": "MA0000000001", "name": "Other"})
+    store.record_parse(meta.model_copy(update={"issuer": other}), parsed, make_run(), "1" * 64)
+
+    def compute(isin, *args):
+        if isin == "MA0000000001":
+            raise LookupError("no issuer MA0000000001")
+        return compute_kpis(isin, *args)
+
+    monkeypatch.setattr(cli, "compute_kpis", compute)
+    assert cli.main(["kpis"]) == 1
+    out = capsys.readouterr()
+    assert "MA0000000001: no issuer MA0000000001" in out.err
+    assert "MA0000011488: " in out.out
+    assert store.kpi_values("MA0000011488") != []
+
+
+def test_reopening_a_check_takes_the_kpi_value_back_to_a_dash(client, extracted, driver):
+    revenue = rows_of(queue(client))[1]
+    review(client, revenue)
+    review(client, rows_of(queue(client))[2])
+    kept = kpi_values(driver, "roe")
+    review(client, revenue, "reopened")
+    growth = kpi(scorecard(client), "revenue_growth")
+    assert (growth["status"], growth["reason"]) == (
+        "unchecked",
+        "Waiting for check: Revenue FY2025",
+    )
+    assert kpi_values(driver, "revenue_growth")[-2:] == [
+        ("-0.000490477", True),
+        (None, False),
+    ]
+    # ROE reads no revenue: it is not written again.
+    assert kpi_values(driver, "roe") == kept
+
+
+def test_the_scorecard_shows_the_fiscal_year_selected(client, extracted):
+    """#7: the value for the selected year, each year with values selectable."""
+    review(client, rows_of(queue(client))[1])  # revenue FY2025
+    review(client, rows_of(queue(client))[2])  # revenue FY2024
+    card = scorecard(client)
+    assert (card["fiscal_year"], card["years"]) == (2025, [2024, 2025])
+    earlier = client.get("/api/companies/MA0000011488/kpis?fiscal_year=2024").json()
+    assert earlier["fiscal_year"] == 2024
+    growth = kpi(earlier, "revenue_growth")
+    assert (growth["status"], growth["reason"]) == ("missing", "Missing: Revenue FY2023")
+    missing = client.get("/api/companies/MA0000011488/kpis?fiscal_year=2019")
+    assert missing.status_code == 404
+    assert missing.json()["detail"] == "no KPI values of MA0000011488 for FY2019"
+
+
+def test_the_kpis_page_is_generated_from_the_rules_that_compute_them(client):
+    """#27 AC4."""
+    page = client.get("/api/kpis").json()
+    assert (page["version"], page["since"]) == ("v1", "2026-10-29")
+    assert [t["title"] for t in page["themes"]][:3] == ["Growth", "Profitability", "Returns"]
+    assert len(page["kpis"]) == 18
+    nde = next(k for k in page["kpis"] if k["name"] == "net_debt_to_ebitda")
+    assert nde == {
+        "name": "net_debt_to_ebitda",
+        "title": "Net debt / EBITDA",
+        "theme": "leverage",
+        "means": "How many years of operating profit it would take to repay net debt.",
+        "formula": "(long-term debt + short-term debt - cash and cash equivalents) / EBITDA",
+        "inputs": ["Long-term debt", "Short-term debt", "Cash and cash equivalents", "EBITDA"],
+        "read": (
+            "below 2 comfortable; compare with the sector median; debt includes lease liabilities"
+        ),
+        "applies": "non_financial",
+        "format": "multiple",
+        "band": ["0", "2"],
+        "tests": [],
+    }
+    score = next(k for k in page["kpis"] if k["name"] == "f_score")
+    assert score["formula"] == "sum of 9 pass/fail tests"
+    assert score["tests"][0] == {
+        "name": "roa_positive",
+        "title": "Positive ROA",
+        "formula": "net income / total assets FY-1 > 0",
+    }
+
+
+def test_an_unknown_company_has_no_scorecard(client):
+    assert client.get("/api/companies/MA0000000000/kpis").status_code == 404
+
+
+def test_a_kpi_is_compared_with_its_sector_median_from_three_peers(
+    client, store, meta, parsed, extracted
+):
+    """#7: a sector median needs three other companies of the sector, else too few peers."""
+    # The fourth was computed under other rules: it does not count until recomputed.
+    peers = {
+        "MA0000000001": "0.10",
+        "MA0000000002": "0.30",
+        "MA0000000003": "0.20",
+        "MA0000000004": "0.90",
+    }
+    rules = config.kpi_rules(config.label_map())
+    shares = [ListedShare("IAM", "ITISSALAT AL-MAGHRIB", "Télécommunications", "Principal A")]
+    for n, (isin, value) in enumerate(peers.items(), start=1):
+        issuer = meta.issuer.model_copy(update={"isin": isin, "name": f"Peer {n}"})
+        store.record_parse(
+            meta.model_copy(update={"issuer": issuer}), parsed, make_run(), f"{n:064d}"
+        )
+        result = KpiResult("net_margin", 2025, KpiStatus.computed, Decimal(value), "", (), ())
+        run = make_run().model_copy(update={"step": RunStep.compute, "output": None})
+        sha256 = rules.sha256 if n < 4 else "a" * 64
+        store.record_kpi_values(KpiChange(isin, (result,), (), run, "v1", sha256, "v1", 0))
+        shares.append(ListedShare(f"P{n}", f"PEER {n}", "Télécommunications", "Principal A"))
+    isins = {"IAM": "MA0000011488"} | {f"P{n}": isin for n, isin in enumerate(peers, start=1)}
+    store.upsert_listings(XCAS, shares[:3], isins, datetime.now(UTC))
+    review(client, rows_of(queue(client))[1])  # revenue FY2025: the scorecard has FY2025
+
+    card = scorecard(client)
+    assert card["sector"] == "Télécommunications"
+    margin = kpi(card, "net_margin")
+    assert (margin["peers"], margin["sector_median"]) == (2, None)  # too few peers
+    store.upsert_listings(XCAS, shares, isins, datetime.now(UTC))
+    margin = kpi(scorecard(client), "net_margin")
+    assert (margin["peers"], margin["sector_median"]) == (3, "0.20")
+
+
+DIVIDEND = SourceParagraph(
+    2,
+    "Le Conseil proposera un dividende de 4,00 dirhams par action au titre de l'exercice 2025.",
+    ((2, 50.0, 400.0, 540.0, 420.0),),
+)
+
+
+def test_a_declared_dividend_is_checked_in_the_inspector_and_feeds_the_payout(
+    client, store, extracted, document_id
+):
+    """#27: the payout ratio reads the dividend declared for the year, once a person checks it."""
+    dividend = {
+        "company": {"written": "Le Conseil", "name": "Maroc Telecom", "kind": "company"},
+        "measure": "per_share",
+        "amount": "4,00",
+        "unit": "MAD",
+        "status": "proposed",
+        "fiscal_year": 2025,
+        "source_id": "p2.0",
+        "quote": "un dividende de 4,00 dirhams par action au titre de l'exercice 2025",
+    }
+    response = {k.value: [dividend] if k == FactKind.dividend else [] for k in FactKind}
+    run = make_run(20).model_copy(update={"step": RunStep.extract_facts, "output": None})
+    store.record_fact_extraction(
+        document_id, fact_drafts(response, page_sources(2, [DIVIDEND], [])), run
+    )
+    link_names(document_id, store)
+    [fact], _ = store.facts("MA0000011488")
+    assert client.get(f"/api/facts/{fact.id}").json()["feeds"] == ["Payout ratio"]
+
+    review(client, rows_of(queue(client))[1])  # revenue FY2025: the scorecard has FY2025
+    declared = next(
+        i
+        for i in kpi(scorecard(client), "payout_ratio")["inputs"]
+        if i["name"] == "declared_dividend_per_share"
+    )
+    assert (declared["status"], declared["value_as_written"]) == ("unchecked", "4,00")
+
+    # CHECKS lists it with the figures, counted, until a person keeps it in the inspector.
+    before = queue(client)
+    [row] = before["dividends"]
+    assert (row["company"]["name"], row["fiscal_year"]) == ("Maroc Telecom", 2025)
+    # The company filter is the declaring company's.
+    assert queue(client, isin="MA0000011488")["dividends"] == before["dividends"]
+    assert (row["fact"]["id"], row["status"], row["feeds"]) == (
+        fact.id,
+        "to_check",
+        ["Payout ratio"],
+    )
+    kept = client.post(f"/api/facts/{fact.id}/reviews", json={"verdict": "accepted"})
+    assert kept.status_code == 201
+    after = queue(client)
+    assert after["dividends"][0]["status"] == "accepted"
+    assert after["counts"]["to_check"] == before["counts"]["to_check"] - 1
+    assert after["counts"]["done"] == before["counts"]["done"] + 1
+    declared = next(
+        i
+        for i in kpi(scorecard(client), "payout_ratio")["inputs"]
+        if i["name"] == "declared_dividend_per_share"
+    )
+    assert (declared["status"], declared["checked_by"]) == ("checked", "Z. Bajjou")

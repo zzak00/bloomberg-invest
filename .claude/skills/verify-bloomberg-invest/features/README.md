@@ -10,4 +10,5 @@ One file per user-facing feature. Each says how a user reaches it, how `journey.
 | Company dossier: figures by statement and year | [dossier.md](dossier.md) | yes |
 | CHECKS: accept or correct the figures that feed a KPI | [checks.md](checks.md) | yes |
 | Dossier facts, the fact inspector, CHECKS Names and rejected facts | [facts.md](facts.md) | yes |
-| Empty pages: MAP, KPIs | [empty-pages.md](empty-pages.md) | yes |
+| KPIs: the scorecard and the KPIs page | [kpis.md](kpis.md) | yes |
+| Empty page: MAP | [empty-pages.md](empty-pages.md) | yes |

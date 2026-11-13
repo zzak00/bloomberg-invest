@@ -85,23 +85,93 @@ export function FactInspector({
             }}
           />
         ) : (
-          <Single fact={fact.data} />
+          <Single
+            fact={fact.data}
+            onChanged={async () => {
+              await Promise.all([fact.reload(), onChanged()]);
+            }}
+          />
         ))}
     </aside>
   );
 }
 
-function Single({ fact }: { fact: FactDetail }) {
+/** Record a Review of a fact, Keep or Undo (D5), or the check of a declared dividend (#27). */
+function useFactReview(onChanged: () => Promise<void>) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const review = async (factId: string, verdict: "accepted" | "reopened") => {
+    setBusy(true);
+    setError(null);
+    try {
+      const { error: refused, response } = await api.POST("/api/facts/{fact_id}/reviews", {
+        params: { path: { fact_id: factId } },
+        body: { verdict },
+      });
+      if (response.ok) await onChanged();
+      else setError(refusal(refused, response));
+    } catch (failed) {
+      setError(String(failed));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return { busy, error, review };
+}
+
+function Single({ fact, onChanged }: { fact: FactDetail; onChanged: () => Promise<void> }) {
+  const { busy, error, review } = useFactReview(onChanged);
+  const checked = isKept(fact);
+  // A declared dividend feeds the payout ratio: it counts once a person checks it.
+  const feeds = fact.feeds.length > 0;
   return (
     <div className="inspector-body">
       <Sentence fact={fact} />
-      <Details fact={fact} review={isKept(fact) ? "Kept" : "Not checked"} />
+      <Details fact={fact} review={checked ? (feeds ? "Checked" : "Kept") : "Not checked"} />
       <Parties parties={fact.parties} />
-      <div className="inspector-status" data-tone={isKept(fact) ? "ok" : undefined}>
+      <div className="inspector-status" data-tone={checked ? "ok" : feeds ? "review" : undefined}>
         <span className="inspector-status-line" aria-hidden="true" />
-        <span>{reviewText(fact)}</span>
+        <span>{feeds && checked ? reviewText(fact).replace(/^Kept/, "Checked") : reviewText(fact)}</span>
         <span className="inspector-status-source">{sourceLine(fact)}</span>
       </div>
+      {feeds &&
+        (checked ? (
+          <div className="inspector-kept" role="status">
+            <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16">
+              <path d="M8 1.5a6.5 6.5 0 1 1 0 13a6.5 6.5 0 1 1 0-13Z" />
+              <path d="M5.2 8.3l1.9 1.9 3.8-4.2" />
+            </svg>
+            <span>Feeds the {fact.feeds.join(", ").toLowerCase()}</span>
+            <button
+              type="button"
+              className="inspector-undo"
+              disabled={busy}
+              onClick={() => review(fact.id, "reopened")}
+            >
+              UNDO
+            </button>
+          </div>
+        ) : (
+          <div className="inspector-check">
+            <p className="inspector-note">
+              Feeds the {fact.feeds.join(", ").toLowerCase()}: it counts once checked against the
+              quote below.
+            </p>
+            <button
+              type="button"
+              className="button button-signal"
+              disabled={busy}
+              onClick={() => review(fact.id, "accepted")}
+            >
+              ACCEPT · {fact.sentence.value}
+            </button>
+          </div>
+        ))}
+      {error && (
+        <p className="check-error" role="alert">
+          {error}
+        </p>
+      )}
       <blockquote className="inspector-quote">
         <span className="inspector-quote-head">
           {fact.passage.kind === "cell" ? "TABLE CELL" : "QUOTE"} · P. {fact.page}
@@ -126,8 +196,7 @@ function letter(index: number): string {
 }
 
 function Conflict({ fact, onChanged }: { fact: FactDetail; onChanged: () => Promise<void> }) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { busy, error, review } = useFactReview(onChanged);
   // In reading order, so a side keeps its letter when another is kept.
   const sides = [...fact.sides].sort(
     (a, b) =>
@@ -142,23 +211,6 @@ function Conflict({ fact, onChanged }: { fact: FactDetail; onChanged: () => Prom
   );
   const why = sides[shown]?.why;
   const disagreeing = new Set(sides.map((s) => s.fact.document.id)).size > 1 ? "filings" : "passages";
-
-  const review = async (factId: string, verdict: "accepted" | "reopened") => {
-    setBusy(true);
-    setError(null);
-    try {
-      const { error: refused, response } = await api.POST("/api/facts/{fact_id}/reviews", {
-        params: { path: { fact_id: factId } },
-        body: { verdict },
-      });
-      if (response.ok) await onChanged();
-      else setError(refusal(refused, response));
-    } catch (failed) {
-      setError(String(failed));
-    } finally {
-      setBusy(false);
-    }
-  };
 
   return (
     <div className="inspector-body">

@@ -22,6 +22,7 @@ from collections import Counter, defaultdict
 from collections.abc import Iterator
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+from decimal import Decimal
 
 import pytest
 from conftest import GOLDEN, GOLDEN_PDF, GOLDEN_SHA, PARSE_CACHE, CachedParser, azure_settings
@@ -36,17 +37,21 @@ from bloomberg_invest.adapters.llm.recording import RecordingLLM, ReplayLLM
 from bloomberg_invest.adapters.store.neo4j_store import Neo4jStore
 from bloomberg_invest.adapters.tokens import TiktokenCounter
 from bloomberg_invest.domain.chunking import Caps
+from bloomberg_invest.domain.dossier import agreeing
 from bloomberg_invest.domain.facts import FactKind
 from bloomberg_invest.domain.figures import number, parse_value
 from bloomberg_invest.domain.model import DocType, DocumentMeta, Organisation
 from bloomberg_invest.domain.names import name_key
 from bloomberg_invest.domain.prices import ListedShare
+from bloomberg_invest.domain.review import ReviewDraft, Verdict, needs_check
 from bloomberg_invest.service_layer.company_facts import company_facts
 from bloomberg_invest.service_layer.extract import Extraction
 from bloomberg_invest.service_layer.facts import FactExtraction
 from bloomberg_invest.service_layer.ingest import Ingested, ingest
+from bloomberg_invest.service_layer.kpis import compute_kpis
 from bloomberg_invest.service_layer.names import link_names
 
+ISIN = "MA0000011488"
 RECORDINGS = GOLDEN_PDF.parents[1] / "recordings"
 # Named like the notebook's recording, so both replay the same answers.
 FIGURES_RECORDING = RECORDINGS / f"{GOLDEN_SHA[:12]}-extract-figures-v1.jsonl"
@@ -464,3 +469,89 @@ def test_golden_facts_and_names_are_extracted_and_linked(golden):
     dossier = company_facts("MA0000011488", store)
     rows = [r for s in dossier.sections for r in s.rows if r.kind == FactKind.dividend]
     assert rows and not any(r.conflict for r in rows)
+
+
+# KPI values (#27 AC6). Last: it records checks, which the scores above must not see.
+
+# Hand-computed from figures.csv, as the scorecard rounds them: a ratio to one decimal of a
+# percent, a multiple to one decimal, an amount in millions.
+GOLDEN_KPIS = {
+    "ebitda_margin": "50.4",  # 18 493 / 36 681
+    "net_debt_to_ebitda": "1.0",  # (10 449 + 9 154 - 1 966) / 18 493 = 0,95: leases are debt
+    "operating_margin": "36.9",  # 13 547 / 36 681
+    "net_margin": "21.6",  # 7 923 / 36 681
+    "roe": "39.4",  # 6 968 / ((20 478 + 14 908) / 2)
+    "roa": "10.8",  # 7 923 / ((75 811 + 70 374) / 2)
+    "cash_conversion": "2.3",  # 18 499 / 7 923
+    "free_cash_flow": "9095",  # 18 499 - 9 404
+    "fcf_margin": "24.8",  # 9 095 / 36 681
+    "debt_to_equity": "0.8",  # (10 449 + 9 154) / 24 785
+    "current_ratio": "0.4",  # 15 168 / 39 054
+    "revenue_growth": "-0.0",  # 36 681 / 36 699 - 1
+}
+
+
+def shown(value: Decimal, format: str) -> Decimal:
+    scaled = {"percent": value * 100, "amount": value / 1_000_000}.get(format, value)
+    return scaled.quantize(Decimal(1) if format == "amount" else Decimal("0.1"))
+
+
+def test_golden_kpis_match_the_hand_computed_values(golden):
+    """Once a person has checked every input against the report, as in CHECKS: of the values
+    a filing states for a line item and year, the one figures.csv gives."""
+    store, _ = golden
+    label_map = config.label_map()
+    rules = config.kpi_rules(label_map)
+    truth = {
+        (r["line_item"], r["year"]): number(r["value_as_written"])
+        for r in golden_figures()
+        if r["basis_scope"] == "consolidated" and r["breakdown"] == "" and r["value_as_written"]
+    }
+    facts, _ = store.figures(ISIN)
+    by_key = defaultdict(list)
+    for fact in facts:
+        if needs_check(fact, rules):
+            by_key[(fact.line_item, fact.breakdown, fact.fiscal_year)].append(fact)
+    checked_at = datetime(2026, 11, 13, tzinfo=UTC)
+    for (line_item, _, year), stated in by_key.items():
+        right = truth.get((line_item, year))
+        for group in agreeing(stated):
+            if right is not None and number(group[0].value_as_written) == right:
+                store.record_review(
+                    [f.id for f in group],
+                    ReviewDraft(Verdict.accepted, "Golden", checked_at),
+                )
+    # The dividend the report declares for FY2025: 4,00 MAD per share (p. 10).
+    dividends, _ = store.facts(ISIN)
+    for fact in dividends:
+        if (
+            fact.kind == FactKind.dividend
+            and fact.fiscal_year == 2025
+            and fact.values.get("measure") == "per_share"
+            and fact.amount_value is not None
+            and Decimal(fact.amount_value) == 4
+        ):
+            store.record_review([fact.id], ReviewDraft(Verdict.accepted, "Golden", checked_at))
+
+    compute_kpis(ISIN, store, label_map, rules)
+    values = {k.kpi: k for k in store.kpi_values(ISIN) if k.fiscal_year == 2025}
+    formats = {k.name: k.format for k in rules.kpis}
+    print()
+    for name, value in sorted(values.items()):
+        print(f"{name}: {value.status} {value.value} {value.reason}")
+    for name, expected in GOLDEN_KPIS.items():
+        value = values[name]
+        assert value.status == "computed", (name, value.reason)
+        assert shown(Decimal(value.value), formats[name]) == Decimal(expected), name
+    # An income statement by nature: no gross profit, so the F-score counts 8 tests.
+    assert values["gross_margin"].status == "not_meaningful"
+    tests = {t.name: t for t in values["f_score"].tests}
+    assert tests["gross_margin_up"].status == "not_meaningful"
+    # Three wait: figures.csv gives no FY2023 total assets to check the filing's against, and
+    # the number of shares is extracted with a breakdown, not as its own total.
+    assert values["f_score"].reason == "No score until all 8 tests have checked inputs: 3 wait"
+    assert {(n, t.reason) for n, t in tests.items() if t.status in ("unchecked", "missing")} == {
+        ("roa_up", "Waiting for check: Total assets FY2023"),
+        ("asset_turnover_up", "Waiting for check: Total assets FY2023"),
+        ("no_new_shares", "Missing: Number of shares FY2025, Number of shares FY2024"),
+    }

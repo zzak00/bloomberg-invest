@@ -32,6 +32,7 @@ from bloomberg_invest.service_layer.company_facts import (
     record_fact_review,
     rejected_facts,
 )
+from bloomberg_invest.service_layer.kpis import definitions, scorecard
 from bloomberg_invest.service_layer.names import name_checks, parties, record_name_review
 from bloomberg_invest.service_layer.prices import price_series
 from bloomberg_invest.service_layer.search import search
@@ -47,11 +48,13 @@ from bloomberg_invest.views import (
     FactDetail,
     FigureDetail,
     FigureGrid,
+    KpiDefinitions,
     NameCheck,
     PartyRef,
     PriceSeries,
     RejectedFact,
     Review,
+    Scorecard,
 )
 
 
@@ -92,6 +95,12 @@ class NameReviewRequest(BaseModel):
 NOT_FOUND = {404: {"model": Problem, "description": "No such document, or no such page in it"}}
 NO_CHUNK = {404: {"model": Problem, "description": "No such chunk"}}
 NO_COMPANY = {404: {"model": Problem, "description": "No filing from an issuer with this ISIN"}}
+NO_COMPANY_OR_YEAR = {
+    404: {
+        "model": Problem,
+        "description": "No filing from an issuer with this ISIN, or no KPI value for the year",
+    }
+}
 NO_LISTING = {404: {"model": Problem, "description": "No listing for a company with this ISIN"}}
 NO_FACT = {
     404: {
@@ -246,6 +255,27 @@ def create_app(
             raise HTTPException(404, "Company not found")
         return found
 
+    @app.get("/api/companies/{isin}/kpis", responses=NO_COMPANY_OR_YEAR)
+    def kpis(isin: str, fiscal_year: int | None = None) -> Scorecard:
+        """The issuer's scorecard (#27): its quality KPIs and F-score for the fiscal year, by
+        default its last with a computed value, each computed from checked figures or "-" with
+        why, with its inputs and their sources."""
+        try:
+            found = scorecard(
+                isin, get_store(), app.state.label_map, app.state.checks.rules, fiscal_year
+            )
+        except LookupError as error:
+            raise HTTPException(404, str(error)) from None
+        if found is None:
+            raise HTTPException(404, "Company not found")
+        return found
+
+    @app.get("/api/kpis")
+    def kpi_definitions() -> KpiDefinitions:
+        """The KPIs page (#27 AC4): every computed KPI, generated from the rules that compute
+        it."""
+        return definitions(app.state.checks.rules)
+
     @app.get("/api/companies/{isin}/facts", responses=NO_COMPANY)
     def facts(isin: str) -> CompanyFacts:
         """The issuer's facts of the eight other kinds (#24), by section: one row per kind,
@@ -268,7 +298,7 @@ def create_app(
         with both sides of a Conflict."""
         found = figure_detail(fact_id, get_store(), app.state.label_map, app.state.checks.rules)
         if found is None:
-            found = fact_detail(fact_id, get_store())
+            found = fact_detail(fact_id, get_store(), app.state.checks.rules)
         if found is None:
             raise HTTPException(404, "Fact not found")
         return found

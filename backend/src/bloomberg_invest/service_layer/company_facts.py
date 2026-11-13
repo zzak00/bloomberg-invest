@@ -18,9 +18,11 @@ from bloomberg_invest.domain.facts import (
     row_key,
     shown,
 )
+from bloomberg_invest.domain.kpis import KpiRules
 from bloomberg_invest.domain.model import DocType
 from bloomberg_invest.domain.review import ReviewDraft, Verdict
-from bloomberg_invest.service_layer.checks import Checks, NoReviewer, ReviewRefused
+from bloomberg_invest.service_layer.checks import Checks, NoReviewer, ReviewRefused, applied
+from bloomberg_invest.service_layer.kpis import declared_by, dividend_feeds, kpi_change
 from bloomberg_invest.views import (
     CompanyFacts,
     FactDetail,
@@ -173,8 +175,9 @@ def rejected_facts(store: GraphStore, isin: str | None = None) -> list[RejectedF
     return sorted(rejected, key=lambda r: (r.document.id, r.page, r.kind, r.id))
 
 
-def fact_detail(fact_id: str, store: GraphStore) -> FactDetail | None:
-    """One fact as the inspector shows it, current or not; with both sides of a Conflict."""
+def fact_detail(fact_id: str, store: GraphStore, rules: KpiRules) -> FactDetail | None:
+    """One fact as the inspector shows it, current or not; with both sides of a Conflict, and
+    the KPIs it feeds: a declared dividend needs a person's check before it counts (#27)."""
     fact = store.fact(fact_id)
     if not isinstance(fact, StatedFact):
         return None
@@ -197,7 +200,13 @@ def fact_detail(fact_id: str, store: GraphStore) -> FactDetail | None:
                 )
                 for i, group in enumerate(at_date)
             ]
-    return FactDetail(**fact.model_dump(), sentence=sentence(fact), why=why, sides=sides)
+    return FactDetail(
+        **fact.model_dump(),
+        sentence=sentence(fact),
+        why=why,
+        sides=sides,
+        feeds=dividend_feeds(fact, rules),
+    )
 
 
 def record_fact_review(
@@ -220,7 +229,15 @@ def record_fact_review(
     draft = ReviewDraft(
         verdict=verdict, reviewer=checks.reviewer, reviewed_at=now or datetime.now(UTC)
     )
-    review_id = store.record_review([fact_id], draft)
+    # A declared dividend feeds the payout ratio of the company declaring it, whose KPI values
+    # are written with the check (#27 AC3).
+    isin = declared_by(fact) if dividend_feeds(fact, checks.rules) else None
+    change = (
+        kpi_change(isin, store, checks.label_map, checks.rules, {fact_id: applied(draft)})
+        if isin is not None
+        else None
+    )
+    review_id = store.record_review([fact_id], draft, [change] if change else [])
     return Review(
         id=review_id, verdict=draft.verdict, reviewer=draft.reviewer, reviewed_at=draft.reviewed_at
     )
