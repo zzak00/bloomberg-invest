@@ -123,6 +123,10 @@ class Neo4jStore(GraphStore):
         self._driver.execute_query(
             "MATCH (o:Organisation) WHERE o.id IS NULL SET o.id = randomUUID()"
         )
+        # Documents stored before #56 have no currency; every filing so far reports in MAD.
+        self._driver.execute_query(
+            "MATCH (d:Document) WHERE d.currency IS NULL SET d.currency = 'MAD'"
+        )
         for label, prop in CONSTRAINTS:
             self._driver.execute_query(
                 f"CREATE CONSTRAINT {label.lower()}_{prop} IF NOT EXISTS "

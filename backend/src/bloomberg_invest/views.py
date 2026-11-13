@@ -6,7 +6,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 from bloomberg_invest.domain.facts import FactKind
-from bloomberg_invest.domain.figures import Scope
+from bloomberg_invest.domain.figures import Scope, parse_unit
 from bloomberg_invest.domain.model import Bbox, DocType, Organisation, PageInfo, RunInfo
 from bloomberg_invest.domain.names import NameStatus, NameVerdict, PartyKind
 from bloomberg_invest.domain.review import CheckStatus, Correction, Verdict
@@ -31,6 +31,7 @@ class DocumentSummary(BaseModel):
     doc_type: DocType
     fiscal_year: int
     regulator: str
+    currency: str  # of its financial statements
     source_url: str | None
     page_count: int
     ingested_at: datetime
@@ -41,6 +42,7 @@ class DocumentRef(BaseModel):
     issuer: Organisation
     doc_type: DocType
     fiscal_year: int
+    currency: str  # of its financial statements
 
 
 class Box(BaseModel):
@@ -244,6 +246,12 @@ class RejectedFigure(BaseModel):
     document: DocumentRef
     passage: Passage | None  # None when the id it cited is not on the page
     review: Review | None
+
+    @property
+    def currency(self) -> str | None:
+        """The currency its unit names, read as an extracted figure's is."""
+        unit = parse_unit(self.unit_as_written)
+        return unit.currency if unit else None
 
 
 class CheckRow(BaseModel):

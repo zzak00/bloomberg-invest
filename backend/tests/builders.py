@@ -13,6 +13,7 @@ DOCUMENT = DocumentRef(
     issuer=Organisation(isin="MA0000011488", name="Maroc Telecom"),
     doc_type="annual_report",
     fiscal_year=2025,
+    currency="MAD",
 )
 
 

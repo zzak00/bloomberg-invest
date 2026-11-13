@@ -468,6 +468,17 @@ def rows_of(checks):
     return [row for group in checks["groups"] for row in group["rows"]]
 
 
+def test_checks_lists_no_figure_in_another_currency_than_the_filing_s(client, store, document_id):
+    """#56: a translation of the statements into euros is kept, but never needs a check."""
+    extract_income(store, document_id, unit="EUR millions")
+    facts, _ = store.figures("MA0000011488")
+    assert facts and {f.currency for f in facts} == {"EUR"}
+    assert {f.document.currency for f in facts} == {"MAD"}
+    checks = queue(client)
+    assert rows_of(checks) == []
+    assert checks["counts"] == {"to_check": 0, "rejected": 0, "done": 0}
+
+
 def test_checks_lists_what_feeds_a_kpi_rejected_figures_first(client, extracted, document_id):
     checks = queue(client)
     assert checks["reviewer"] == "Z. Bajjou"

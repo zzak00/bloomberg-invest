@@ -172,6 +172,7 @@ def extract_income(
     minute: int = 10,
     page: int = 2,
     paragraphs: tuple[SourceParagraph, ...] = (),
+    unit: str = "MAD millions",
 ) -> str:
     """Record an extract Run of one page, by default the income statement on page 2; return its
     Run id. An answer cites a cell, or a paragraph given (`p<page>.<n>`)."""
@@ -185,7 +186,7 @@ def extract_income(
                 "breakdown": "",
                 "source_id": source,
                 "value_as_written": value,
-                "unit_scale": "MAD millions",
+                "unit_scale": unit,
             }
             for item, year, source, value in answer
         ]

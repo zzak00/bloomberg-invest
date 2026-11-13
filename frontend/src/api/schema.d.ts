@@ -590,6 +590,8 @@ export interface components {
             fiscal_year: number;
             /** Regulator */
             regulator: string;
+            /** Currency */
+            currency: string;
             /** Source Url */
             source_url: string | null;
             /** Page Count */
@@ -615,6 +617,8 @@ export interface components {
             doc_type: components["schemas"]["DocType"];
             /** Fiscal Year */
             fiscal_year: number;
+            /** Currency */
+            currency: string;
         };
         /** DocumentSummary */
         DocumentSummary: {
@@ -626,6 +630,8 @@ export interface components {
             fiscal_year: number;
             /** Regulator */
             regulator: string;
+            /** Currency */
+            currency: string;
             /** Source Url */
             source_url: string | null;
             /** Page Count */
