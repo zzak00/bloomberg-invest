@@ -30,7 +30,7 @@ def _record_review(tx: ManagedTransaction, figure_ids: list[str], draft: ReviewD
     if not ids or found != len(ids):
         raise LookupError("a check needs current figures, and some of these are not")
 
-    review_id = str(uuid.uuid4())
+    review_id = draft.id
     properties = {
         "verdict": draft.verdict.value,
         "reviewer": draft.reviewer,

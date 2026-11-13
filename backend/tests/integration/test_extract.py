@@ -232,7 +232,7 @@ def test_a_quoted_figure_is_corrected_from_another_number_of_its_paragraph(store
     assert picks[0].context == "…Au titre de l'exercice 2025, le Conseil propose un…"
 
     _, files = filing
-    checks = Checks(config.kpi_rules(config.label_map()), "Z. Bajjou")
+    checks = Checks(config.kpi_rules(config.label_map()), "Z. Bajjou", config.label_map())
     recorded = record_review([dividend.id], Verdict.corrected, store, files, checks, quote="2025")
 
     assert (recorded.correction.value_as_written, recorded.correction.value) == ("2025", "2025")

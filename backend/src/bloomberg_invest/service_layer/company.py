@@ -30,6 +30,11 @@ from bloomberg_invest.views import (
 )
 
 
+def issuers(store: GraphStore) -> list[str]:
+    """The ISIN of every company a filing is stored for."""
+    return sorted({d.issuer.isin for d in store.list_documents()})
+
+
 def company(isin: str, store: GraphStore) -> Company | None:
     """The issuer's filings, and its listing and last close once it has them (#26)."""
     issuer = store.issuer(isin)

@@ -412,6 +412,91 @@
         }
       }
     },
+    "/api/companies/{isin}/kpis": {
+      "get": {
+        "summary": "Kpis",
+        "description": "The issuer's scorecard (#27): its quality KPIs and F-score for the fiscal year, by\ndefault its last with a computed value, each computed from checked figures or \"-\" with\nwhy, with its inputs and their sources.",
+        "operationId": "kpis_api_companies__isin__kpis_get",
+        "parameters": [
+          {
+            "name": "isin",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Isin"
+            }
+          },
+          {
+            "name": "fiscal_year",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fiscal Year"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Scorecard"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No filing from an issuer with this ISIN, or no KPI value for the year",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/kpis": {
+      "get": {
+        "summary": "Kpi Definitions",
+        "description": "The KPIs page (#27 AC4): every computed KPI, generated from the rules that compute\nit.",
+        "operationId": "kpi_definitions_api_kpis_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KpiDefinitions"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/companies/{isin}/facts": {
       "get": {
         "summary": "Facts",
@@ -1104,6 +1189,13 @@
             "type": "array",
             "title": "Companies"
           },
+          "dividends": {
+            "items": {
+              "$ref": "#/components/schemas/DividendCheck"
+            },
+            "type": "array",
+            "title": "Dividends"
+          },
           "groups": {
             "items": {
               "$ref": "#/components/schemas/CheckGroup"
@@ -1117,10 +1209,11 @@
           "reviewer",
           "counts",
           "companies",
+          "dividends",
           "groups"
         ],
         "title": "CheckQueue",
-        "description": "CHECKS (#19 R9): the figures that feed a KPI or screen, problems first."
+        "description": "CHECKS (#19 R9): the figures that feed a KPI or screen, problems first, and the declared\ndividends that feed one."
       },
       "CheckRow": {
         "properties": {
@@ -1543,6 +1636,56 @@
         "title": "Correction",
         "description": "The right value, as the person gave it, parsed in Python like an extracted one."
       },
+      "DividendCheck": {
+        "properties": {
+          "company": {
+            "$ref": "#/components/schemas/Organisation"
+          },
+          "fiscal_year": {
+            "type": "integer",
+            "title": "Fiscal Year"
+          },
+          "fact": {
+            "$ref": "#/components/schemas/StatedFact"
+          },
+          "sources": {
+            "type": "integer",
+            "title": "Sources"
+          },
+          "feeds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Feeds"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CheckStatus"
+          },
+          "review": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Review"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "company",
+          "fiscal_year",
+          "fact",
+          "sources",
+          "feeds",
+          "status",
+          "review"
+        ],
+        "title": "DividendCheck",
+        "description": "A dividend a company declares for a fiscal year that feeds a KPI (#27): one row per amount\nthe filings state, checked in the fact inspector."
+      },
       "DocType": {
         "type": "string",
         "enum": [
@@ -1897,6 +2040,14 @@
             },
             "type": "array",
             "title": "Sides"
+          },
+          "feeds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Feeds",
+            "default": []
           }
         },
         "type": "object",
@@ -2543,6 +2694,317 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "KpiDefinition": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "theme": {
+            "type": "string",
+            "title": "Theme"
+          },
+          "means": {
+            "type": "string",
+            "title": "Means"
+          },
+          "formula": {
+            "type": "string",
+            "title": "Formula"
+          },
+          "inputs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Inputs"
+          },
+          "read": {
+            "type": "string",
+            "title": "Read"
+          },
+          "applies": {
+            "type": "string",
+            "enum": [
+              "all",
+              "non_financial"
+            ],
+            "title": "Applies"
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "percent",
+              "multiple",
+              "amount",
+              "score"
+            ],
+            "title": "Format"
+          },
+          "band": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Band"
+          },
+          "tests": {
+            "items": {
+              "$ref": "#/components/schemas/TestDefinition"
+            },
+            "type": "array",
+            "title": "Tests",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "title",
+          "theme",
+          "means",
+          "formula",
+          "inputs",
+          "read",
+          "applies",
+          "format",
+          "band"
+        ],
+        "title": "KpiDefinition",
+        "description": "A KPI as the KPIs page documents it, from the rules that compute it (#27 AC4)."
+      },
+      "KpiDefinitions": {
+        "properties": {
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since"
+          },
+          "sha256": {
+            "type": "string",
+            "title": "Sha256"
+          },
+          "themes": {
+            "items": {
+              "$ref": "#/components/schemas/KpiTheme"
+            },
+            "type": "array",
+            "title": "Themes"
+          },
+          "kpis": {
+            "items": {
+              "$ref": "#/components/schemas/KpiDefinition"
+            },
+            "type": "array",
+            "title": "Kpis"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version",
+          "since",
+          "sha256",
+          "themes",
+          "kpis"
+        ],
+        "title": "KpiDefinitions"
+      },
+      "KpiInput": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "fiscal_year": {
+            "type": "integer",
+            "title": "Fiscal Year"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "figure",
+              "declared"
+            ],
+            "title": "Kind"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "checked",
+              "unchecked",
+              "missing",
+              "conflict",
+              "not_reported"
+            ],
+            "title": "Status"
+          },
+          "value_as_written": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value As Written"
+          },
+          "unit_as_written": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit As Written"
+          },
+          "document": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DocumentRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "page": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page"
+          },
+          "fact_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fact Id"
+          },
+          "checked_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked By"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "title",
+          "fiscal_year",
+          "kind",
+          "status"
+        ],
+        "title": "KpiInput",
+        "description": "An input of a KPI value as its hover lists it: the value in force, where it is read,\nand whether a person checked it."
+      },
+      "KpiPoint": {
+        "properties": {
+          "fiscal_year": {
+            "type": "integer",
+            "title": "Fiscal Year"
+          },
+          "status": {
+            "$ref": "#/components/schemas/KpiStatus"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "type": "object",
+        "required": [
+          "fiscal_year",
+          "status",
+          "value"
+        ],
+        "title": "KpiPoint"
+      },
+      "KpiStatus": {
+        "type": "string",
+        "enum": [
+          "computed",
+          "not_meaningful",
+          "missing",
+          "conflict",
+          "unchecked"
+        ],
+        "title": "KpiStatus",
+        "description": "Where a KPI value stands: computed, or why it is not (#19 R10, R12)."
+      },
+      "KpiTheme": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "title"
+        ],
+        "title": "KpiTheme"
       },
       "LastClose": {
         "properties": {
@@ -3363,7 +3825,8 @@
           "embed",
           "extract",
           "extract_facts",
-          "link"
+          "link",
+          "compute"
         ],
         "title": "RunStep",
         "description": "The processing steps a Run records (AGENTS.md); later steps add theirs."
@@ -3403,6 +3866,270 @@
           "statements"
         ],
         "title": "ScopeFigures"
+      },
+      "ScoreTest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "status": {
+            "$ref": "#/components/schemas/KpiStatus"
+          },
+          "passed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Passed"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "status",
+          "passed",
+          "reason",
+          "title"
+        ],
+        "title": "ScoreTest"
+      },
+      "Scorecard": {
+        "properties": {
+          "fiscal_year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fiscal Year"
+          },
+          "years": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Years"
+          },
+          "window": {
+            "type": "integer",
+            "title": "Window"
+          },
+          "basis": {
+            "type": "string",
+            "title": "Basis"
+          },
+          "rule_version": {
+            "type": "string",
+            "title": "Rule Version"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since"
+          },
+          "financial": {
+            "type": "boolean",
+            "title": "Financial"
+          },
+          "sector": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sector"
+          },
+          "kpis": {
+            "items": {
+              "$ref": "#/components/schemas/ScorecardKpi"
+            },
+            "type": "array",
+            "title": "Kpis"
+          }
+        },
+        "type": "object",
+        "required": [
+          "fiscal_year",
+          "years",
+          "window",
+          "basis",
+          "rule_version",
+          "since",
+          "financial",
+          "sector",
+          "kpis"
+        ],
+        "title": "Scorecard",
+        "description": "An issuer's quality KPIs and F-score for one fiscal year, by default its last (#27)."
+      },
+      "ScorecardKpi": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "theme": {
+            "type": "string",
+            "title": "Theme"
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "percent",
+              "multiple",
+              "amount",
+              "score"
+            ],
+            "title": "Format"
+          },
+          "band": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Band"
+          },
+          "applies": {
+            "type": "string",
+            "enum": [
+              "all",
+              "non_financial"
+            ],
+            "title": "Applies"
+          },
+          "formula": {
+            "type": "string",
+            "title": "Formula"
+          },
+          "status": {
+            "$ref": "#/components/schemas/KpiStatus"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "out_of": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Out Of"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/KpiPoint"
+            },
+            "type": "array",
+            "title": "History"
+          },
+          "peers": {
+            "type": "integer",
+            "title": "Peers"
+          },
+          "sector_median": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sector Median"
+          },
+          "inputs": {
+            "items": {
+              "$ref": "#/components/schemas/KpiInput"
+            },
+            "type": "array",
+            "title": "Inputs"
+          },
+          "tests": {
+            "items": {
+              "$ref": "#/components/schemas/ScoreTest"
+            },
+            "type": "array",
+            "title": "Tests",
+            "default": []
+          },
+          "computed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Computed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "title",
+          "theme",
+          "format",
+          "band",
+          "applies",
+          "formula",
+          "status",
+          "value",
+          "reason",
+          "history",
+          "peers",
+          "sector_median",
+          "inputs",
+          "computed_at"
+        ],
+        "title": "ScorecardKpi",
+        "description": "One scorecard row: the selected year's value, or \"-\" and why (#19 R12)."
       },
       "Section": {
         "properties": {
@@ -3703,6 +4430,29 @@
         ],
         "title": "TablePart",
         "description": "Which part of a split table a Chunk is: parts of one table share `table_id`."
+      },
+      "TestDefinition": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "formula": {
+            "type": "string",
+            "title": "Formula"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "title",
+          "formula"
+        ],
+        "title": "TestDefinition"
       },
       "ValidationError": {
         "properties": {

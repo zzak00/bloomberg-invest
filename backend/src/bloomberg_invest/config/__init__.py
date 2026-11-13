@@ -8,10 +8,20 @@ SHA-256 of its file (#19 R3, R14).
 import hashlib
 import re
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from decimal import Decimal
 from importlib.resources import files
 
-from bloomberg_invest.domain.kpis import Input, Kpi, KpiRules
+from bloomberg_invest.domain.kpis import (
+    Declared,
+    Formula,
+    Input,
+    Kpi,
+    KpiRules,
+    Source,
+    Test,
+    inputs_of,
+)
 from bloomberg_invest.domain.label_map import LabelMap, LineItem
 
 LABEL_MAP = "v1"
@@ -57,25 +67,56 @@ def facts_prompt(version: str = FACTS_PROMPT) -> Prompt:
 
 
 def kpi_rules(against: LabelMap, version: str = KPI_RULES) -> KpiRules:
-    """The KPI rules, checked against the label map in force: every input names a line item."""
+    """The KPI rules, checked against the label map in force: every input names a line item,
+    and every formula reads only what the rules define."""
     raw = (_HERE / "kpis" / f"{version}.toml").read_bytes()
     data = tomllib.loads(raw.decode())
     if data["version"] != version:
         raise ValueError(f"kpis/{version}.toml says it is {data['version']}")
-    rules = KpiRules(
+    sources: dict[str, Source] = {
+        name: Declared(source["declared"]) for name, source in data.get("sources", {}).items()
+    }
+    titles = {name: item.title for name, item in against.items.items()} | data.get("titles", {})
+    base = KpiRules(
         version=version,
         sha256=hashlib.sha256(raw).hexdigest(),
-        kpis=tuple(
-            Kpi(
-                name=name,
-                title=kpi["title"],
-                inputs=tuple(Input(i) if isinstance(i, str) else Input(**i) for i in kpi["inputs"]),
-            )
-            for name, kpi in data["kpis"].items()
-        ),
+        kpis=(),
+        since=data.get("since"),
+        financial_sectors=tuple(data.get("financial_sectors", ())),
+        sources=sources,
+        not_reported=data.get("not_reported", {}),
+        titles=titles,
+        themes=data.get("themes", {}),
     )
+    rules = replace(base, kpis=tuple(_kpi(name, kpi, base) for name, kpi in data["kpis"].items()))
     rules.check_against(against)
     return rules
+
+
+def _kpi(name: str, kpi: dict, rules: KpiRules) -> Kpi:
+    band = kpi.get("band")
+    read = Kpi(
+        name=name,
+        title=kpi["title"],
+        inputs=tuple(Input(i) if isinstance(i, str) else Input(**i) for i in kpi.get("inputs", ())),
+        theme=kpi.get("theme", ""),
+        means=kpi.get("means", ""),
+        read=kpi.get("read", ""),
+        format=kpi.get("format", "percent"),
+        band=(Decimal(str(band[0])), Decimal(str(band[1]))) if band else None,
+        applies=kpi.get("applies", "all"),
+        formula=Formula.parse(kpi["formula"]) if "formula" in kpi else None,
+        when=Formula.parse(kpi["when"]) if "when" in kpi else None,
+        tests=tuple(
+            Test(test_name, test["title"], Formula.parse(test["formula"]))
+            for test_name, test in kpi.get("tests", {}).items()
+        ),
+    )
+    if not read.formulas:
+        return read
+    if "inputs" in kpi:
+        raise ValueError(f"KPI {name!r}: a computed KPI's inputs are read from its formulas")
+    return replace(read, inputs=inputs_of(read.formulas, rules))
 
 
 def listing_isins(mic: str, version: str = LISTINGS) -> dict[str, str]:

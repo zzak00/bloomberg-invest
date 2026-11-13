@@ -2,8 +2,9 @@
 read, and when a check carries over to a re-extracted figure."""
 
 import re
+import uuid
 from collections.abc import Hashable, Iterable, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from enum import StrEnum
 from typing import Protocol
@@ -290,7 +291,8 @@ class QuotedSource:
 @dataclass(frozen=True)
 class ReviewDraft:
     """A check to record. A correction cites what the person picked: a Cell of the figure's
-    table row, a number of its paragraph, or nothing for a typed value."""
+    table row, a number of its paragraph, or nothing for a typed value. Its id is the Review's,
+    given now so the KPI values computed with the check name the same one."""
 
     verdict: Verdict
     reviewer: str
@@ -298,6 +300,7 @@ class ReviewDraft:
     correction: Correction | None = None
     cell_id: str | None = None
     quoted: QuotedSource | None = None
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
 
     def __post_init__(self) -> None:
         if (self.verdict == Verdict.corrected) != (self.correction is not None):

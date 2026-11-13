@@ -32,6 +32,6 @@ docker compose run --rm -e LLM_REPLAY=/data/recordings/<sha256 prefix>-extract-f
 
 ## Gotchas
 
-- The journey's Conflict step needs a row with two values at one date. A single filing rarely has one; when the data has none, that check fails and says so.
+- The journey's Conflict step needs a row with two values at one date, which a single filing rarely has: the journey seeds one, a copy of a Maroc Telecom shareholding with another percentage marked `seeded: 'verify-journey'`, and deletes it and its Reviews at the end (and at the start, after a run that stopped).
 - Keep, Undo and the Names decisions add Reviews to the graph each run; the journey undoes each, so the data reads as before.
 - Set `REVIEWER` in `.env`, or no Keep or Names buttons show.

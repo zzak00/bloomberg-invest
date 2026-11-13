@@ -6,6 +6,7 @@
 // Needs at least one ingested filing. Writes verify-evidence/<timestamp>/ with one PNG per step
 // and viewport, plus journey.json listing every check. Exits 1 if any check fails.
 
+import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
@@ -31,6 +32,36 @@ function check(viewport, step, ok, detail) {
   checks.push({ viewport, step, ok: Boolean(ok), detail });
   console.log(`${ok ? "PASS" : "FAIL"} [${viewport}] ${step}${detail ? ` - ${detail}` : ""}`);
 }
+
+// A single filing rarely states one shareholding twice: the Conflict step (S3b) gets one of its
+// own, a copy of a current shareholding of Maroc Telecom with another percentage, marked as seed
+// data and deleted at the end with the Reviews of it. Through cypher-shell in the container, which
+// reads its own password, with the query on stdin: recording a facts Run would supersede the
+// filing's facts.
+function cypher(query) {
+  execFileSync("docker", ["compose", "exec", "-T", "neo4j", "sh", "-c", 'cypher-shell -u neo4j -p "${NEO4J_AUTH#neo4j/}"'], {
+    cwd: root,
+    input: query,
+    stdio: ["pipe", "ignore", "inherit"],
+  });
+}
+const UNSEED = `MATCH (c:Fact {seeded: 'verify-journey'})
+  OPTIONAL MATCH (rv:Review)-[:REVIEWS]->(c)
+  DETACH DELETE rv, c;`;
+cypher(UNSEED);
+cypher(`MATCH (f:Fact {kind: 'shareholding'})-[:NAMES {role: 'held'}]->(:Alias)-[:ALIAS_OF]->(:Organisation {isin: 'MA0000011488'})
+  WHERE f.superseded IS NULL AND f.percent =~ '[0-9]+(,[0-9]+)?'
+  WITH f ORDER BY f.id LIMIT 1
+  CREATE (c:Seed)
+  SET c = properties(f), c.id = randomUUID(), c.seeded = 'verify-journey',
+      c.percent = replace(toString(toFloat(replace(f.percent, ',', '.')) + 1.0), '.', ',')
+  SET c:Fact REMOVE c:Seed
+  WITH f, c
+  CALL (f, c) { MATCH (f)-[:PRODUCED_BY]->(x) CREATE (c)-[:PRODUCED_BY]->(x) }
+  CALL (f, c) { MATCH (f)-[:ABOUT]->(x) CREATE (c)-[:ABOUT]->(x) }
+  CALL (f, c) { MATCH (f)-[:FROM_DOCUMENT]->(x) CREATE (c)-[:FROM_DOCUMENT]->(x) }
+  CALL (f, c) { MATCH (f)-[:CITES]->(x) CREATE (c)-[:CITES]->(x) }
+  CALL (f, c) { MATCH (f)-[n:NAMES]->(x) CREATE (c)-[m:NAMES]->(x) SET m = properties(n) };`);
 
 const browser = await chromium.launch();
 try {
@@ -280,7 +311,7 @@ try {
     const disagreeing = page.getByRole("button", { name: /values disagree$/ });
     await page.getByRole("region", { name: /^OWNERSHIP · \d+$/ }).waitFor();
     if ((await disagreeing.count()) === 0) {
-      check(vp.name, "S3b: a Conflict in this data", false, "no row with two values: see features/facts.md");
+      check(vp.name, "S3b: a Conflict in this data", false, "the seeded Conflict is missing: see features/facts.md");
     } else {
       const mark = await disagreeing.first().locator("xpath=ancestor::tr").locator(".facts-flag").first().innerText();
       check(vp.name, "the dossier marks a Conflict with its count", /^≠ · \d+ VALUES$/.test(mark), mark);
@@ -346,6 +377,87 @@ try {
     check(vp.name, "D2: a rejected fact says why", /: (its|a number|a party|it states) /.test((await refused.first().getAttribute("aria-label")) ?? ""), await refused.first().getAttribute("aria-label"));
     await shot("10g-checks-rejected-facts");
 
+    // The scorecard (#27): every quality KPI with a value or "–" and why, its inputs on focus, and
+    // the F-score's nine tests, eight counted with no gross profit.
+    async function kpiReason(title) {
+      await page.goto(`${base}/companies/MA0000011488?tab=scorecard`);
+      const row = page.getByRole("list", { name: "Quality KPIs" }).getByRole("listitem").filter({ has: page.getByRole("button", { name: title, exact: true }) });
+      await row.waitFor();
+      return (await row.locator(".kpi-reason").count()) ? row.locator(".kpi-reason").innerText() : "";
+    }
+    await page.goto(`${base}/companies/MA0000011488?tab=scorecard`);
+    const quality = page.getByRole("list", { name: "Quality KPIs" }).getByRole("listitem");
+    await quality.first().waitFor();
+    check(vp.name, "#27 AC5: the scorecard lists 17 quality KPIs", (await quality.count()) === 17, `${await quality.count()} rows`);
+    const kpiRows = await quality.evaluateAll((items) =>
+      items.map((li) => ({
+        value: li.querySelector(".kpi-value")?.textContent ?? "",
+        reason: li.querySelector(".kpi-reason")?.textContent ?? "",
+      })),
+    );
+    check(
+      vp.name,
+      "#27 AC2: a KPI shows a value, or – and why",
+      kpiRows.every((k) => (k.value === "–" ? k.reason.length > 0 : /^-?[\d\s ]+,\d( %|x)$|MAD m$/.test(k.value))),
+      kpiRows.map((k) => k.value).join(" "),
+    );
+    const ebitda = page.getByRole("button", { name: "EBITDA margin", exact: true });
+    await ebitda.focus();
+    const tip = page.locator(".kpi-row:focus-within .kpi-tip");
+    check(vp.name, "#27 AC5: focus lists a KPI's inputs with their source", (await tip.isVisible()) && /EBITDA margin = EBITDA \/ revenue/.test(await tip.innerText()) && (await tip.getByRole("link").count()) === 2, (await tip.innerText()).replace(/\s+/g, " "));
+    await shot("11a-scorecard-inputs");
+    await page.keyboard.press("Escape");
+    check(vp.name, "Escape closes a KPI's inputs", !(await tip.count()));
+    const tests = page.getByRole("list", { name: /^Piotroski F-score: \d of 8 tests passed/ }).getByRole("listitem");
+    check(vp.name, "#27 AC5: the F-score is a bar of nine tests", (await tests.count()) === 9, `${await tests.count()} tests`);
+    const notApplicable = await tests.evaluateAll((items) => items.filter((li) => li.dataset.state === "not_applicable").map((li) => li.title));
+    check(vp.name, "#27: with no gross profit, gross margin up is not counted", notApplicable.length === 1 && /^Gross margin up · not applicable: Not meaningful: the income statement is by nature/.test(notApplicable[0]), notApplicable.join(" | "));
+    const gross = await kpiReason("Gross margin");
+    check(vp.name, "#27: gross margin is not meaningful with no gross profit", gross === "Not meaningful: the income statement is by nature: no gross profit", gross);
+    await shot("11b-scorecard");
+
+    // Each fiscal year with values can be selected, and the URL keeps it (#7).
+    const yearGroup = page.getByRole("group", { name: "Fiscal year" });
+    const yearButtons = await yearGroup.getByRole("button").allInnerTexts();
+    check(vp.name, "#7: the scorecard's years are buttons, the last pressed", yearButtons.includes("FY2025") && (await yearGroup.getByRole("button", { name: "FY2025" }).getAttribute("aria-pressed")) === "true", yearButtons.join(" "));
+    await yearGroup.getByRole("button", { name: "FY2024" }).click();
+    await page.waitForURL(/[?&]year=2024/);
+    await page.locator(".scorecard-basis", { hasText: "FY2024" }).waitFor();
+    check(vp.name, "#7: FY2024 shows FY2024's values", (await yearGroup.getByRole("button", { name: "FY2024" }).getAttribute("aria-pressed")) === "true", await page.locator(".scorecard-basis").innerText());
+    await shot("11d-scorecard-fy2024");
+    await page.goto(`${base}/companies/MA0000011488?tab=scorecard`);
+    await quality.first().waitFor();
+
+    // The payout ratio reads the dividend declared for the year: it is checked in the inspector.
+    await page.getByRole("button", { name: "Payout ratio", exact: true }).focus();
+    await page
+      .locator(".kpi-row:focus-within .kpi-tip li")
+      .filter({ hasText: "Declared dividend per share FY2025" })
+      .getByRole("link")
+      .click();
+    const dividendInspector = page.getByRole("dialog", { name: "Fact inspector" });
+    await dividendInspector.getByRole("button", { name: /^ACCEPT · / }).click();
+    await dividendInspector.getByRole("status").getByText(/^Feeds the payout ratio/).waitFor();
+    const dividendChecked = (await dividendInspector.locator(".inspector-status").innerText()).replace(/\s+/g, " ");
+    check(vp.name, "#27: a declared dividend is checked in the inspector", /^Checked by .+ on \d{2}\/\d{2}\/\d{4}/.test(dividendChecked), dividendChecked);
+    await shot("11c-dividend-checked");
+    await dividendInspector.getByRole("button", { name: "UNDO" }).click();
+    await dividendInspector.getByRole("button", { name: /^ACCEPT · / }).waitFor();
+    check(vp.name, "#27: undo takes the dividend check back", true);
+    await page.keyboard.press("Escape");
+
+    // CHECKS lists the declared dividend with the figures, and opens it in the inspector.
+    await page.goto(`${base}/checks`);
+    const dividends = page.getByRole("region", { name: "Declared dividends" });
+    await dividends.waitFor();
+    const dividendRow = dividends.getByRole("listitem", { name: /^Declared dividend per share, FY2025: To check$/ });
+    check(vp.name, "#27: CHECKS lists the declared dividend to check", (await dividendRow.count()) === 1, (await dividends.innerText()).replace(/\s+/g, " ").slice(0, 160));
+    await dividendRow.scrollIntoViewIfNeeded();
+    await shot("11e-checks-dividends");
+    await dividendRow.getByRole("link", { name: "CHECK IN THE INSPECTOR" }).click();
+    await page.getByRole("dialog", { name: "Fact inspector" }).getByRole("button", { name: /^ACCEPT · / }).waitFor();
+    check(vp.name, "#27: a CHECKS dividend opens in the inspector", /tab=facts&fact=/.test(page.url()), page.url());
+
     // CHECKS lists the figures that feed a KPI, problems first; a check is recorded and undone (#23).
     await page.goto(`${base}/checks`);
     await page.getByRole("heading", { name: "Checks", exact: true }).waitFor();
@@ -399,6 +511,8 @@ try {
     await checkedBar.getByText(/^Checked by /).waitFor();
     check(vp.name, "AC4: the viewer shows the check", true, (await checkedBar.innerText()).replace(/\s+/g, " "));
     await shot("14-checked-figure");
+    // The check recomputes the KPIs that read revenue FY2025 (#27 AC3).
+    check(vp.name, "#27: a check recomputes the KPIs reading it", !(await kpiReason("EBITDA margin")).includes("Revenue FY2025"), await kpiReason("EBITDA margin"));
 
     // Undo it: a reopening puts the figure back to CHECKS.
     await page.goto(`${base}/checks?status=done`);
@@ -406,6 +520,7 @@ try {
     await reopen.getByRole("button", { name: "REOPEN" }).click();
     await page.getByRole("listitem", { name: /^Revenue, FY2025: To check$/ }).first().waitFor();
     check(vp.name, "a reopened figure is to check again", true);
+    check(vp.name, "#27: reopening takes the KPIs back to waiting", (await kpiReason("EBITDA margin")).includes("Waiting for check: EBITDA FY2025, Revenue FY2025"), await kpiReason("EBITDA margin"));
 
     // A corrected rejected figure counts: the viewer and the dossier show the correction (#19 R8).
     // Whichever figure needs review: the analyst may have corrected the others on this data.
@@ -440,11 +555,24 @@ try {
     await rowNamed("Needs review").waitFor();
     check(vp.name, "a reopened correction needs review again", true);
 
-    // MAP and KPIs show their empty states.
-    for (const [path, title] of [
-      ["map", "The map arrives with entities and facts"],
-      ["kpis", "KPIs follow checked figures"],
-    ]) {
+    // The KPIs page (#27 AC4): every KPI from the rules, by theme and search.
+    await page.goto(`${base}/kpis`);
+    await page.getByRole("heading", { name: "KPIs", exact: true }).waitFor();
+    const definitions = page.locator(".kpis-table tbody tr");
+    check(vp.name, "#27 AC4: the KPIs page lists every computed KPI", (await definitions.count()) === 18, `${await definitions.count()} rows`);
+    const nde = definitions.filter({ hasText: "Net debt / EBITDA" });
+    check(vp.name, "#27 AC4: a row gives its formula from the rules", (await nde.innerText()).includes("(long-term debt + short-term debt - cash and cash equivalents) / EBITDA"));
+    await page.getByRole("group", { name: "Themes" }).getByRole("button", { name: /^LEVERAGE/ }).click();
+    check(vp.name, "#27 AC4: a theme filters the KPIs", (await definitions.count()) === 3, `${await definitions.count()} rows`);
+    await page.getByRole("group", { name: "Themes" }).getByRole("button", { name: /^ALL/ }).click();
+    await page.getByRole("searchbox", { name: "Search KPIs" }).fill("EBITDA");
+    check(vp.name, "#27 AC4: search finds KPIs by name and formula", (await definitions.count()) === 2, `${await definitions.count()} rows`);
+    await shot("15-kpis-search");
+    await page.getByRole("searchbox", { name: "Search KPIs" }).fill("");
+    await shot("15-kpis");
+
+    // MAP shows its empty state.
+    for (const [path, title] of [["map", "The map arrives with entities and facts"]]) {
       await page.goto(`${base}/${path}`);
       const heading = page.getByRole("heading", { name: title });
       await heading.waitFor();
@@ -459,6 +587,7 @@ try {
   }
 } finally {
   await browser.close();
+  cypher(UNSEED);
 }
 
 writeFileSync(join(out, "journey.json"), JSON.stringify({ base, checks }, null, 2));

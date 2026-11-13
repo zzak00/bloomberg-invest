@@ -30,12 +30,19 @@ export type Passage = components["schemas"]["Passage"];
 export type CheckQueue = components["schemas"]["CheckQueue"];
 export type CheckGroup = components["schemas"]["CheckGroup"];
 export type CheckRow = components["schemas"]["CheckRow"];
+export type DividendCheck = components["schemas"]["DividendCheck"];
 export type Candidate = components["schemas"]["Candidate"];
 export type CheckStatus = components["schemas"]["CheckStatus"];
 export type Verdict = components["schemas"]["Verdict"];
 export type Listing = components["schemas"]["Listing"];
 export type LastClose = components["schemas"]["LastClose"];
 export type PricePoint = components["schemas"]["PricePoint"];
+export type Scorecard = components["schemas"]["Scorecard"];
+export type ScorecardKpi = components["schemas"]["ScorecardKpi"];
+export type KpiInput = components["schemas"]["KpiInput"];
+export type KpiStatus = components["schemas"]["KpiStatus"];
+export type KpiDefinition = components["schemas"]["KpiDefinition"];
+export type KpiDefinitions = components["schemas"]["KpiDefinitions"];
 
 /** Why the API refused a request: its `detail`, else the HTTP status. */
 export function refusal(error: unknown, response: Response): string {

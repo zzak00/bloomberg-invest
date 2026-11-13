@@ -11,6 +11,8 @@ Chunks too. Extracting needs AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY.
     bloomberg facts 3d18e4fa-cfca-4a67-92b4-3d6555da68e6
 
 `bloomberg facts` re-extracts the other kinds of fact (#24) and links the names they write.
+Each of these recomputes the issuer's KPI values after; `bloomberg kpis [--isin ISIN]` does only
+that, for one issuer or every one: after a new KPI rule version (#27).
 
 `bloomberg prices ...` keeps daily closes: see `entrypoints/prices.py`.
 """
@@ -22,13 +24,17 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from bloomberg_invest import bootstrap
+from bloomberg_invest.adapters.store import GraphStore
 from bloomberg_invest.domain.model import DocType, DocumentMeta, Organisation
 from bloomberg_invest.entrypoints import prices
+from bloomberg_invest.service_layer.checks import Checks
 from bloomberg_invest.service_layer.chunk import Chunked, ChunkFailed, chunk_document
+from bloomberg_invest.service_layer.company import issuers
 from bloomberg_invest.service_layer.embed import Embedded, EmbedFailed, embed_document
 from bloomberg_invest.service_layer.extract import Extracted, ExtractFailed, extract_document
 from bloomberg_invest.service_layer.facts import ExtractedFacts, FactsFailed, extract_facts
 from bloomberg_invest.service_layer.ingest import IngestFailed, ingest
+from bloomberg_invest.service_layer.kpis import Computed, compute_kpis
 from bloomberg_invest.service_layer.names import Linked, link_names
 from bloomberg_invest.settings import Settings
 from bloomberg_invest.views import Section
@@ -46,6 +52,8 @@ def main(argv: list[str] | None = None) -> int:
         return _extract(args.document_id)
     if args.command == "facts":
         return _facts(args.document_id)
+    if args.command == "kpis":
+        return _kpis(args.isin)
     try:
         meta = DocumentMeta(
             issuer=Organisation(isin=args.issuer_isin, name=args.issuer_name),
@@ -88,15 +96,16 @@ def main(argv: list[str] | None = None) -> int:
         except (IngestFailed, ChunkFailed, EmbedFailed, ExtractFailed, FactsFailed) as failure:
             print(_failure(failure), file=sys.stderr)
             return 1
+        computed = _recompute(meta.issuer.isin, deps.store, bootstrap.checks(settings))
         detail = deps.store.get_document(ingested.document_id)
     sections = _count_sections(detail.sections)
     print(
         f"Parsed {detail.page_count} pages, {sections} sections (run {detail.run.id}); "
         f"{_chunks(ingested.chunked)}; {_embedded(ingested.embedded)}; "
         f"{_extracted(ingested.extracted)}; {_facts_line(ingested.facts, ingested.linked)}; "
-        f"document {ingested.document_id}"
+        f"{computed or NOT_RECOMPUTED}; document {ingested.document_id}"
     )
-    return 0
+    return 0 if computed else 1
 
 
 def _chunk(document_id: str) -> int:
@@ -149,8 +158,11 @@ def _extract(document_id: str) -> int:
         except (LookupError, ValueError, ExtractFailed) as failure:
             print(_failure(failure), file=sys.stderr)
             return 1
-    print(f"{_extracted(extracted)}; document {document_id}")
-    return 0
+        computed = _recompute(
+            _issuer(document_id, deps.store), deps.store, bootstrap.checks(settings)
+        )
+    print(f"{_extracted(extracted)}; {computed or NOT_RECOMPUTED}; document {document_id}")
+    return 0 if computed else 1
 
 
 def _facts(document_id: str) -> int:
@@ -169,8 +181,57 @@ def _facts(document_id: str) -> int:
         except (LookupError, ValueError, FactsFailed) as failure:
             print(_failure(failure), file=sys.stderr)
             return 1
-    print(f"{_facts_line(facts, linked)}; document {document_id}")
-    return 0
+        # Declared dividends feed the payout ratio.
+        computed = _recompute(
+            _issuer(document_id, deps.store), deps.store, bootstrap.checks(settings)
+        )
+    print(f"{_facts_line(facts, linked)}; {computed or NOT_RECOMPUTED}; document {document_id}")
+    return 0 if computed else 1
+
+
+def _kpis(isin: str | None) -> int:
+    """Recompute the KPI values of one issuer or every one: after a new rule version."""
+    settings = Settings.from_env()
+    checks = bootstrap.checks(settings)
+    failed = 0
+    with bootstrap.connect(settings) as deps:
+        for one in [isin] if isin else issuers(deps.store):
+            # One issuer's failure leaves the others to compute.
+            try:
+                computed = _compute(one, deps.store, checks)
+            except LookupError as failure:
+                print(f"{one}: {_failure(failure)}", file=sys.stderr)
+                failed += 1
+                continue
+            print(f"{one}: {_computed(computed)}")
+    return 1 if failed else 0
+
+
+NOT_RECOMPUTED = "KPI values not recomputed"
+
+
+def _recompute(isin: str, store: GraphStore, checks: Checks) -> str | None:
+    """The KPI recompute that ends an extract, as its output line; None once it has said on
+    stderr why it failed. What was extracted is kept either way."""
+    try:
+        return _computed(_compute(isin, store, checks))
+    except LookupError as failure:
+        print(
+            f"{NOT_RECOMPUTED}: {_failure(failure)}; run `bloomberg kpis --isin {isin}`",
+            file=sys.stderr,
+        )
+        return None
+
+
+def _compute(isin: str, store: GraphStore, checks: Checks) -> Computed:
+    return compute_kpis(isin, store, checks.label_map, checks.rules)
+
+
+def _issuer(document_id: str, store: GraphStore) -> str:
+    document = store.get_document(document_id)
+    if document is None:
+        raise LookupError(f"no document {document_id}")
+    return document.issuer.isin
 
 
 def _failure(error: Exception) -> str:
@@ -198,6 +259,15 @@ def _facts_line(facts: ExtractedFacts, linked: Linked) -> str:
         f"extracted {facts.facts} other facts from {facts.pages} pages, {facts.rejected} rejected "
         f"by the check (run {facts.run_id}); linked {linked.linked} names, "
         f"{linked.to_check} to check in CHECKS (run {linked.run_id})"
+    )
+
+
+def _computed(computed: Computed) -> str:
+    if computed.run_id is None:
+        return "KPI values unchanged"
+    return (
+        f"{computed.written} KPI values written, {computed.superseded} superseded "
+        f"(run {computed.run_id})"
     )
 
 
@@ -233,6 +303,10 @@ def _arguments() -> argparse.ArgumentParser:
         help="re-extract an ingested filing's other facts from its parse and link their names",
     )
     facts_cmd.add_argument("document_id")
+    kpis_cmd = commands.add_parser(
+        "kpis", help="recompute the KPI values of one issuer, or of every one"
+    )
+    kpis_cmd.add_argument("--isin")
     prices.add_arguments(commands)
     return parser
 

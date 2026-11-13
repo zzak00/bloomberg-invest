@@ -16,6 +16,7 @@ import { CompanyPage } from "./pages/CompanyPage";
 import { DocumentPage } from "./pages/DocumentPage";
 import { EmptyPage } from "./pages/EmptyPage";
 import { IndexPage } from "./pages/IndexPage";
+import { KpisPage } from "./pages/KpisPage";
 import { SearchPage } from "./pages/SearchPage";
 
 const router = createBrowserRouter([
@@ -38,16 +39,7 @@ const router = createBrowserRouter([
         ),
       },
       { path: "checks", element: <ChecksPage /> },
-      {
-        path: "kpis",
-        element: (
-          <EmptyPage
-            label="KPIs"
-            title="KPIs follow checked figures"
-            body="Every KPI, the F-score and the Sharia rules will be documented here, computed only from figures a person has checked."
-          />
-        ),
-      },
+      { path: "kpis", element: <KpisPage /> },
       {
         path: "*",
         element: <EmptyPage label="NOT FOUND" title="This page doesn't exist" body="The address doesn't match any page in the app." />,

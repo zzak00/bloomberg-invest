@@ -112,6 +112,7 @@ class RunStep(StrEnum):
     extract = "extract"
     extract_facts = "extract_facts"
     link = "link"
+    compute = "compute"  # an issuer's KPI values (#27)
 
 
 class RunStatus(StrEnum):

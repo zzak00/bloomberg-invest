@@ -13,6 +13,7 @@ from bloomberg_invest.domain.dossier import agreeing
 from bloomberg_invest.domain.figures import parse_value
 from bloomberg_invest.domain.kpis import KpiRules
 from bloomberg_invest.domain.label_map import LabelMap
+from bloomberg_invest.domain.model import Organisation
 from bloomberg_invest.domain.review import (
     CheckKey,
     CheckStatus,
@@ -33,25 +34,37 @@ from bloomberg_invest.domain.review import (
     refusal,
     rejected_status,
 )
+from bloomberg_invest.service_layer.kpis import (
+    declared_values,
+    declaring,
+    dividend_feeds,
+    first_stating,
+    kept,
+    kpi_change,
+)
 from bloomberg_invest.views import (
     Candidate,
     CheckCounts,
     CheckGroup,
     CheckQueue,
     CheckRow,
+    DividendCheck,
     Figure,
     RejectedFigure,
     Review,
+    StatedFact,
 )
 
 
 @dataclass(frozen=True)
 class Checks:
-    """What checking needs: the KPI rules that say which figures need a check, and who checks.
-    One app runs per laptop (#19 Scope), so the reviewer is a setting."""
+    """What checking needs: the KPI rules that say which figures need a check, who checks, and
+    the label map a check's KPI values are recomputed with. One app runs per laptop (#19
+    Scope), so the reviewer is a setting."""
 
     rules: KpiRules
     reviewer: str | None
+    label_map: LabelMap
 
 
 class NoReviewer(Exception):
@@ -69,8 +82,14 @@ def check_queue(
     row just checked stays where it was."""
     facts, rejected = store.figures()
     rows = queue_rows(facts, rejected, label_map, checks.rules)
-    companies = {r.document.issuer.isin: r.document.issuer for r in rows}
+    stated, _ = store.facts()
+    dividends = dividend_rows(stated, checks.rules)
+    companies = {r.document.issuer.isin: r.document.issuer for r in rows} | {
+        d.company.isin: d.company for d in dividends
+    }
     company_rows = [r for r in rows if isin is None or r.document.issuer.isin == isin]
+    company_dividends = [d for d in dividends if isin is None or d.company.isin == isin]
+    statuses = [r.status for r in company_rows] + [d.status for d in company_dividends]
     groups: dict[str, CheckGroup] = {}
     for row in company_rows:
         group = groups.setdefault(row.document.id, CheckGroup(document=row.document, rows=[]))
@@ -79,16 +98,41 @@ def check_queue(
     return CheckQueue(
         reviewer=checks.reviewer,
         counts=CheckCounts(
-            to_check=sum(r.status == CheckStatus.to_check for r in company_rows),
-            rejected=sum(r.status == CheckStatus.rejected for r in company_rows),
-            done=sum(r.status in done for r in company_rows),
+            to_check=sum(s == CheckStatus.to_check for s in statuses),
+            rejected=sum(s == CheckStatus.rejected for s in statuses),
+            done=sum(s in done for s in statuses),
         ),
         companies=sorted(companies.values(), key=lambda o: o.name),
+        dividends=company_dividends,
         groups=sorted(
             groups.values(),
             key=lambda g: (g.document.issuer.name, -g.document.fiscal_year, g.document.doc_type),
         ),
     )
+
+
+def dividend_rows(facts: Sequence[StatedFact], rules: KpiRules) -> list[DividendCheck]:
+    """A row per amount each company's filings declare as its dividend for a fiscal year, when
+    it feeds a KPI: accepted once a person kept one of the facts stating it (D5)."""
+    rows = []
+    for (isin, year, _), groups in declared_values(facts, rules).items():
+        for group in groups:
+            review = kept([f.review for f in group])
+            first = first_stating(group)
+            company = declaring(first)
+            assert company is not None  # declared_values keeps only a linked company's
+            rows.append(
+                DividendCheck(
+                    company=Organisation(isin=isin, name=company.name),
+                    fiscal_year=year,
+                    fact=first,
+                    sources=len(group),
+                    feeds=dividend_feeds(first, rules),
+                    status=CheckStatus.accepted if review else CheckStatus.to_check,
+                    review=review,
+                )
+            )
+    return sorted(rows, key=lambda r: (r.company.name, -r.fiscal_year, r.fact.id))
 
 
 def queue_rows(
@@ -336,7 +380,14 @@ def record_review(
         cell_id=cited,
         quoted=quoted,
     )
-    review_id = store.record_review(ids, draft)
+    # The KPI values that read these figures follow the check, written with it (#27 AC3).
+    checked = dict.fromkeys(ids, applied(draft))
+    kpis = [
+        change
+        for isin in dict.fromkeys(f.document.issuer.isin for f in found.values())
+        if (change := kpi_change(isin, store, checks.label_map, checks.rules, checked)) is not None
+    ]
+    review_id = store.record_review(ids, draft, kpis)
     # The check as the figures now read it, with the source a correction cites; a reopening
     # leaves them with none.
     read = _one(shown.id, store)
@@ -344,6 +395,21 @@ def record_review(
         return read.review
     return Review(
         id=review_id, verdict=draft.verdict, reviewer=draft.reviewer, reviewed_at=draft.reviewed_at
+    )
+
+
+def applied(draft: ReviewDraft) -> Review | None:
+    """The check in force a figure or fact will have once the draft is recorded: none for a
+    reopening. The cell or quote a correction cites is the store's to give; KPI values don't
+    read it."""
+    if not draft.verdict.in_force:
+        return None
+    return Review(
+        id=draft.id,
+        verdict=draft.verdict,
+        reviewer=draft.reviewer,
+        reviewed_at=draft.reviewed_at,
+        correction=draft.correction,
     )
 
 

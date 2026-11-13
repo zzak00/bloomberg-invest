@@ -1,11 +1,12 @@
 # CHECKS: review figures
 
-The figures that feed a KPI or a Sharia screen, for a person to accept or correct before they count (#23). Only consolidated figures of the inputs in `backend/src/bloomberg_invest/config/kpis/`, in the currency of their filing's statements, are listed: the golden report's euro translation (p. 5) is not (#56).
+The figures that feed a KPI or a Sharia screen, for a person to accept or correct before they count (#23). A check recomputes the KPI values that read the figure ([kpis.md](kpis.md)). Only consolidated figures of the inputs in `backend/src/bloomberg_invest/config/kpis/`, in the currency of their filing's statements, are listed: the golden report's euro translation (p. 5) is not (#56).
 
 ## Sub-features
 
 - Tabs `FIGURES · n` (this file), `NAMES · n` and `REJECTED FACTS · n` ([facts.md](facts.md)).
-- Counts: `TO CHECK`, `NEEDS REVIEW` (rejected figures, which can only be corrected) and `DONE`.
+- Counts: `TO CHECK`, `NEEDS REVIEW` (rejected figures, which can only be corrected) and `DONE`, declared dividends included.
+- `DECLARED DIVIDENDS · n` above the filings: each dividend a company declares for a year that feeds a KPI (#27), with its amount, the quote it was read from, its status, and `CHECK IN THE INSPECTOR` (`OPEN IN THE INSPECTOR` once accepted), which opens the dossier's fact inspector where it is accepted. The status filters apply to it.
 - "Checks are recorded as <name>", from `REVIEWER` in `.env`. Without it a dashed notice says how to set it, and no buttons show.
 - Filters: `ALL COMPANIES` or one company, and `OPEN` (default), `NEEDS REVIEW`, `DONE`, `ALL`, kept in the URL as `?company=<ISIN>&status=<id>`.
 - One region per filing; a row per value the filing states, problems first: rejected figures, then values marked `≠ STATED DIFFERENTLY ELSEWHERE`, then by statement, line item and newest year. `n SOURCES AGREE` when several passages state it.

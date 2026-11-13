@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from bloomberg_invest.domain.facts import FactKind
 from bloomberg_invest.domain.figures import Scope, parse_unit
+from bloomberg_invest.domain.kpis import Applies, Format, KpiStatus
 from bloomberg_invest.domain.model import Bbox, DocType, Organisation, PageInfo, RunInfo
 from bloomberg_invest.domain.names import NameStatus, NameVerdict, PartyKind
 from bloomberg_invest.domain.review import CheckStatus, Correction, Verdict
@@ -298,12 +299,29 @@ class CheckGroup(BaseModel):
     rows: list[CheckRow]
 
 
+class DividendCheck(BaseModel):
+    """A dividend a company declares for a fiscal year that feeds a KPI (#27): one row per amount
+    the filings state, checked in the fact inspector."""
+
+    company: Organisation  # the one declaring it, which may not be the filing's issuer
+    fiscal_year: int
+    fact: "StatedFact"  # the first stating it, which the inspector opens
+    sources: int  # the facts stating the amount
+    feeds: list[str]  # the titles of the KPIs it feeds
+    status: CheckStatus  # to_check, or accepted once a person kept it
+    review: Review | None
+
+
 class CheckQueue(BaseModel):
-    """CHECKS (#19 R9): the figures that feed a KPI or screen, problems first."""
+    """CHECKS (#19 R9): the figures that feed a KPI or screen, problems first, and the declared
+    dividends that feed one."""
 
     reviewer: str | None  # who checks on this app; None until REVIEWER is set
-    counts: CheckCounts  # for the company asked
-    companies: list[Organisation]  # every company with a figure to check or checked
+    counts: CheckCounts  # for the company asked, dividends included
+    companies: list[Organisation]  # every company with a figure or dividend to check or checked
+    dividends: list[
+        DividendCheck
+    ]  # of the company asked, by company then fiscal year, newest first
     groups: list[CheckGroup]  # one per filing
 
 
@@ -489,3 +507,139 @@ class FactDetail(StatedFact):
     sentence: Sentence
     why: Literal["kept", "latest", "annual_report", "earliest"] | None  # None: not the shown one
     sides: list[FactSide]  # the values at the row's date, the one in use first; one: no Conflict
+    feeds: list[str] = []  # the KPIs it feeds, which wait for a person's check of it
+
+
+class KpiUse(BaseModel):
+    """An input a KPI value read, for one fiscal year."""
+
+    name: str
+    fiscal_year: int
+
+
+class KpiTest(BaseModel):
+    """One test of a score, for one fiscal year: passed or failed once computed."""
+
+    name: str
+    status: KpiStatus
+    passed: bool | None
+    reason: str
+
+
+class StoredKpi(BaseModel):
+    """A KPI value as the graph keeps it (#27, ADR 0002): computed, or why not, from which Facts,
+    under which rules. A recompute that changes it supersedes it."""
+
+    id: str
+    kpi: str
+    fiscal_year: int
+    status: KpiStatus
+    value: str | None  # exact decimal; a ratio as a fraction, a score as the tests passed
+    reason: str
+    rule_version: str
+    rule_sha256: str
+    label_map: str  # the version its figures were read with
+    computed_at: datetime
+    used: list[KpiUse]
+    sources: list[str]  # the ids of the Facts it was computed from
+    tests: list[KpiTest] = []
+    out_of: int | None = None  # for a score, the tests it counts
+
+
+class KpiInput(BaseModel):
+    """An input of a KPI value as its hover lists it: the value in force, where it is read,
+    and whether a person checked it."""
+
+    name: str
+    title: str
+    fiscal_year: int
+    kind: Literal["figure", "declared"]  # a financial figure, or a declared dividend Fact
+    status: Literal["checked", "unchecked", "missing", "conflict", "not_reported"]
+    value_as_written: str | None = None
+    unit_as_written: str | None = None
+    document: DocumentRef | None = None
+    page: int | None = None
+    fact_id: str | None = None  # the figure or dividend Fact it opens
+    checked_by: str | None = None
+    reason: str = ""  # why it is missing or not reported
+
+
+class KpiPoint(BaseModel):
+    fiscal_year: int
+    status: KpiStatus
+    value: str | None
+
+
+class ScoreTest(KpiTest):
+    title: str
+
+
+class ScorecardKpi(BaseModel):
+    """One scorecard row: the selected year's value, or "-" and why (#19 R12)."""
+
+    name: str
+    title: str
+    theme: str
+    format: Format
+    band: list[str] | None  # the rule of thumb, in the unit shown
+    applies: Applies
+    formula: str
+    status: KpiStatus
+    value: str | None
+    reason: str
+    out_of: int | None = None  # for a score, the tests it counts: those that are meaningful
+    history: list[KpiPoint]  # the fiscal years up to the selected one, oldest first
+    peers: int  # other companies of its sector with a value that year
+    sector_median: str | None  # of those peers' values; None below MIN_PEERS (#7)
+    inputs: list[KpiInput]
+    tests: list[ScoreTest] = []
+    computed_at: datetime
+
+
+class Scorecard(BaseModel):
+    """An issuer's quality KPIs and F-score for one fiscal year, by default its last (#27)."""
+
+    fiscal_year: int | None  # None until any value is computed
+    years: list[int]  # the fiscal years with values, which can be selected
+    window: int  # how many fiscal years a KPI's history shows, up to the selected one
+    basis: str  # the figures' basis: "Consolidated · IFRS"
+    rule_version: str
+    since: date | None
+    financial: bool  # a bank or insurer: most KPIs are not meaningful
+    sector: str | None  # its Listing's, which the sector medians compare with
+    kpis: list[ScorecardKpi]
+
+
+class KpiDefinition(BaseModel):
+    """A KPI as the KPIs page documents it, from the rules that compute it (#27 AC4)."""
+
+    name: str
+    title: str
+    theme: str
+    means: str
+    formula: str
+    inputs: list[str]
+    read: str
+    applies: Applies
+    format: Format
+    band: list[str] | None
+    tests: list["TestDefinition"] = []  # a score's tests
+
+
+class TestDefinition(BaseModel):
+    name: str
+    title: str
+    formula: str
+
+
+class KpiTheme(BaseModel):
+    name: str
+    title: str
+
+
+class KpiDefinitions(BaseModel):
+    version: str
+    since: date | None
+    sha256: str
+    themes: list[KpiTheme]  # in the order the page shows them
+    kpis: list[KpiDefinition]

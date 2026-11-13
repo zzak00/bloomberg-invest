@@ -1,5 +1,6 @@
 """The graph store interface. The API and the CLI see domain models only, never Cypher."""
 
+from collections.abc import Sequence
 from datetime import date, datetime
 from typing import Protocol
 
@@ -7,6 +8,7 @@ from bloomberg_invest.domain.chunking import ChunkDraft
 from bloomberg_invest.domain.extraction import FigureDraft, SourceCell
 from bloomberg_invest.domain.facts import FactDraft
 from bloomberg_invest.domain.indexing import EmbedInput
+from bloomberg_invest.domain.kpis import KpiChange
 from bloomberg_invest.domain.model import DocumentMeta, Organisation, ParsedDocument, RunInfo
 from bloomberg_invest.domain.names import AggregateName, NameReviewDraft
 from bloomberg_invest.domain.prices import Close, ListedShare, StoredClose
@@ -24,6 +26,7 @@ from bloomberg_invest.views import (
     RejectedFact,
     RejectedFigure,
     StatedFact,
+    StoredKpi,
 )
 
 
@@ -95,10 +98,14 @@ class GraphStore(Protocol):
         """The current cells of the row of the Cell a figure cites, by column, each with its
         column's headers; none for a figure that cites no Cell."""
 
-    def record_review(self, figure_ids: list[str], review: ReviewDraft) -> str:
-        """Record a check of these current figures; return the Review id. A correction that
-        picked a number in a paragraph gets a Span the Review cites. Raises LookupError when a
-        figure is not current, or the cited cell or page is not."""
+    def record_review(
+        self, figure_ids: list[str], review: ReviewDraft, kpis: Sequence[KpiChange] = ()
+    ) -> str:
+        """Record a check of these current figures or facts, and the KPI values it changes, in
+        one transaction (#27 AC3); return the Review id. A correction that picked a number in a
+        paragraph gets a Span the Review cites. Raises LookupError, and records nothing, when a
+        figure is not current, the cited cell or page is not, or a KPI value can't be kept (see
+        `record_kpi_values`)."""
 
     def record_fact_extraction(self, document_id: str, facts: list[FactDraft], run: RunInfo) -> str:
         """Store an extract_facts Run's facts for the Document; return the Run id.
@@ -193,3 +200,17 @@ class GraphStore(Protocol):
     def listing(self, isin: str) -> Listing | None:
         """The listing of the Organisation with this ISIN, if it has one; the first by key if
         it has several."""
+
+    def kpi_values(self, isin: str) -> list[StoredKpi]:
+        """The issuer's current KPI values, by KPI and fiscal year (#27)."""
+
+    def sector_kpi_values(self, sector: str, fiscal_year: int, other_than: str) -> list[StoredKpi]:
+        """The current KPI values for the fiscal year of the companies listed in the sector,
+        but the one with the ISIN `other_than`: its peers (#7)."""
+
+    def record_kpi_values(self, change: KpiChange) -> str:
+        """Record a compute Run of the issuer and its KPI values; return the Run id. Each value
+        supersedes the current one of its KPI and fiscal year, and so does each (KPI, fiscal
+        year) in `gone`, with no new value. Each value links to the Facts it was computed from.
+        Raises LookupError, and records nothing, when no Organisation has the ISIN or a source
+        is no Fact or rejected figure."""
