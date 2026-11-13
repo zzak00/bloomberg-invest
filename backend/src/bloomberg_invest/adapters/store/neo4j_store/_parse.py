@@ -29,7 +29,7 @@ def _record_run(
         MERGE (d:Document {sha256: $sha256})
           ON CREATE SET d.id = $new_id
         SET d.doc_type = $doc_type, d.fiscal_year = $fiscal_year,
-            d.regulator = $regulator, d.source_url = $source_url
+            d.regulator = $regulator, d.currency = $currency, d.source_url = $source_url
         MERGE (d)-[:ISSUED_BY]->(o)
         CREATE (r:Run {id: $run_id, step: $step, tool: $tool, tool_version: $tool_version,
                        config: $config, started_at: $started_at, finished_at: $finished_at,
@@ -50,6 +50,7 @@ def _record_run(
         doc_type=meta.doc_type.value,
         fiscal_year=meta.fiscal_year,
         regulator=meta.regulator,
+        currency=meta.currency,
         source_url=meta.source_url,
         run_id=run_id,
         **_run_properties(run),

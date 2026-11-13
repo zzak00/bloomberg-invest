@@ -51,6 +51,7 @@ def main(argv: list[str] | None = None) -> int:
             issuer=Organisation(isin=args.issuer_isin, name=args.issuer_name),
             doc_type=args.doc_type,
             fiscal_year=args.fiscal_year,
+            currency=args.currency,
             source_url=args.source_url,
         )
     except ValidationError as error:
@@ -213,6 +214,9 @@ def _arguments() -> argparse.ArgumentParser:
     ingest_cmd.add_argument("--issuer-name", required=True)
     ingest_cmd.add_argument("--doc-type", required=True, choices=[t.value for t in DocType])
     ingest_cmd.add_argument("--fiscal-year", required=True, type=int)
+    ingest_cmd.add_argument(
+        "--currency", default="MAD", help="the currency of its financial statements (ISO 4217)"
+    )
     ingest_cmd.add_argument("--source-url")
     chunk_cmd = commands.add_parser(
         "chunk", help="re-chunk an ingested filing from its parse, then embed it"

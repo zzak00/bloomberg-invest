@@ -1572,6 +1572,10 @@
             "type": "string",
             "title": "Regulator"
           },
+          "currency": {
+            "type": "string",
+            "title": "Currency"
+          },
           "source_url": {
             "anyOf": [
               {
@@ -1621,6 +1625,7 @@
           "doc_type",
           "fiscal_year",
           "regulator",
+          "currency",
           "source_url",
           "page_count",
           "ingested_at",
@@ -1646,6 +1651,10 @@
           "fiscal_year": {
             "type": "integer",
             "title": "Fiscal Year"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency"
           }
         },
         "type": "object",
@@ -1653,7 +1662,8 @@
           "id",
           "issuer",
           "doc_type",
-          "fiscal_year"
+          "fiscal_year",
+          "currency"
         ],
         "title": "DocumentRef"
       },
@@ -1676,6 +1686,10 @@
           "regulator": {
             "type": "string",
             "title": "Regulator"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency"
           },
           "source_url": {
             "anyOf": [
@@ -1705,6 +1719,7 @@
           "doc_type",
           "fiscal_year",
           "regulator",
+          "currency",
           "source_url",
           "page_count",
           "ingested_at"

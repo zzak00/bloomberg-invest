@@ -354,6 +354,8 @@ try {
     const checkRows = filing.getByRole("listitem");
     const firstRow = await checkRows.first().getAttribute("aria-label");
     check(vp.name, "AC1: problems come first", /: Needs review$/.test(firstRow ?? ""), firstRow);
+    const euros = (await filing.innerText()).match(/\bEUR\b.*/g) ?? [];
+    check(vp.name, "CHECKS lists no figure in another currency than the filing's (#56)", euros.length === 0, euros.slice(0, 2).join(" | "));
     check(
       vp.name,
       "a rejected figure can't be accepted",

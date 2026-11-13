@@ -62,6 +62,7 @@ def _summary(d: Any, o: Any, run: Any, pages: int) -> DocumentSummary:
         doc_type=d["doc_type"],
         fiscal_year=d["fiscal_year"],
         regulator=d["regulator"],
+        currency=d["currency"],
         source_url=d["source_url"],
         page_count=pages,
         ingested_at=run["finished_at"].to_native(),
@@ -80,6 +81,7 @@ def _document_ref(d: Any, o: Any) -> DocumentRef:
         issuer={"isin": o["isin"], "name": o["name"]},
         doc_type=d["doc_type"],
         fiscal_year=d["fiscal_year"],
+        currency=d["currency"],
     )
 
 

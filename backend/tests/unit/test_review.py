@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 from builders import BILLIONS, DOCUMENT, figure, review
+from builders import rejected as rejected_figure
 
 from bloomberg_invest import config
 from bloomberg_invest.domain.kpis import Input, Kpi, KpiRules
@@ -56,19 +57,40 @@ def test_a_line_item_feeds_the_kpis_that_read_it():
 
 
 @pytest.mark.parametrize(
-    ("scope", "line_item", "breakdown", "needed"),
+    ("scope", "line_item", "breakdown", "currency", "needed"),
     [
-        ("consolidated", "revenue", "", True),
-        ("consolidated", "eps", "basic", True),
-        ("company-only", "revenue", "", False),  # KPIs read consolidated IFRS only (#7)
-        ("consolidated", "revenue", "Mauritanie", False),  # a segment feeds no KPI
-        ("consolidated", "share_capital", "", False),
-        (None, "revenue", "", False),
+        ("consolidated", "revenue", "", "MAD", True),
+        ("consolidated", "eps", "basic", "MAD", True),
+        ("consolidated", "shares_outstanding", "", None, True),  # a share count has no currency
+        ("company-only", "revenue", "", "MAD", False),  # KPIs read consolidated IFRS only (#7)
+        ("consolidated", "revenue", "Mauritanie", "MAD", False),  # a segment feeds no KPI
+        ("consolidated", "share_capital", "", "MAD", False),
+        (None, "revenue", "", "MAD", False),
+        # #56: the euro translation of a filing's MAD statements is kept, but never counts.
+        ("consolidated", "revenue", "", "EUR", False),
+        ("consolidated", "eps", "basic", "EUR", False),
     ],
 )
-def test_only_consolidated_kpi_inputs_need_a_check(scope, line_item, breakdown, needed):
-    figure = SimpleNamespace(basis_scope=scope, line_item=line_item, breakdown=breakdown)
+def test_only_consolidated_kpi_inputs_in_the_filing_s_currency_need_a_check(
+    scope, line_item, breakdown, currency, needed
+):
+    figure = SimpleNamespace(
+        basis_scope=scope,
+        line_item=line_item,
+        breakdown=breakdown,
+        currency=currency,
+        document=DOCUMENT,
+    )
     assert needs_check(figure, RULES) is needed
+
+
+def test_a_rejected_figure_s_currency_is_read_from_its_unit():
+    def unit(written: str) -> str | None:
+        return rejected_figure("1").model_copy(update={"unit_as_written": written}).currency
+
+    assert unit("EUR millions") == "EUR"
+    assert unit("millions de dirhams") == "MAD"
+    assert unit("") is None
 
 
 def test_a_reopening_leaves_no_check_in_force():
@@ -114,7 +136,7 @@ def test_a_correction_states_the_fields_a_figure_shows():
 
 def fact(value: str = "36 681", **changes):
     fields = {
-        "document": SimpleNamespace(id="d1"),
+        "document": SimpleNamespace(id="d1", currency="MAD"),
         "line_item": "revenue",
         "fiscal_year": 2025,
         "basis_scope": "consolidated",

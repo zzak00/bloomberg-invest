@@ -45,6 +45,11 @@ class CheckStatus(StrEnum):
     corrected = "corrected"
 
 
+class Filed(Protocol):
+    @property
+    def currency(self) -> str: ...
+
+
 class Gated(Protocol):
     """What decides whether a figure needs a check: a Fact, or a rejected figure."""
 
@@ -54,13 +59,20 @@ class Gated(Protocol):
     def line_item(self) -> str: ...
     @property
     def breakdown(self) -> str: ...
+    @property
+    def currency(self) -> str | None: ...
+    @property
+    def document(self) -> Filed: ...
 
 
 def needs_check(figure: Gated, rules: KpiRules) -> bool:
     """Only consolidated figures that feed a KPI or screen need a check before they count
-    (#19 R10)."""
-    return figure.basis_scope == Scope.consolidated and bool(
-        rules.feeds(figure.line_item, figure.breakdown)
+    (#19 R10), in the currency of their filing's statements, or in none (`%`, `shares`): a
+    translation into another currency never counts (#56)."""
+    return (
+        figure.basis_scope == Scope.consolidated
+        and bool(rules.feeds(figure.line_item, figure.breakdown))
+        and figure.currency in (None, figure.document.currency)
     )
 
 

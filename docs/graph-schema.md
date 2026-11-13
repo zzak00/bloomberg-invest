@@ -49,6 +49,7 @@ erDiagram
         String doc_type
         Integer fiscal_year
         String regulator
+        String currency
         String source_url
     }
     Run {
@@ -293,6 +294,7 @@ A name as facts write it, shared by every fact and filing writing the same name:
 | `doc_type` | String | `annual_report`, `half_year_report` or `issuer_page` | `annual_report` |
 | `fiscal_year` | Integer | the year the filing reports on | `2025` |
 | `regulator` | String | always `AMMC` | `AMMC` |
+| `currency` | String | ISO 4217 code of the currency its financial statements are presented in, stated at ingest (`--currency`, default `MAD`). A figure in another currency (a translation, such as "Chiffres consolidés en euro") is kept but needs no check and feeds no KPI (#56) | `MAD` |
 | `source_url` | String, optional | where the PDF was downloaded | `https://www.ammc.ma/…/Maroc_Telecom_RFA_2025.pdf` |
 
 ### Run

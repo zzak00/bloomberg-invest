@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, model_validator
 
 Bbox = tuple[float, float, float, float]
 Isin = Annotated[str, Field(pattern=r"^[A-Z]{2}[A-Z0-9]{9}[0-9]$")]
+Currency = Annotated[str, Field(pattern=r"^[A-Z]{3}$")]  # ISO 4217: "MAD"
 
 
 class DocType(StrEnum):
@@ -34,6 +35,9 @@ class DocumentMeta(BaseModel):
     doc_type: DocType
     fiscal_year: int = Field(ge=1990, le=2100)
     regulator: str = "AMMC"
+    # The currency its financial statements are presented in. A figure in another currency (a
+    # translation, "Chiffres consolidés en euro") is kept, but never feeds a KPI (#56).
+    currency: Currency = "MAD"
     source_url: str | None = None
 
 

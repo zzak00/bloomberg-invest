@@ -1,6 +1,6 @@
 # CHECKS: review figures
 
-The figures that feed a KPI or a Sharia screen, for a person to accept or correct before they count (#23). Only consolidated figures of the inputs in `backend/src/bloomberg_invest/config/kpis/` are listed.
+The figures that feed a KPI or a Sharia screen, for a person to accept or correct before they count (#23). Only consolidated figures of the inputs in `backend/src/bloomberg_invest/config/kpis/`, in the currency of their filing's statements, are listed: the golden report's euro translation (p. 5) is not (#56).
 
 ## Sub-features
 
